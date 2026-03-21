@@ -1,12 +1,12 @@
-// ─── FUNCIÓN DE ACTIVACIÓN ───────────────────────────────────────────────────
-// Convierte cualquier número a un valor entre 0 y 1
+// ─── ACTIVATION FUNCTION ─────────────────────────────────────────────────────
+// Squashes any number into a value between 0 and 1
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
 
-// ─── NEURONA (1 entrada) ──────────────────────────────────────────────────────
-// Versión didáctica: una sola entrada, un solo peso.
-// Ver NeuronaN para la versión con N entradas e inicialización Xavier.
+// ─── NEURON (single input) ────────────────────────────────────────────────────
+// Educational version: one input, one weight.
+// See NeuronaN for the N-input version with Xavier initialization.
 export class Neurona {
   peso: number;
   sesgo: number;

@@ -1,12 +1,12 @@
-// ─── FUNCIÓN DE ACTIVACIÓN ───────────────────────────────────────────────────
+// ─── ACTIVATION FUNCTION ─────────────────────────────────────────────────────
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
 
-// ─── NEURONA N ENTRADAS ───────────────────────────────────────────────────────
-// Versión generalizada de Neurona: acepta cualquier número de entradas.
-// Usa inicialización Xavier simplificada: pesos en [-√(1/n), +√(1/n)].
-// Esto garantiza que el gradiente fluya bien desde el inicio del entrenamiento.
+// ─── N-INPUT NEURON ───────────────────────────────────────────────────────────
+// Generalized version of Neurona: accepts any number of inputs.
+// Uses simplified Xavier initialization: weights in [-√(1/n), +√(1/n)].
+// This ensures gradients flow well from the start of training.
 export class NeuronaN {
   pesos: number[];
   sesgo: number;

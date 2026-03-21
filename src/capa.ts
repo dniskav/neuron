@@ -1,10 +1,10 @@
 import { NeuronaN } from "./neuronaN";
 
-// ─── CAPA ─────────────────────────────────────────────────────────────────────
-// Grupo de neuronas que comparten las mismas entradas.
-// Cada neurona produce su propia salida de forma independiente.
-// La salida de la capa es el array de salidas de cada neurona,
-// que se convierte en la entrada de la siguiente capa.
+// ─── LAYER ────────────────────────────────────────────────────────────────────
+// A group of neurons that share the same inputs.
+// Each neuron produces its own output independently.
+// The layer output is an array of each neuron's output,
+// which becomes the input for the next layer.
 export class Capa {
   neuronas: NeuronaN[];
 

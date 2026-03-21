@@ -1,9 +1,9 @@
 import { Capa } from "./capa";
 
-// ─── RED (2 capas) ────────────────────────────────────────────────────────────
-// Red neuronal con una capa oculta y una capa de salida.
-// Usa backpropagation para ajustar los pesos.
-// Para redes de profundidad arbitraria ver RedN.
+// ─── NETWORK (2 layers) ───────────────────────────────────────────────────────
+// Neural network with one hidden layer and one output layer.
+// Uses backpropagation to adjust weights.
+// For arbitrary depth see RedN.
 export class Red {
   capaOculta: Capa;
   capaSalida: Capa;
@@ -18,12 +18,13 @@ export class Red {
     return this.capaSalida.predecir(salidasOcultas)[0];
   }
 
+  // Trains on a single example. Returns the squared error.
   entrenar(entradas: number[], correcto: number, tasa: number): number {
     const salidasOcultas = this.capaOculta.predecir(entradas);
     const prediccion     = this.capaSalida.predecir(salidasOcultas)[0];
 
-    const errorSalida  = correcto - prediccion;
-    const deltaSalida  = errorSalida * prediccion * (1 - prediccion);
+    const errorSalida = correcto - prediccion;
+    const deltaSalida = errorSalida * prediccion * (1 - prediccion);
 
     const neuronaSalida = this.capaSalida.neuronas[0];
     neuronaSalida.pesos = neuronaSalida.pesos.map(
@@ -31,6 +32,7 @@ export class Red {
     );
     neuronaSalida.sesgo += tasa * deltaSalida;
 
+    // Backpropagate error to hidden layer
     this.capaOculta.neuronas.forEach((neurona, i) => {
       const salidaOculta = salidasOcultas[i];
       const errorOculto  = deltaSalida * neuronaSalida.pesos[i];
