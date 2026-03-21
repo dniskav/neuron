@@ -6,24 +6,24 @@ function sigmoid(x: number): number {
 
 // ─── NEURON (single input) ────────────────────────────────────────────────────
 // Educational version: one input, one weight.
-// See NeuronaN for the N-input version with Xavier initialization.
-export class Neurona {
-  peso: number;
-  sesgo: number;
+// See NeuronN for the N-input version with Xavier initialization.
+export class Neuron {
+  weight: number;
+  bias: number;
 
   constructor() {
-    this.peso = Math.random() * 0.1;
-    this.sesgo = Math.random() * 0.1;
+    this.weight = Math.random() * 0.1;
+    this.bias   = Math.random() * 0.1;
   }
 
-  predecir(entrada: number): number {
-    return sigmoid(entrada * this.peso + this.sesgo);
+  predict(input: number): number {
+    return sigmoid(input * this.weight + this.bias);
   }
 
-  entrenar(entrada: number, correcto: number, tasa: number): void {
-    const prediccion = this.predecir(entrada);
-    const error = correcto - prediccion;
-    this.peso  += tasa * error * entrada;
-    this.sesgo += tasa * error;
+  train(input: number, target: number, lr: number): void {
+    const prediction = this.predict(input);
+    const error = target - prediction;
+    this.weight += lr * error * input;
+    this.bias   += lr * error;
   }
 }

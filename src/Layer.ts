@@ -1,18 +1,18 @@
-import { NeuronaN } from "./neuronaN";
+import { NeuronN } from "./NeuronN";
 
 // ─── LAYER ────────────────────────────────────────────────────────────────────
 // A group of neurons that share the same inputs.
 // Each neuron produces its own output independently.
 // The layer output is an array of each neuron's output,
 // which becomes the input for the next layer.
-export class Capa {
-  neuronas: NeuronaN[];
+export class Layer {
+  neurons: NeuronN[];
 
-  constructor(nNeuronas: number, nEntradas: number) {
-    this.neuronas = Array.from({ length: nNeuronas }, () => new NeuronaN(nEntradas));
+  constructor(nNeurons: number, nInputs: number) {
+    this.neurons = Array.from({ length: nNeurons }, () => new NeuronN(nInputs));
   }
 
-  predecir(entradas: number[]): number[] {
-    return this.neuronas.map(n => n.predecir(entradas));
+  predict(inputs: number[]): number[] {
+    return this.neurons.map(n => n.predict(inputs));
   }
 }
