@@ -99,10 +99,15 @@ export class NetworkLSTM {
         const layerIn = acts[l];
         const grad    = denseGrads[l];
 
-        // Gradient to previous layer (using current weights, before update)
+        // Gradient to previous layer (using current weights, before update).
+        // When l === 0, layerIn is the raw LSTM output h = o·tanh(c) ∈ (-1,1).
+        // h is NOT produced by sigmoid, so we must NOT apply the sigmoid derivative
+        // h·(1-h) — doing so would flip the gradient sign for negative h values,
+        // causing the network to learn the opposite of the correct direction.
+        // For l > 0, layerIn is a sigmoid output of a dense layer: derivative applies.
         const prevDeltas = layerIn.map((out, j) => {
           const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-          return errProp * out * (1 - out);
+          return l === 0 ? errProp : errProp * out * (1 - out);
         });
 
         layer.neurons.forEach((n, k) => {
