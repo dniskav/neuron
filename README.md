@@ -1,5 +1,8 @@
 # @dniskav/neuron
 
+[![npm](https://img.shields.io/npm/v/@dniskav/neuron)](https://www.npmjs.com/package/@dniskav/neuron)
+[![license](https://img.shields.io/npm/l/@dniskav/neuron)](LICENSE)
+
 A minimal, dependency-free neural network library built from scratch in TypeScript. Designed for learning and experimentation — every line of math is readable.
 
 ## What's inside
@@ -11,6 +14,8 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 | `Layer` | A group of `NeuronN` neurons that share the same inputs. |
 | `Network` | Two-layer network (hidden + output) with backpropagation. |
 | `NetworkN` | Deep network of arbitrary depth. Define your architecture as `[inputs, ...hidden, outputs]`. |
+| `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
+| `NetworkLSTM` | Wraps an `LSTMLayer` + dense layers. Maintains memory across steps within an episode. |
 
 ## Install
 
@@ -94,6 +99,47 @@ const [out1, out2] = net.predict([0.5, 0.3, 0.8]);
 ```ts
 net.trainWithDeltas(inputs, [0.4, -0.2], 0.05);
 ```
+
+### NetworkLSTM — recurrent network with memory
+
+`NetworkLSTM` adds within-episode memory: the network can remember what happened in previous steps of the same sequence.
+
+```ts
+import { NetworkLSTM } from "@dniskav/neuron";
+
+// 1 input → LSTM(8 hidden) → Dense(4) → 1 output
+const net = new NetworkLSTM(1, 8, [4, 1]);
+
+// Task: predict 1 if we're past step 3 in the episode, else 0
+// A feedforward net can't do this — it has no memory of step count.
+
+for (let epoch = 0; epoch < 300; epoch++) {
+  net.resetState();             // clear memory at episode start
+
+  const targets: number[][] = [];
+  for (let step = 0; step < 6; step++) {
+    net.predict([1]);           // same input every step
+    targets.push([step >= 3 ? 1 : 0]);
+  }
+
+  net.train(targets, 0.05);    // BPTT across the full episode
+}
+
+// Run a fresh episode and check predictions
+net.resetState();
+for (let step = 0; step < 6; step++) {
+  const [out] = net.predict([1]);
+  console.log(`step ${step}: ${out.toFixed(2)}  (expected: ${step >= 3 ? 1 : 0})`);
+}
+// step 0: 0.07  (expected: 0)
+// step 1: 0.11  (expected: 0)
+// step 2: 0.18  (expected: 0)
+// step 3: 0.81  (expected: 1)
+// step 4: 0.89  (expected: 1)
+// step 5: 0.93  (expected: 1)
+```
+
+The network learns to count steps using its hidden state — no external counter needed.
 
 ## How it works
 
