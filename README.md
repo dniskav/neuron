@@ -161,6 +161,10 @@ npm run build   # outputs CJS + ESM + type declarations to dist/
 npm run dev     # watch mode
 ```
 
+## For AI agents
+
+If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
+
 ## License
 
 MIT
