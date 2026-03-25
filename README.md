@@ -1,5 +1,3 @@
-# @dniskav/neuron
-
 [![npm](https://img.shields.io/npm/v/@dniskav/neuron)](https://www.npmjs.com/package/@dniskav/neuron)
 [![license](https://img.shields.io/npm/l/@dniskav/neuron)](LICENSE)
 
@@ -7,15 +5,19 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 
 ## What's inside
 
-| Class | Description |
-|-------|-------------|
+| Export | Description |
+|--------|-------------|
 | `Neuron` | Single-input neuron. The simplest possible unit: one weight, one bias. |
-| `NeuronN` | N-input neuron with Xavier initialization and sigmoid activation. |
+| `NeuronN` | N-input neuron with Xavier initialization and configurable activation. |
 | `Layer` | A group of `NeuronN` neurons that share the same inputs. |
 | `Network` | Two-layer network (hidden + output) with backpropagation. |
 | `NetworkN` | Deep network of arbitrary depth. Define your architecture as `[inputs, ...hidden, outputs]`. |
 | `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
 | `NetworkLSTM` | Wraps an `LSTMLayer` + dense layers. Maintains memory across steps within an episode. |
+| `sigmoid` `relu` `tanh` `linear` | Built-in activation functions. |
+| `SGD` `Momentum` `Adam` | Optimizers. Each instance tracks its own state per weight. |
+| `mse` `crossEntropy` | Loss functions for evaluation and logging. |
+| `mseDelta` `crossEntropyDelta` | Output-layer delta functions for use with `trainWithDeltas`. |
 
 ## Install
 
@@ -92,12 +94,73 @@ net.train([0.5, 0.3, 0.8], [1, 0], 0.05);
 const [out1, out2] = net.predict([0.5, 0.3, 0.8]);
 ```
 
+### Activations — ReLU, tanh, and more
+
+Pass an activation per layer. The last layer typically uses `sigmoid` for binary output or `linear` for regression.
+
+```ts
+import { NetworkN, relu, sigmoid } from "@dniskav/neuron";
+
+const net = new NetworkN([3, 64, 32, 1], {
+  activations: [relu, relu, sigmoid],
+});
+```
+
+Available: `sigmoid`, `relu`, `tanh`, `linear`.
+
+### Optimizers — Adam, Momentum, SGD
+
+Pass an optimizer factory. Each weight gets its own instance with independent state.
+
+```ts
+import { NetworkN, relu, sigmoid, Adam } from "@dniskav/neuron";
+
+const net = new NetworkN([2, 64, 1], {
+  activations: [relu, sigmoid],
+  optimizer: () => new Adam(),          // default: beta1=0.9, beta2=0.999
+});
+
+// Momentum example
+import { Momentum } from "@dniskav/neuron";
+const net2 = new NetworkN([2, 32, 1], {
+  optimizer: () => new Momentum(0.9),
+});
+```
+
+Optimizers also work in `NetworkLSTM` (applied to the dense layers):
+
+```ts
+import { NetworkLSTM, relu, Adam } from "@dniskav/neuron";
+
+const net = new NetworkLSTM(1, 8, [4, 1], {
+  denseActivation: relu,
+  optimizer: () => new Adam(0.001),
+});
+```
+
+### Loss utilities
+
+```ts
+import { mse, crossEntropy } from "@dniskav/neuron";
+
+const predicted = net.predict([0.5, 0.3]);
+console.log(mse(predicted, [1, 0]));
+console.log(crossEntropy(predicted, [1, 0]));
+```
+
 ### trainWithDeltas — custom loss / physics-based gradients
 
 `NetworkN` also exposes `trainWithDeltas` for when you compute your own output-layer deltas (e.g., from a physics simulation or a custom loss function):
 
 ```ts
-net.trainWithDeltas(inputs, [0.4, -0.2], 0.05);
+import { NetworkN, mseDelta } from "@dniskav/neuron";
+
+const net = new NetworkN([3, 16, 2]);
+const pred = net.predict(inputs);
+
+// Compute deltas manually using a helper, or from any external signal
+const deltas = pred.map((p, i) => mseDelta(p, targets[i]));
+net.trainWithDeltas(inputs, deltas, 0.01);
 ```
 
 ### NetworkLSTM — recurrent network with memory
@@ -143,16 +206,18 @@ The network learns to count steps using its hidden state — no external counter
 
 ## How it works
 
-Every class uses **sigmoid** as its activation function and **gradient descent** to update weights:
+Each class applies an **activation function** to the weighted sum of inputs and uses **gradient descent** to update weights:
 
 ```
-weight += lr × error × input
-bias   += lr × error
+weight += lr × delta × input
+bias   += lr × delta
 ```
 
-`NetworkN` implements full **backpropagation** across all layers, propagating deltas from the output back to the first layer using the chain rule.
+`NetworkN` implements full **backpropagation** across all layers, propagating deltas from the output back to the first layer using the chain rule. The derivative of the chosen activation is applied at each layer.
 
 `NeuronN` uses simplified **Xavier initialization** — weights start in `[-√(1/n), +√(1/n)]` — so gradients flow well from the start of training.
+
+When an **optimizer** is used (e.g., Adam), the raw gradient is passed to the optimizer instead of being applied directly. Each weight maintains its own optimizer state (velocity, moments).
 
 ## Build
 
@@ -164,6 +229,11 @@ npm run dev     # watch mode
 ## For AI agents
 
 If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
+
+## Possible improvements
+
+1. **Support for batches** in training to improve efficiency.
+2. **Improve documentation** with more advanced examples and use cases.
 
 ## License
 

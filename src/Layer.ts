@@ -1,4 +1,8 @@
-import { NeuronN } from "./NeuronN";
+import { NeuronN }                           from "./NeuronN";
+import { Activation, sigmoid }               from "./activations";
+import { OptimizerFactory, SGD }             from "./optimizers";
+
+const defaultOptimizer: OptimizerFactory = () => new SGD();
 
 // ─── LAYER ────────────────────────────────────────────────────────────────────
 // A group of neurons that share the same inputs.
@@ -8,8 +12,16 @@ import { NeuronN } from "./NeuronN";
 export class Layer {
   neurons: NeuronN[];
 
-  constructor(nNeurons: number, nInputs: number) {
-    this.neurons = Array.from({ length: nNeurons }, () => new NeuronN(nInputs));
+  constructor(
+    nNeurons: number,
+    nInputs: number,
+    activation: Activation = sigmoid,
+    optimizerFactory: OptimizerFactory = defaultOptimizer,
+  ) {
+    this.neurons = Array.from(
+      { length: nNeurons },
+      () => new NeuronN(nInputs, activation, optimizerFactory),
+    );
   }
 
   predict(inputs: number[]): number[] {

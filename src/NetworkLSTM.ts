@@ -1,5 +1,18 @@
-import { LSTMLayer }  from "./LSTMLayer";
-import { Layer }       from "./Layer";
+import { LSTMLayer }                         from "./LSTMLayer";
+import { Layer }                             from "./Layer";
+import { Activation, sigmoid }               from "./activations";
+import { OptimizerFactory, SGD }             from "./optimizers";
+
+const defaultOptimizer: OptimizerFactory = () => new SGD();
+
+export interface NetworkLSTMOptions {
+  // Activation for the dense layers that follow the LSTM.
+  // Defaults to sigmoid.
+  denseActivation?: Activation;
+  // Optimizer factory for the dense layers.
+  // Defaults to SGD. (The LSTM gates always use plain SGD internally.)
+  optimizer?: OptimizerFactory;
+}
 
 // ─── LSTM NETWORK ─────────────────────────────────────────────────────────────
 //
@@ -35,16 +48,24 @@ export class NetworkLSTM {
   // Dense layer activations stored per step for backprop
   private _acts: number[][][];  // [T][layer+1][neuron]
 
-  constructor(inputSize: number, hiddenSize: number, denseStructure: number[]) {
+  constructor(
+    inputSize: number,
+    hiddenSize: number,
+    denseStructure: number[],
+    options: NetworkLSTMOptions = {},
+  ) {
     this.inputSize  = inputSize;
     this.hiddenSize = hiddenSize;
 
     this.lstm = new LSTMLayer(inputSize, hiddenSize);
 
+    const activation = options.denseActivation ?? sigmoid;
+    const optimizer  = options.optimizer       ?? defaultOptimizer;
+
     this.denseLayers = [];
     const sizes = [hiddenSize, ...denseStructure];
     for (let i = 1; i < sizes.length; i++) {
-      this.denseLayers.push(new Layer(sizes[i], sizes[i - 1]));
+      this.denseLayers.push(new Layer(sizes[i], sizes[i - 1], activation, optimizer));
     }
 
     this._acts = [];
@@ -90,8 +111,9 @@ export class NetworkLSTM {
       const acts = this._acts[t];
       const pred = acts[acts.length - 1];
 
-      // Output-layer error deltas (sigmoid cross-entropy style)
-      let deltas = pred.map((p, i) => (targets[t][i] - p) * p * (1 - p));
+      // Output-layer deltas — use the output dense layer's activation derivative
+      const outAct = this.denseLayers[this.denseLayers.length - 1].neurons[0].activation;
+      let deltas = pred.map((p, i) => (targets[t][i] - p) * outAct.dfn(p));
 
       // Backprop through dense layers (accumulate, don't apply yet)
       for (let l = this.denseLayers.length - 1; l >= 0; l--) {
@@ -104,10 +126,11 @@ export class NetworkLSTM {
         // h is NOT produced by sigmoid, so we must NOT apply the sigmoid derivative
         // h·(1-h) — doing so would flip the gradient sign for negative h values,
         // causing the network to learn the opposite of the correct direction.
-        // For l > 0, layerIn is a sigmoid output of a dense layer: derivative applies.
+        // For l > 0, layerIn is the output of a dense layer: activation derivative applies.
+        const prevAct = l > 0 ? this.denseLayers[l - 1].neurons[0].activation : null;
         const prevDeltas = layerIn.map((out, j) => {
           const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-          return l === 0 ? errProp : errProp * out * (1 - out);
+          return prevAct ? errProp * prevAct.dfn(out) : errProp;
         });
 
         layer.neurons.forEach((n, k) => {
@@ -122,13 +145,16 @@ export class NetworkLSTM {
       dh_seq.push(deltas);
     }
 
-    // Apply averaged dense layer gradients
+    // Apply averaged dense layer gradients via optimizer
     for (let l = 0; l < this.denseLayers.length; l++) {
       const layer = this.denseLayers[l];
       const grad  = denseGrads[l];
       layer.neurons.forEach((n, k) => {
-        n.weights = n.weights.map((w, j) => w + (lr / T) * grad.dW[k][j]);
-        n.bias   += (lr / T) * grad.db[k];
+        n._update(
+          grad.dW[k].map(g => g / T),
+          grad.db[k] / T,
+          lr,
+        );
       });
     }
 
