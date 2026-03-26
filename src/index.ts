@@ -6,7 +6,7 @@ export { NetworkN }    from "./NetworkN";
 export { NetworkLSTM } from "./NetworkLSTM";
 export { LSTMLayer }   from "./LSTMLayer";
 
-export { sigmoid, relu, tanh, linear } from "./activations";
+export { sigmoid, relu, tanh, linear, leakyRelu, elu, makeLeakyRelu, makeElu } from "./activations";
 export type { Activation }             from "./activations";
 
 export { SGD, Momentum, Adam }         from "./optimizers";

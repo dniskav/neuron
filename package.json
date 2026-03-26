@@ -1,6 +1,6 @@
 {
   "name": "@dniskav/neuron",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Minimal neural network from scratch — neuron, layer, network, backpropagation. No dependencies.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
