@@ -14,6 +14,13 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 | `NetworkN` | Deep network of arbitrary depth. Define your architecture as `[inputs, ...hidden, outputs]`. |
 | `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
 | `NetworkLSTM` | Wraps an `LSTMLayer` + dense layers. Maintains memory across steps within an episode. |
+| `NetworkTransformer` | Full token-classification Transformer: embeddings → N blocks → per-token logits. |
+| `TransformerBlock` | One Transformer block: multi-head attention + FFN + LayerNorm × 2 with residuals. |
+| `MultiHeadAttention` | N parallel attention heads concatenated and projected to `d_model`. |
+| `AttentionHead` | Single scaled dot-product self-attention head (Q / K / V projections + backprop). |
+| `LayerNorm` | Layer normalization with learnable γ / β per feature. |
+| `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers. |
+| `EmbeddingMatrix` | Lookup-table embedding matrix with SGD updates. |
 | `sigmoid` `relu` `tanh` `linear` | Built-in activation functions. |
 | `SGD` `Momentum` `Adam` | Optimizers. Each instance tracks its own state per weight. |
 | `mse` `crossEntropy` | Loss functions for evaluation and logging. |
@@ -229,6 +236,37 @@ npm run dev     # watch mode
 ## For AI agents
 
 If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
+
+### NetworkTransformer — self-attention over sequences
+
+```ts
+import { NetworkTransformer } from "@dniskav/neuron";
+
+// Sudoku solver: 81 cells (tokens), values 0–9, predict digit 1–9 per cell
+const net = new NetworkTransformer(81, {
+  vocabSize: 10,   // digits 0–9
+  d_model:   64,   // embedding / hidden dimension
+  nHeads:    4,    // attention heads (d_k = d_model / nHeads = 16)
+  d_ff:      128,  // FFN hidden size
+  nBlocks:   4,    // number of transformer blocks
+  nClasses:  9,    // output classes per token (digits 1–9)
+});
+
+// tokens: 81 cell values (0 = empty)
+const puzzle   = [5,3,0, 0,7,0, 0,0,0, ...];
+const targets  = [...];   // 81*9 one-hot values
+const mask     = puzzle.map(v => v === 0);   // only train on empty cells
+
+const loss = net.train(puzzle, targets, 0.001, mask);
+const logits = net.predict(puzzle);   // 729 logits (81 × 9)
+
+// Attention weights from all blocks for visualization
+const weights = net.getAttentionWeights();
+// weights[blockIdx][headIdx]  → seqLen × seqLen matrix
+```
+
+Each head in each block learns a different type of relationship (row, column,
+3×3 box). The network figures this out by itself through training.
 
 ## Possible improvements
 

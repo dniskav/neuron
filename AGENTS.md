@@ -17,6 +17,13 @@ This file is intended for AI agents and LLMs working with this codebase.
 | `NetworkN` | `src/NetworkN.ts` | Deep network of arbitrary depth `[inputs, ...hidden, outputs]`. |
 | `LSTMLayer` | `src/LSTMLayer.ts` | Recurrent layer with `h` (hidden) and `c` (cell) state. BPTT. |
 | `NetworkLSTM` | `src/NetworkLSTM.ts` | `LSTMLayer` + dense layers. Episode-level memory. |
+| `WeightMatrix` | `src/MatMul.ts` | 2D weight matrix with per-scalar Adam optimizers. Used by Transformer. |
+| `EmbeddingMatrix` | `src/MatMul.ts` | Lookup-table embedding with SGD updates. |
+| `LayerNorm` | `src/LayerNorm.ts` | Layer normalization with learnable γ / β. Per-position caching for backprop. |
+| `AttentionHead` | `src/AttentionHead.ts` | Single scaled dot-product self-attention head (Q/K/V + full backprop). |
+| `MultiHeadAttention` | `src/MultiHeadAttention.ts` | N parallel heads + output projection Wo. |
+| `TransformerBlock` | `src/TransformerBlock.ts` | MHA + FFN + LayerNorm × 2 + residual connections. Full backprop. |
+| `NetworkTransformer` | `src/NetworkTransformer.ts` | Full token-classification Transformer: embeddings → blocks → per-token logits. |
 
 All classes are exported from `src/index.ts`.
 
@@ -32,11 +39,18 @@ All classes are exported from `src/index.ts`.
 
 ## Key design constraints
 
-- **All activations are sigmoid** (except the LSTM cell gate which uses tanh). There is no softmax, ReLU, or other activation — do not suggest adding them unless the user asks.
-- **No batching** — training is online (one sample at a time) for feedforward classes. `NetworkLSTM` accumulates gradients across an episode but applies them once at the end.
-- **No optimizer** — plain gradient descent only. No Adam, no momentum.
+- **All activations are sigmoid** for `Neuron`/`NeuronN`/`Network`/`NetworkN` by default. The Transformer classes use ReLU (FFN) and softmax (attention). Do not suggest adding activations to the feedforward classes unless the user asks.
+- **No batching** — training is online (one sample at a time). `NetworkLSTM` accumulates gradients across an episode; `NetworkTransformer.train` processes one sequence per call.
 - **No automatic differentiation** — all gradients are hand-coded.
-- **Outputs are always in (0, 1)** due to sigmoid. Do not use this library for regression tasks that require unbounded outputs without modification.
+- **Outputs are unbounded for Transformer** — `NetworkTransformer.predict` returns raw logits; apply softmax externally if probabilities are needed.
+
+## Transformer design decisions
+
+- **Post-norm** (LayerNorm after residual add) — original "Attention Is All You Need" style.
+- **d_k = d_v = d_model / nHeads** — equal capacity split across heads.
+- **Adam for all weight matrices** (`WeightMatrix`), SGD for embedding lookups (`EmbeddingMatrix`).
+- **LayerNorm uses per-position caching** — `resetCache(seqLen)` must be called before each forward pass, then `predictOne(x, pos)` per token. This is handled internally by `TransformerBlock`.
+- **`getAttentionWeights()`** is available on `AttentionHead`, `MultiHeadAttention`, `TransformerBlock`, and `NetworkTransformer` — returns the softmax attention matrix from the last forward pass, useful for visualization.
 
 ## LSTM-specific details
 
@@ -63,7 +77,6 @@ Gradients are averaged over episode length (`lr / T`) to prevent explosion over 
 - No GPU acceleration
 - No automatic differentiation
 - No convolutional layers
-- No attention / transformers
 - No data loaders or batching utilities
 - No loss functions (MSE, cross-entropy) as standalone utilities — loss is implicit in the delta computation inside each class
 
@@ -77,4 +90,4 @@ Output: `dist/index.js` (CJS), `dist/index.mjs` (ESM), `dist/index.d.ts` + `dist
 
 ## Known usage context
 
-This library is used alongside a demo app (`neuron_app`) where RL agents are trained. `NetworkLSTM` was added specifically for a maze-navigation agent that needed within-episode memory to avoid revisiting dead ends.
+This library is used alongside a demo app (`neuron_app`) where RL agents are trained. `NetworkLSTM` was added for a maze-navigation agent that needed within-episode memory. `NetworkTransformer` was added for a Sudoku solver card in the "Razonamiento" section of the app, where the goal is to demonstrate that self-attention learns constraint-aware reasoning (row, column, box relationships) without explicit rule encoding.
