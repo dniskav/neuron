@@ -19,7 +19,7 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 | `MultiHeadAttention` | N parallel attention heads concatenated and projected to `d_model`. |
 | `AttentionHead` | Single scaled dot-product self-attention head (Q / K / V projections + backprop). |
 | `LayerNorm` | Layer normalization with learnable γ / β per feature. |
-| `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers. |
+| `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers. Optional per-element gradient clipping via `update(dW, lr, clipValue)`. |
 | `EmbeddingMatrix` | Lookup-table embedding matrix with SGD updates. |
 | `sigmoid` `relu` `tanh` `linear` | Built-in activation functions. |
 | `SGD` `Momentum` `Adam` | Optimizers. Each instance tracks its own state per weight. |
@@ -258,6 +258,7 @@ const targets  = [...];   // 81*9 one-hot values
 const mask     = puzzle.map(v => v === 0);   // only train on empty cells
 
 const loss = net.train(puzzle, targets, 0.001, mask);
+// loss is cross-entropy (not MSE) — decreases from ~2.2 toward 0 as training progresses
 const logits = net.predict(puzzle);   // 729 logits (81 × 9)
 
 // Attention weights from all blocks for visualization
@@ -270,8 +271,10 @@ Each head in each block learns a different type of relationship (row, column,
 
 ## Possible improvements
 
-1. **Support for batches** in training to improve efficiency.
-2. **Improve documentation** with more advanced examples and use cases.
+1. **Support for batches** in training to improve efficiency and gradient stability.
+2. **Global gradient norm clipping** — `WeightMatrix.update` supports per-element clipping; a utility to clip across all matrices by total norm would be more principled.
+3. **Learning rate warmup** — standard practice for Transformers; ramp LR from 0 to target over the first N steps.
+4. **Pre-norm architecture** — LayerNorm before the residual add (instead of after) is more stable for deep stacks.
 
 ## License
 

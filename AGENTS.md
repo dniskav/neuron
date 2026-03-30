@@ -43,12 +43,14 @@ All classes are exported from `src/index.ts`.
 - **No batching** — training is online (one sample at a time). `NetworkLSTM` accumulates gradients across an episode; `NetworkTransformer.train` processes one sequence per call.
 - **No automatic differentiation** — all gradients are hand-coded.
 - **Outputs are unbounded for Transformer** — `NetworkTransformer.predict` returns raw logits; apply softmax externally if probabilities are needed.
+- **`NetworkTransformer.train` uses cross-entropy + softmax** (not MSE). The combined softmax+CE gradient at the logit level is `prob_c − target_c`, which is naturally bounded and ~10× smaller than the equivalent MSE gradient. This prevents gradient explosion without requiring gradient clipping.
 
 ## Transformer design decisions
 
 - **Post-norm** (LayerNorm after residual add) — original "Attention Is All You Need" style.
 - **d_k = d_v = d_model / nHeads** — equal capacity split across heads.
 - **Adam for all weight matrices** (`WeightMatrix`), SGD for embedding lookups (`EmbeddingMatrix`).
+- **`WeightMatrix.update(dW, lr, clipValue?)` accepts an optional per-element gradient clip.** Pass e.g. `1.0` to clip gradients to `[-1, 1]` before the Adam step. Default is `Infinity` (no clipping) — existing callers are unaffected.
 - **LayerNorm uses per-position caching** — `resetCache(seqLen)` must be called before each forward pass, then `predictOne(x, pos)` per token. This is handled internally by `TransformerBlock`.
 - **`getAttentionWeights()`** is available on `AttentionHead`, `MultiHeadAttention`, `TransformerBlock`, and `NetworkTransformer` — returns the softmax attention matrix from the last forward pass, useful for visualization.
 

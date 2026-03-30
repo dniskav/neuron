@@ -81,10 +81,17 @@ export class WeightMatrix {
   }
 
   // Apply pre-computed gradient (same shape as W).
-  update(dW: number[][], lr: number): void {
+  // clipValue: optional per-element gradient clipping before the Adam step.
+  // Prevents gradient explosion in deep networks (e.g. Transformers without
+  // global norm clipping). Pass e.g. 1.0 to clip to [-1, 1].
+  update(dW: number[][], lr: number, clipValue = Infinity): void {
     for (let i = 0; i < this.W.length; i++)
-      for (let j = 0; j < this.W[0].length; j++)
-        this.W[i][j] = this.opts[i][j].step(this.W[i][j], dW[i][j], lr)
+      for (let j = 0; j < this.W[0].length; j++) {
+        const g = isFinite(clipValue)
+          ? Math.max(-clipValue, Math.min(clipValue, dW[i][j]))
+          : dW[i][j]
+        this.W[i][j] = this.opts[i][j].step(this.W[i][j], g, lr)
+      }
   }
 }
 

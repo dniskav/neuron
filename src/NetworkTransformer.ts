@@ -26,7 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TransformerBlock }  from './TransformerBlock'
-import { EmbeddingMatrix, WeightMatrix } from './MatMul'
+import { EmbeddingMatrix, WeightMatrix, softmax } from './MatMul'
 import { Adam }              from './optimizers'
 
 export interface NetworkTransformerOptions {
@@ -114,20 +114,32 @@ export class NetworkTransformer {
       )
     )
 
-    // ── Loss (MSE over masked positions) ─────────────────────────────────────
+    // ── Loss (cross-entropy + softmax over masked positions) ─────────────────
+    //
+    // Why CE instead of MSE?
+    //   MSE gradient on raw logits: 2*(logit − target) ≈ ±2 in magnitude.
+    //   CE gradient (softmax already applied):  prob − target  ≈ ±0.1–0.9.
+    //   CE is also the principled loss for multi-class classification and
+    //   avoids the saturation / gradient-explosion problems of MSE on logits.
+    //
+    // Combined softmax + CE gradient at the logit level:
+    //   dL/dz_c = prob_c − target_c   (Jacobian of softmax × CE derivative)
+    //
     let loss  = 0
     let count = 0
     const dLogits: number[][] = Array.from({ length: this.seqLen }, (_, i) => {
       if (mask && !mask[i]) return new Array(this.nClasses).fill(0)
       count++
-      return Array.from({ length: this.nClasses }, (_, c) => {
+      const probs = softmax(logits[i])
+      // CE loss: −Σ t_c * log(p_c)  (only non-zero for the correct class in one-hot)
+      for (let c = 0; c < this.nClasses; c++) {
         const t = targets[i * this.nClasses + c]
-        const p = logits[i][c]
-        loss += (p - t) ** 2
-        return 2 * (p - t)   // MSE gradient (sign: loss = (p-t)², dL/dp = 2(p-t))
-      })
+        if (t > 0) loss -= Math.log(Math.max(probs[c], 1e-7))
+      }
+      // CE+softmax combined gradient: prob_c − target_c
+      return probs.map((p, c) => p - targets[i * this.nClasses + c])
     })
-    if (count > 0) loss /= count * this.nClasses
+    if (count > 0) loss /= count
 
     // ── Backward ─────────────────────────────────────────────────────────────
 
