@@ -24,6 +24,7 @@ This file is intended for AI agents and LLMs working with this codebase.
 | `MultiHeadAttention` | `src/MultiHeadAttention.ts` | N parallel heads + output projection Wo. |
 | `TransformerBlock` | `src/TransformerBlock.ts` | MHA + FFN + LayerNorm × 2 + residual connections. Full backprop. |
 | `NetworkTransformer` | `src/NetworkTransformer.ts` | Full token-classification Transformer: embeddings → blocks → per-token logits. |
+| `NetworkTransformerRL` | `src/NetworkTransformerRL.ts` | Transformer for RL: continuous input projection → causal TransformerBlocks → Q-values via weighted pooling. |
 
 All classes are exported from `src/index.ts`.
 
@@ -36,6 +37,7 @@ All classes are exported from `src/index.ts`.
 - **NetworkN** — use this for most feedforward tasks. Flexible depth and width.
 - **LSTMLayer** — use when you need raw access to the recurrent layer (e.g. custom architectures).
 - **NetworkLSTM** — use when inputs arrive as a sequence and the network must remember previous steps within the same episode (e.g. RL agents, time series).
+- **NetworkTransformerRL** — use when the agent needs to attend to specific past moments (not just a compressed hidden state). Takes a sliding window of the last N states as input. Better than `NetworkLSTM` when long-range credit assignment matters; heavier computationally.
 
 ## Key design constraints
 
@@ -92,4 +94,4 @@ Output: `dist/index.js` (CJS), `dist/index.mjs` (ESM), `dist/index.d.ts` + `dist
 
 ## Known usage context
 
-This library is used alongside a demo app (`neuron_app`) where RL agents are trained. `NetworkLSTM` was added for a maze-navigation agent that needed within-episode memory. `NetworkTransformer` was added for a Sudoku solver card in the "Razonamiento" section of the app, where the goal is to demonstrate that self-attention learns constraint-aware reasoning (row, column, box relationships) without explicit rule encoding.
+This library is used alongside a demo app (`neuron_app`) where RL agents are trained. `NetworkLSTM` was added for a maze-navigation agent that needed within-episode memory. `NetworkTransformer` was added for a Sudoku solver card in the "Razonamiento" section of the app, where the goal is to demonstrate that self-attention learns constraint-aware reasoning (row, column, box relationships) without explicit rule encoding. `NetworkTransformerRL` was added as an alternative RL backbone for maze/navigation agents that benefit from attending to specific past steps rather than relying solely on compressed LSTM state.

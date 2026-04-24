@@ -15,6 +15,7 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 | `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
 | `NetworkLSTM` | Wraps an `LSTMLayer` + dense layers. Maintains memory across steps within an episode. |
 | `NetworkTransformer` | Full token-classification Transformer: embeddings → N blocks → per-token logits. |
+| `NetworkTransformerRL` | Transformer for RL agents: continuous input projection → causal attention → Q-values. Remembers the last N steps. |
 | `TransformerBlock` | One Transformer block: multi-head attention + FFN + LayerNorm × 2 with residuals. |
 | `MultiHeadAttention` | N parallel attention heads concatenated and projected to `d_model`. |
 | `AttentionHead` | Single scaled dot-product self-attention head (Q / K / V projections + backprop). |
@@ -268,6 +269,43 @@ const weights = net.getAttentionWeights();
 
 Each head in each block learns a different type of relationship (row, column,
 3×3 box). The network figures this out by itself through training.
+
+### NetworkTransformerRL — Transformer for reinforcement learning
+
+`NetworkTransformerRL` uses causal self-attention over a sliding window of past states to output Q-values. Unlike `NetworkLSTM`, the agent attends to specific past moments rather than compressing them into a single hidden vector.
+
+```ts
+import { NetworkTransformerRL } from "@dniskav/neuron";
+
+// Agent sees the last 8 steps, each step is a 7-value sensor vector → 4 actions
+const net = new NetworkTransformerRL(8, 7, {
+  d_model:  32,
+  nHeads:   2,
+  d_ff:     64,
+  nBlocks:  2,
+  nActions: 4,
+});
+
+// Each step: feed the last N states as a sequence
+const sequence = getLastNStates();      // number[][] — shape: [8, 7]
+const qValues  = net.predict(sequence); // number[4]
+
+// Q-learning update: train toward Bellman target
+const action  = argmax(qValues);
+const reward  = env.step(action);
+const targets = qValues.slice();
+targets[action] = reward + 0.99 * Math.max(...net.predict(nextSequence));
+
+const loss = net.train(sequence, targets, 0.001);
+```
+
+The last step in the sequence gets 2× pooling weight — the most recent state contributes more to the decision.
+
+```ts
+// Inspect what the agent is attending to
+const attnWeights = net.getAttentionWeights();
+// attnWeights[blockIdx][headIdx] → seqLen × seqLen matrix
+```
 
 ## Possible improvements
 
