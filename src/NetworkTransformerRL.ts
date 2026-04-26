@@ -166,6 +166,55 @@ export class NetworkTransformerRL {
     return this.blocks.map(b => b.getAttentionWeights())
   }
 
+  // ── Serialization ──────────────────────────────────────────────────────────
+
+  getWeights() {
+    return {
+      inputProj: this.inputProj.W.map(r => [...r]),
+      blocks: this.blocks.map(b => ({
+        attn: {
+          heads: b.attn.heads.map(h => ({
+            Wq: h.Wq.W.map(r => [...r]),
+            Wk: h.Wk.W.map(r => [...r]),
+            Wv: h.Wv.W.map(r => [...r]),
+          })),
+          Wo: b.attn.Wo.W.map(r => [...r]),
+        },
+        norm1: { gamma: [...b.norm1.gamma], beta: [...b.norm1.beta] },
+        norm2: { gamma: [...b.norm2.gamma], beta: [...b.norm2.beta] },
+        ff1: b.ff1.W.map(r => [...r]),
+        ff2: b.ff2.W.map(r => [...r]),
+        b1: [...b.b1],
+        b2: [...b.b2],
+      })),
+      outputProj: this.outputProj.W.map(r => [...r]),
+      outputBias: [...this.outputBias],
+    }
+  }
+
+  setWeights(data: ReturnType<NetworkTransformerRL['getWeights']>): void {
+    data.inputProj.forEach((row, i) => { this.inputProj.W[i] = [...row] })
+    data.blocks.forEach((bd, b) => {
+      const blk = this.blocks[b]
+      bd.attn.heads.forEach((hd, h) => {
+        blk.attn.heads[h].Wq.W = hd.Wq.map(r => [...r])
+        blk.attn.heads[h].Wk.W = hd.Wk.map(r => [...r])
+        blk.attn.heads[h].Wv.W = hd.Wv.map(r => [...r])
+      })
+      blk.attn.Wo.W = bd.attn.Wo.map(r => [...r])
+      blk.norm1.gamma = [...bd.norm1.gamma]
+      blk.norm1.beta  = [...bd.norm1.beta]
+      blk.norm2.gamma = [...bd.norm2.gamma]
+      blk.norm2.beta  = [...bd.norm2.beta]
+      blk.ff1.W = bd.ff1.map(r => [...r])
+      blk.ff2.W = bd.ff2.map(r => [...r])
+      blk.b1 = [...bd.b1]
+      blk.b2 = [...bd.b2]
+    })
+    this.outputProj.W = data.outputProj.map(r => [...r])
+    this.outputBias   = [...data.outputBias]
+  }
+
   // ── Internal ────────────────────────────────────────────────────────────────
 
   private _forward(sequence: number[][]): number[][] {
