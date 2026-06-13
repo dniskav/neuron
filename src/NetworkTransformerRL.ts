@@ -29,6 +29,7 @@ export interface NetworkTransformerRLOptions {
   d_ff?:     number    // dimensión feed-forward (default: 64)
   nBlocks?:  number    // bloques transformer (default: 2)
   nActions?: number    // acciones posibles (default: 2)
+  pooling?:  'avg' | 'max' | 'last' | 'weighted'  // pooling strategy (default: 'weighted')
 }
 
 export class NetworkTransformerRL {
@@ -51,6 +52,12 @@ export class NetworkTransformerRL {
   // Forward caches para backprop
   private _projected: number[][] | null = null
 
+  // Pooling config
+  private _pooling: 'avg' | 'max' | 'last' | 'weighted'
+
+  // For max pooling backward: argmax per dimension across all positions
+  private _argmax: number[] | null = null
+
   constructor(seqLen: number, inputDim: number, options: NetworkTransformerRLOptions = {}) {
     const {
       d_model  = 32,
@@ -58,12 +65,14 @@ export class NetworkTransformerRL {
       d_ff     = 64,
       nBlocks  = 2,
       nActions = 2,
+      pooling  = 'weighted',
     } = options
 
     this.seqLen   = seqLen
     this.inputDim = inputDim
     this.d_model  = d_model
     this.nActions = nActions
+    this._pooling = pooling
 
     // Proyección de entrada
     this.inputProj = new WeightMatrix(d_model, inputDim)
@@ -138,14 +147,8 @@ export class NetworkTransformerRL {
       this.outputBias[c] = this.outBiasOpts[c].step(this.outputBias[c], dBout[c], lr)
 
     // Backprop through transformer blocks
-    // dH: gradient w.r.t. pooled output, distributed using the same weights as _pool()
-    const poolWeights = Array.from({ length: this.seqLen }, (_, i) =>
-      i === this.seqLen - 1 ? 2 : 1
-    )
-    const poolWeightSum = poolWeights.reduce((a, b) => a + b, 0)
-    let dH: number[][] = Array.from({ length: this.seqLen }, (_, i) =>
-      dPooled.map(v => v * poolWeights[i] / poolWeightSum)
-    )
+    // dH: gradient w.r.t. pooled output, distributed using the same pooling as _pool()
+    let dH: number[][] = this._distributePoolGradient(dPooled)
 
     for (let b = this.blocks.length - 1; b >= 0; b--)
       dH = this.blocks[b].backward(dH, lr)
@@ -196,7 +199,7 @@ export class NetworkTransformerRL {
     for (let i = 0; i < this.outputBias.length; i++) this.outputBias[i] = weights[idx++];
   }
 
-  getWeights() {
+  getWeightsStructured() {
     return {
       inputProj: this.inputProj.W.map(r => [...r]),
       blocks: this.blocks.map(b => ({
@@ -220,7 +223,7 @@ export class NetworkTransformerRL {
     }
   }
 
-  setWeights(data: ReturnType<NetworkTransformerRL['getWeights']>): void {
+  setWeightsStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): void {
     data.inputProj.forEach((row, i) => { this.inputProj.W[i] = [...row] })
     data.blocks.forEach((bd, b) => {
       const blk = this.blocks[b]
@@ -243,6 +246,18 @@ export class NetworkTransformerRL {
     this.outputBias   = [...data.outputBias]
   }
 
+  // ── Serializable interface (flat array) ────────────────────────────────────
+  // These satisfy the Serializable interface from ModelSaver, which requires
+  // getWeights(): number[] and setWeights(weights: number[]): void.
+
+  getWeights(): number[] {
+    return this.getWeightsFlat()
+  }
+
+  setWeights(weights: number[]): void {
+    this.setWeightsFlat(weights)
+  }
+
   // ── Internal ────────────────────────────────────────────────────────────────
 
   private _forward(sequence: number[][]): number[][] {
@@ -262,6 +277,50 @@ export class NetworkTransformerRL {
   }
 
   private _pool(h: number[][]): number[] {
+    switch (this._pooling) {
+      case 'avg':
+        return this._poolAvg(h)
+      case 'max':
+        return this._poolMax(h)
+      case 'last':
+        return this._poolLast(h)
+      case 'weighted':
+      default:
+        return this._poolWeighted(h)
+    }
+  }
+
+  private _poolAvg(h: number[][]): number[] {
+    const n = h.length
+    return Array.from({ length: this.d_model }, (_, m) => {
+      let sum = 0
+      for (let i = 0; i < n; i++)
+        sum += h[i][m]
+      return sum / n
+    })
+  }
+
+  private _poolMax(h: number[][]): number[] {
+    // Element-wise max over all positions, tracking argmax for backward
+    this._argmax = new Array(this.d_model).fill(0)
+    return Array.from({ length: this.d_model }, (_, m) => {
+      let maxVal = -Infinity
+      for (let i = 0; i < h.length; i++) {
+        if (h[i][m] > maxVal) {
+          maxVal = h[i][m]
+          this._argmax![m] = i
+        }
+      }
+      return maxVal
+    })
+  }
+
+  private _poolLast(h: number[][]): number[] {
+    // Return last position only
+    return [...h[h.length - 1]]
+  }
+
+  private _poolWeighted(h: number[][]): number[] {
     // Pooling con peso: último paso tiene 2x peso
     const weights = Array.from({ length: this.seqLen }, (_, i) =>
       i === this.seqLen - 1 ? 2 : 1
@@ -274,5 +333,54 @@ export class NetworkTransformerRL {
         sum += weights[i] * h[i][m]
       return sum / totalWeight
     })
+  }
+
+  /** Returns the current pooling type for inspection. */
+  getPoolingType(): string {
+    return this._pooling
+  }
+
+  // ── Helper: distribute pooled gradient back to each position ────────────────
+  // Must match the same distribution as _pool() used during forward.
+
+  private _distributePoolGradient(dPooled: number[]): number[][] {
+    switch (this._pooling) {
+      case 'avg': {
+        const n = this.seqLen
+        return Array.from({ length: n }, () =>
+          dPooled.map(v => v / n)
+        )
+      }
+      case 'max': {
+        // Route gradient only to the argmax position per dimension
+        if (!this._argmax) {
+          // Fallback: if no argmax (shouldn't happen), distribute uniformly
+          const n = this.seqLen
+          return Array.from({ length: n }, () =>
+            dPooled.map(v => v / n)
+          )
+        }
+        const argmax = this._argmax
+        return Array.from({ length: this.seqLen }, (_, i) =>
+          dPooled.map((v, m) => i === argmax[m] ? v : 0)
+        )
+      }
+      case 'last': {
+        // Send all gradient to the last position
+        return Array.from({ length: this.seqLen }, (_, i) =>
+          i === this.seqLen - 1 ? [...dPooled] : new Array(this.d_model).fill(0)
+        )
+      }
+      case 'weighted':
+      default: {
+        const weights = Array.from({ length: this.seqLen }, (_, i) =>
+          i === this.seqLen - 1 ? 2 : 1
+        )
+        const totalWeight = weights.reduce((a, b) => a + b, 0)
+        return Array.from({ length: this.seqLen }, (_, i) =>
+          dPooled.map(v => v * weights[i] / totalWeight)
+        )
+      }
+    }
   }
 }

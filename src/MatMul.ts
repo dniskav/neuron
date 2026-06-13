@@ -141,4 +141,20 @@ export class EmbeddingMatrix {
     for (let m = 0; m < this.W[idx].length; m++)
       this.W[idx][m] += lr * grad[m]
   }
+
+  // ── Serializable interface ─────────────────────────────────────────────────
+  // Flattened order: row 0, row 1, ... row (vocabSize-1)
+
+  getWeights(): number[] {
+    const w: number[] = []
+    for (const row of this.W) w.push(...row)
+    return w
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0
+    for (let i = 0; i < this.W.length; i++)
+      for (let j = 0; j < this.W[i].length; j++)
+        this.W[i][j] = weights[idx++]
+  }
 }

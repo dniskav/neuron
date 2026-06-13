@@ -16,6 +16,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
@@ -68,9 +70,19 @@ export class GRULayer {
   updateGate: Gate;
   newGate: Gate;
 
+  // Per-scalar optimizers — one per weight and bias
+  private _optimizers: {
+    resetW:  Optimizer[][];
+    resetB:  Optimizer[];
+    updateW: Optimizer[][];
+    updateB: Optimizer[];
+    newW:    Optimizer[][];
+    newB:    Optimizer[];
+  };
+
   private _traj: Step[] = [];
 
-  constructor(inputSize: number, hiddenSize: number) {
+  constructor(inputSize: number, hiddenSize: number, optimizerFactory: OptimizerFactory = () => new SGD()) {
     if (inputSize <= 0 || hiddenSize <= 0) {
       throw new Error(`GRULayer: inputSize and hiddenSize must be positive, got ${inputSize} and ${hiddenSize}`);
     }
@@ -81,6 +93,23 @@ export class GRULayer {
     this.resetGate = new Gate(inputSize, hiddenSize);
     this.updateGate = new Gate(inputSize, hiddenSize);
     this.newGate = new Gate(inputSize, hiddenSize);
+
+    // Initialize per-scalar optimizers
+    const combSize = inputSize + hiddenSize;
+    this._optimizers = {
+      resetW:  Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      resetB:  Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      updateW: Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      updateB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      newW:    Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      newB:    Array.from({ length: hiddenSize }, () => optimizerFactory()),
+    };
   }
 
   reset(): void {
@@ -186,17 +215,17 @@ export class GRULayer {
       }
     }
 
-    // Apply averaged gradient update
+    // Apply averaged gradient update via per-scalar optimizers
     const scale = lr / T;
     for (let k = 0; k < hSize; k++) {
       for (let j = 0; j < combSize; j++) {
-        this.resetGate.W[k][j] += scale * dWr[k][j];
-        this.updateGate.W[k][j] += scale * dWz[k][j];
-        this.newGate.W[k][j] += scale * dWn[k][j];
+        this.resetGate.W[k][j]  = this._optimizers.resetW[k][j].step(this.resetGate.W[k][j], dWr[k][j], scale);
+        this.updateGate.W[k][j] = this._optimizers.updateW[k][j].step(this.updateGate.W[k][j], dWz[k][j], scale);
+        this.newGate.W[k][j]    = this._optimizers.newW[k][j].step(this.newGate.W[k][j], dWn[k][j], scale);
       }
-      this.resetGate.b[k] += scale * dbr[k];
-      this.updateGate.b[k] += scale * dbz[k];
-      this.newGate.b[k] += scale * dbn[k];
+      this.resetGate.b[k]  = this._optimizers.resetB[k].step(this.resetGate.b[k], dbr[k], scale);
+      this.updateGate.b[k] = this._optimizers.updateB[k].step(this.updateGate.b[k], dbz[k], scale);
+      this.newGate.b[k]    = this._optimizers.newB[k].step(this.newGate.b[k], dbn[k], scale);
     }
 
     this._traj = [];

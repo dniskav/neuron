@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { GRULayer } from '../src/GRU'
+import { Adam } from '../src/optimizers'
 
 describe('GRULayer', () => {
   it('creates with correct dimensions', () => {
@@ -83,5 +84,41 @@ describe('GRULayer', () => {
     gru.setWeights(w)
     const w2 = gru.getWeights()
     expect(w2.resetGate.W).toEqual(w.resetGate.W)
+  })
+
+  it('works with Adam optimizer', () => {
+    const gru = new GRULayer(2, 3, () => new Adam())
+    gru.predict([1, 0])
+    gru.predict([0, 1])
+
+    const wBefore = gru.getWeightsFlat()
+    const dh_seq = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    gru.backprop(dh_seq, 0.01)
+
+    const wAfter = gru.getWeightsFlat()
+    const changed = wBefore.some((v, i) => v !== wAfter[i])
+    expect(changed).toBe(true)
+    expect(wAfter.every(v => isFinite(v))).toBe(true)
+  })
+
+  it('Adam optimizer produces different updates than SGD', () => {
+    const gruSGD = new GRULayer(2, 3)
+    const gruAdam = new GRULayer(2, 3, () => new Adam())
+
+    // Copy weights so they start the same
+    gruSGD.setWeightsFlat(gruAdam.getWeightsFlat())
+
+    // Run identical forward passes
+    gruSGD.predict([1, 0]); gruSGD.predict([0, 1])
+    gruAdam.predict([1, 0]); gruAdam.predict([0, 1])
+
+    const dh_seq = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    gruSGD.backprop(dh_seq, 0.01)
+    gruAdam.backprop(dh_seq, 0.01)
+
+    const wSGD = gruSGD.getWeightsFlat()
+    const wAdam = gruAdam.getWeightsFlat()
+    const differs = wSGD.some((v, i) => v !== wAdam[i])
+    expect(differs).toBe(true)
   })
 })

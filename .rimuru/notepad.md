@@ -67,7 +67,7 @@ Every predict/train should validate array lengths, number types, etc.
 - NetworkTransformerRL uses sliding window of last N states.
 
 ## Implementation Status
-✅ ALL COMPLETED — Sat Jun 13 2026
+✅ v0.2.4 COMPLETED — Sat Jun 13 2026
 
 ### Verified
 - `npm run build` passes (CJS + ESM + .d.ts)
@@ -110,3 +110,37 @@ Every predict/train should validate array lengths, number types, etc.
 - src/MatMul.ts — added dimension validation
 - src/index.ts — exported all new modules
 - package.json — added vitest devDependency, test scripts
+
+## v0.2.5 Plan
+
+### Overview
+Comprehensive upgrade with 12 improvements across 4 phases.
+See full plan: /Users/daniel/Desktop/projects/neuron/NEURON_v0.2.5_PLAN.md
+
+### Phase 1 — Foundation (Optimizer Unification)
+- P1.1: LSTMLayer → per-scalar OptimizerFactory
+- P1.2: GRULayer → per-scalar OptimizerFactory
+- P1.3: Conv1D → per-scalar OptimizerFactory (breaking: hardcoded lr=0.001 removed)
+- P1.4: EmbeddingMatrix already Serializable (no change needed)
+- P1.5: NetworkTransformerRL → flat getWeights/setWeights aliases
+
+### Phase 2 — Trainer Enhancements
+- P2.1: Weight decay (L2 regularization) — applied before train()
+- P2.2: Early stopping via external validation set
+- P2.3: Classification metrics (accuracy, precision, recall, F1)
+- P2.4: Gradient clipping via ClipOptimizer wrapper
+
+### Phase 3 — NetworkN + Conv1D
+- P3.1: Residual connections (skip connections when sizes match)
+- P3.2: Dropout integration (predict(training) parameter)
+- P3.3: Conv1D multi-channel (inputChannels parameter)
+
+### Phase 4 — Remaining Features
+- P4.1: Configurable pooling in TransformerRL (avg, max, last, weighted)
+- P4.2: DataLoader validation split
+- P4.3: Gradient checks (finite differences) in test suite
+
+### Dependencies
+- Phase 2 depends on Phase 1 (P2.4 ClipOptimizer wraps per-scalar optimizers)
+- Phase 3 is independent (except Conv1D uses optimizers from Phase 1)
+- Phase 4 is independent (except gradient checks verify Phase 1 changes)

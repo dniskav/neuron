@@ -16,7 +16,7 @@ export { WeightMatrix, EmbeddingMatrix, matMul, transpose, softmax, softmaxBackw
 export { sigmoid, relu, tanh, linear, leakyRelu, elu, makeLeakyRelu, makeElu } from "./activations";
 export type { Activation }             from "./activations";
 
-export { SGD, Momentum, Adam }         from "./optimizers";
+export { SGD, Momentum, Adam, ClipOptimizer, ClippedOptimizerFactory } from "./optimizers";
 export type { Optimizer, OptimizerFactory } from "./optimizers";
 
 export { mse, crossEntropy, mseDelta, crossEntropyDelta, crossEntropyDeltaRaw } from "./losses";
@@ -35,7 +35,7 @@ export { Conv1D }      from "./Conv1D";
 
 // New utilities
 export { Trainer }     from "./Trainer";
-export type { TrainerOptions, TrainDataset, TrainableNetwork } from "./Trainer";
+export type { TrainerOptions, TrainDataset, TrainableNetwork, TrainableNetworkWithWeights, TrainMetrics } from "./Trainer";
 export { DataLoader }  from "./DataLoader";
 export type { DataPair } from "./DataLoader";
 export { LRScheduler } from "./LRScheduler";

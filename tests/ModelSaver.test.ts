@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ModelSaver } from '../src/ModelSaver'
 import { NetworkN } from '../src/NetworkN'
+import { EmbeddingMatrix } from '../src/MatMul'
 
 describe('ModelSaver', () => {
   it('toJSON returns valid JSON', () => {
@@ -44,5 +45,33 @@ describe('ModelSaver', () => {
     ModelSaver.loadFromFile(net, 'model.json', readFn)
 
     expect(net.getWeights()).toEqual(origWeights)
+  })
+
+  it('works with EmbeddingMatrix (Serializable interface)', () => {
+    const emb = new EmbeddingMatrix(5, 3)
+    const origWeights = emb.getWeights()
+    expect(Array.isArray(origWeights)).toBe(true)
+    expect(origWeights.length).toBe(15) // 5 vocab * 3 dims
+
+    // Roundtrip via ModelSaver
+    const json = ModelSaver.toJSON(emb)
+    emb.setWeights(origWeights.map(v => v + 1))
+    ModelSaver.fromJSON(emb, json)
+    expect(emb.getWeights()).toEqual(origWeights)
+  })
+
+  it('works with EmbeddingMatrix via saveToFile/loadFromFile', () => {
+    const emb = new EmbeddingMatrix(5, 3)
+    const origWeights = emb.getWeights()
+
+    let stored = ''
+    const writeFn = (_path: string, data: string) => { stored = data }
+    const readFn = (_path: string) => stored
+
+    ModelSaver.saveToFile(emb, 'emb.json', writeFn)
+    emb.setWeights(origWeights.map(v => v + 1))
+    ModelSaver.loadFromFile(emb, 'emb.json', readFn)
+
+    expect(emb.getWeights()).toEqual(origWeights)
   })
 })

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { LSTMLayer } from '../src/LSTMLayer'
+import { Adam } from '../src/optimizers'
 
 describe('LSTMLayer', () => {
   it('creates with correct dimensions', () => {
@@ -81,5 +82,50 @@ describe('LSTMLayer', () => {
     // Weights should have changed
     const changed = wBefore.some((v, i) => v !== wAfter[i])
     expect(changed).toBe(true)
+  })
+
+  it('works with Adam optimizer', () => {
+    const lstm = new LSTMLayer(2, 3, () => new Adam())
+    // Run a few steps
+    lstm.predict([1, 0])
+    lstm.predict([0, 1])
+
+    const wBefore = lstm.getWeightsFlat()
+
+    // Backprop with dummy gradients
+    const dh_seq = [
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ]
+    lstm.backprop(dh_seq, 0.01)
+
+    const wAfter = lstm.getWeightsFlat()
+    // Weights should have changed with Adam
+    const changed = wBefore.some((v, i) => v !== wAfter[i])
+    expect(changed).toBe(true)
+    // After multiple steps, Adam should produce weight changes
+    expect(wAfter.every(v => isFinite(v))).toBe(true)
+  })
+
+  it('Adam optimizer produces different updates than SGD', () => {
+    const lstmSGD = new LSTMLayer(2, 3)
+    const lstmAdam = new LSTMLayer(2, 3, () => new Adam())
+
+    // Copy Adam's weights to SGD so they start the same
+    lstmSGD.setWeightsFlat(lstmAdam.getWeightsFlat())
+
+    // Run identical forward passes
+    lstmSGD.predict([1, 0]); lstmSGD.predict([0, 1])
+    lstmAdam.predict([1, 0]); lstmAdam.predict([0, 1])
+
+    const dh_seq = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    lstmSGD.backprop(dh_seq, 0.01)
+    lstmAdam.backprop(dh_seq, 0.01)
+
+    const wSGD = lstmSGD.getWeightsFlat()
+    const wAdam = lstmAdam.getWeightsFlat()
+    // Adam and SGD should produce different weight updates
+    const differs = wSGD.some((v, i) => v !== wAdam[i])
+    expect(differs).toBe(true)
   })
 })

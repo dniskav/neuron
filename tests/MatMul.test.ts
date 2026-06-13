@@ -114,4 +114,20 @@ describe('EmbeddingMatrix', () => {
     const updated = E.get(2)
     expect(updated[0]).not.toBe(orig[0])
   })
+
+  it('getWeights returns flat array', () => {
+    const E = new EmbeddingMatrix(5, 3)
+    const flat = E.getWeights()
+    expect(flat.length).toBe(15) // 5 * 3
+    expect(Array.isArray(flat)).toBe(true)
+    expect(flat.every(v => isFinite(v))).toBe(true)
+  })
+
+  it('setWeights and getWeights roundtrip', () => {
+    const E = new EmbeddingMatrix(5, 3)
+    const orig = E.getWeights()
+    const modified = orig.map(v => v + 0.1)
+    E.setWeights(modified)
+    expect(E.getWeights()).toEqual(modified)
+  })
 })

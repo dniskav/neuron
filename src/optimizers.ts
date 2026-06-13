@@ -44,6 +44,30 @@ export class Momentum implements Optimizer {
   }
 }
 
+// ── ClipOptimizer ──────────────────────────────────────────────────────────────
+// Wraps any optimizer and clips the gradient before forwarding.
+// Useful for gradient explosion prevention in recurrent/transformer networks.
+//   step: g_clipped = clamp(g, -clipValue, +clipValue), then delegate.
+export class ClipOptimizer implements Optimizer {
+  constructor(
+    readonly inner: Optimizer,
+    readonly clipValue: number,
+  ) {}
+
+  step(weight: number, gradient: number, lr: number): number {
+    const clipped = Math.max(-this.clipValue, Math.min(this.clipValue, gradient));
+    return this.inner.step(weight, clipped, lr);
+  }
+}
+
+// Factory that wraps an inner factory so each created optimizer is clipped.
+export function ClippedOptimizerFactory(
+  innerFactory: OptimizerFactory,
+  clipValue: number,
+): OptimizerFactory {
+  return () => new ClipOptimizer(innerFactory(), clipValue);
+}
+
 // ── Adam ──────────────────────────────────────────────────────────────────────
 // Adaptive moment estimation. Maintains per-parameter first and second moment
 // estimates with bias correction. Works well across a wide range of problems.

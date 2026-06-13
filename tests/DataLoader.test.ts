@@ -86,4 +86,133 @@ describe('DataLoader', () => {
     const data = [[1], [2]]
     expect(() => DataLoader.sequences(data, 3)).toThrow()
   })
+
+  // ── Validation split tests ─────────────────────────────────────────────
+
+  it('validationSplit: 0.2 returns 80% training, 20% validation', () => {
+    // Use 10 samples: 8 training, 2 validation
+    const n = 10
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i * 10])
+
+    const loader = new DataLoader({ inputs, targets }, 1, 0.2)
+
+    // Training count: 80% of 10 = 8
+    expect(loader.length).toBe(8)
+    // Validation count: 20% of 10 = 2
+    expect(loader.validationLength).toBe(2)
+  })
+
+  it('total samples equals original size (train + val)', () => {
+    const n = 15
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i])
+
+    const loader = new DataLoader({ inputs, targets }, 2, 0.2)
+
+    // Training + validation = total
+    const trainSamples = loader.length
+    const valSamples = loader.validationLength
+    expect(trainSamples + valSamples).toBe(n)
+  })
+
+  it('getValidationData returns correct validation samples', () => {
+    const n = 10
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i * 10])
+
+    const loader = new DataLoader({ inputs, targets }, 2, 0.2)
+
+    const valData = loader.getValidationData()
+    expect(valData.inputs.length).toBe(loader.validationLength)
+    expect(valData.targets.length).toBe(loader.validationLength)
+
+    // All validation samples should be from the original dataset
+    for (const inp of valData.inputs) {
+      const val = inp[0]
+      expect(val).toBeGreaterThanOrEqual(0)
+      expect(val).toBeLessThan(n)
+    }
+  })
+
+  it('validation samples are not in training set', () => {
+    const n = 10
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i])
+
+    const loader = new DataLoader({ inputs, targets }, 1, 0.2)
+
+    // Collect all training samples
+    const trainValues = new Set<number>()
+    while (loader.hasNext()) {
+      const batch = loader.next()
+      for (const inp of batch.inputs) {
+        trainValues.add(inp[0])
+      }
+    }
+
+    // Collect all validation samples
+    const valData = loader.getValidationData()
+    const valValues = new Set(valData.inputs.map(inp => inp[0]))
+
+    // No overlap
+    for (const v of valValues) {
+      expect(trainValues.has(v)).toBe(false)
+    }
+  })
+
+  it('shuffle only affects training data, not validation', () => {
+    const n = 10
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i])
+
+    const loader = new DataLoader({ inputs, targets }, 1, 0.2)
+
+    // Get validation data before shuffle
+    const valBefore = loader.getValidationData()
+    const valSetBefore = new Set(valBefore.inputs.map(inp => inp[0]))
+
+    // Shuffle training
+    loader.shuffle()
+
+    // Validation should be unchanged (same indices, different order doesn't matter for set)
+    const valAfter = loader.getValidationData()
+    const valSetAfter = new Set(valAfter.inputs.map(inp => inp[0]))
+
+    expect(valSetBefore).toEqual(valSetAfter)
+  })
+
+  it('validationSplit of 0 is same as not specifying', () => {
+    const n = 5
+    const inputs = Array.from({ length: n }, (_, i) => [i])
+    const targets = Array.from({ length: n }, (_, i) => [i])
+
+    const loader0 = new DataLoader({ inputs, targets }, 1, 0)
+    const loaderDefault = new DataLoader({ inputs, targets }, 1)
+
+    expect(loader0.length).toBe(n)
+    expect(loaderDefault.length).toBe(n)
+    expect(loader0.validationLength).toBe(0)
+    expect(loaderDefault.validationLength).toBe(0)
+
+    const val0 = loader0.getValidationData()
+    const valDef = loaderDefault.getValidationData()
+    expect(val0.inputs.length).toBe(0)
+    expect(valDef.inputs.length).toBe(0)
+  })
+
+  it('sequences accepts validationSplit', () => {
+    const data = [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]]
+    const loader = DataLoader.sequences(data, 2, 0.3)
+    // 10 data points, seqLen=2 → 8 windows. 30% val = 2.4 → round to 2.
+    expect(loader.length).toBeGreaterThan(0)
+    expect(loader.validationLength).toBeGreaterThan(0)
+    expect(loader.length + loader.validationLength).toBe(8)
+  })
+
+  it('invalid validationSplit throws', () => {
+    expect(() => new DataLoader({ inputs: [[1]], targets: [[1]] }, 1, -0.1)).toThrow()
+    expect(() => new DataLoader({ inputs: [[1]], targets: [[1]] }, 1, 1.0)).toThrow()
+    expect(() => new DataLoader({ inputs: [[1]], targets: [[1]] }, 1, 1.5)).toThrow()
+  })
 })

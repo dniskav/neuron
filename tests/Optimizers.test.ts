@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SGD, Momentum, Adam } from '../src/optimizers'
+import { SGD, Momentum, Adam, ClipOptimizer, ClippedOptimizerFactory } from '../src/optimizers'
 
 describe('SGD', () => {
   it('updates weight with gradient * lr', () => {
@@ -57,5 +57,54 @@ describe('Adam', () => {
     // With zero gradient, weight should stay approximately the same
     // (Adam has bias correction but with zero gradient, m and v stay near zero)
     expect(w).toBeCloseTo(1.0, 5)
+  })
+})
+
+describe('ClipOptimizer', () => {
+  it('clips gradient to specified value', () => {
+    // A gradient of 100 should be clipped to 1.0
+    const clip = new ClipOptimizer(new SGD(), 1.0)
+    // With SGD: w + lr * clipped_gradient = 1.0 + 0.01 * 1.0 = 1.01
+    const w = clip.step(1.0, 100.0, 0.01)
+    expect(w).toBeCloseTo(1.01, 10)
+  })
+
+  it('does not clip gradient within bounds', () => {
+    const clip = new ClipOptimizer(new SGD(), 1.0)
+    const w = clip.step(1.0, 0.5, 0.01)
+    expect(w).toBeCloseTo(1.005, 10)
+  })
+
+  it('clips negative gradients', () => {
+    const clip = new ClipOptimizer(new SGD(), 1.0)
+    const w = clip.step(1.0, -100.0, 0.01)
+    expect(w).toBeCloseTo(0.99, 10)
+  })
+
+  it('works with Adam inner optimizer', () => {
+    const clip = new ClipOptimizer(new Adam(), 1.0)
+    const w = clip.step(1.0, 5.0, 0.01)
+    expect(typeof w).toBe('number')
+    expect(isFinite(w)).toBe(true)
+    // Should have changed (but less than without clipping)
+    expect(w).not.toBe(1.0)
+  })
+
+  it('ClippedOptimizerFactory creates clipping optimizers', () => {
+    const factory = ClippedOptimizerFactory(() => new SGD(), 0.5)
+    const opt = factory()
+    expect(opt instanceof ClipOptimizer).toBe(true)
+
+    // Gradient of 10 should be clipped to 0.5
+    const w = opt.step(1.0, 10.0, 0.01)
+    expect(w).toBeCloseTo(1.005, 10)
+  })
+
+  it('ClippedOptimizerFactory works with Adam', () => {
+    const factory = ClippedOptimizerFactory(() => new Adam(), 1.0)
+    const opt = factory()
+    expect(opt instanceof ClipOptimizer).toBe(true)
+    const w = opt.step(1.0, 3.0, 0.01)
+    expect(isFinite(w)).toBe(true)
   })
 })

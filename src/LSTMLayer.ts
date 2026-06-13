@@ -22,6 +22,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
@@ -82,9 +84,21 @@ export class LSTMLayer {
   cellGate:   Gate;
   outputGate: Gate;
 
+  // Per-scalar optimizers — one per weight and bias
+  private _optimizers: {
+    forgetW: Optimizer[][];
+    forgetB: Optimizer[];
+    inputW:  Optimizer[][];
+    inputB:  Optimizer[];
+    cellW:   Optimizer[][];
+    cellB:   Optimizer[];
+    outputW: Optimizer[][];
+    outputB: Optimizer[];
+  };
+
   private _traj: Step[] = [];
 
-  constructor(inputSize: number, hiddenSize: number) {
+  constructor(inputSize: number, hiddenSize: number, optimizerFactory: OptimizerFactory = () => new SGD()) {
     if (inputSize <= 0 || hiddenSize <= 0) {
       throw new Error(`LSTMLayer: inputSize and hiddenSize must be positive, got ${inputSize} and ${hiddenSize}`);
     }
@@ -97,6 +111,27 @@ export class LSTMLayer {
     this.inputGate  = new Gate(inputSize, hiddenSize);
     this.cellGate   = new Gate(inputSize, hiddenSize);
     this.outputGate = new Gate(inputSize, hiddenSize);
+
+    // Initialize per-scalar optimizers
+    const combSize = inputSize + hiddenSize;
+    this._optimizers = {
+      forgetW: Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      forgetB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      inputW:  Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      inputB:  Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      cellW:   Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      cellB:   Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      outputW: Array.from({ length: hiddenSize }, () =>
+        Array.from({ length: combSize }, () => optimizerFactory())
+      ),
+      outputB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
+    };
   }
 
   // ── Reset state and trajectory (call at episode start) ────────────────────
@@ -211,19 +246,19 @@ export class LSTMLayer {
       dc_next = dc.map((d, k) => d * s.zf_a[k]);
     }
 
-    // Apply averaged gradient update
+    // Apply averaged gradient update via per-scalar optimizers
     const scale = lr / T;
     for (let k = 0; k < hSize; k++) {
       for (let j = 0; j < combSize; j++) {
-        this.forgetGate.W[k][j] += scale * dWf[k][j];
-        this.inputGate.W[k][j]  += scale * dWi[k][j];
-        this.cellGate.W[k][j]   += scale * dWg[k][j];
-        this.outputGate.W[k][j] += scale * dWo[k][j];
+        this.forgetGate.W[k][j] = this._optimizers.forgetW[k][j].step(this.forgetGate.W[k][j], dWf[k][j], scale);
+        this.inputGate.W[k][j]  = this._optimizers.inputW[k][j].step(this.inputGate.W[k][j], dWi[k][j], scale);
+        this.cellGate.W[k][j]   = this._optimizers.cellW[k][j].step(this.cellGate.W[k][j], dWg[k][j], scale);
+        this.outputGate.W[k][j] = this._optimizers.outputW[k][j].step(this.outputGate.W[k][j], dWo[k][j], scale);
       }
-      this.forgetGate.b[k] += scale * dbf[k];
-      this.inputGate.b[k]  += scale * dbi[k];
-      this.cellGate.b[k]   += scale * dbg[k];
-      this.outputGate.b[k] += scale * dbo[k];
+      this.forgetGate.b[k] = this._optimizers.forgetB[k].step(this.forgetGate.b[k], dbf[k], scale);
+      this.inputGate.b[k]  = this._optimizers.inputB[k].step(this.inputGate.b[k], dbi[k], scale);
+      this.cellGate.b[k]   = this._optimizers.cellB[k].step(this.cellGate.b[k], dbg[k], scale);
+      this.outputGate.b[k] = this._optimizers.outputB[k].step(this.outputGate.b[k], dbo[k], scale);
     }
 
     this._traj = [];
