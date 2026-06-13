@@ -4,3 +4,4 @@ app/
 *.js
 *.d.ts
 *.js.map
+.rimuru/
