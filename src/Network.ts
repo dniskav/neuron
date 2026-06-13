@@ -1,4 +1,5 @@
 import { Layer } from "./Layer";
+import { validateArray, validateNumber } from "./Validation";
 
 // ─── NETWORK (2 layers) ───────────────────────────────────────────────────────
 // Neural network with one hidden layer and one output layer.
@@ -14,12 +15,16 @@ export class Network {
   }
 
   predict(inputs: number[]): number {
+    validateArray(inputs, this.hiddenLayer.neurons[0].weights.length, 'Network.predict');
     const hiddenOut = this.hiddenLayer.predict(inputs);
     return this.outputLayer.predict(hiddenOut)[0];
   }
 
   // Trains on a single example. Returns the squared error.
   train(inputs: number[], target: number, lr: number): number {
+    validateArray(inputs, this.hiddenLayer.neurons[0].weights.length, 'Network.train');
+    validateNumber(target, 'Network.train');
+    validateNumber(lr, 'Network.train');
     const hiddenOut  = this.hiddenLayer.predict(inputs);
     const prediction = this.outputLayer.predict(hiddenOut)[0];
 
@@ -27,20 +32,51 @@ export class Network {
     const outputDelta = outputError * prediction * (1 - prediction);
 
     const outputNeuron = this.outputLayer.neurons[0];
+
+    // Compute hidden deltas using ORIGINAL output weights (before update)
+    const hiddenDeltas = this.hiddenLayer.neurons.map((neuron, i) => {
+      const hiddenOut_i  = hiddenOut[i];
+      const hiddenError  = outputDelta * outputNeuron.weights[i];
+      return hiddenError * hiddenOut_i * (1 - hiddenOut_i);
+    });
+
+    // Update hidden layer weights first
+    this.hiddenLayer.neurons.forEach((neuron, i) => {
+      neuron.weights = neuron.weights.map((w, j) => w + lr * hiddenDeltas[i] * inputs[j]);
+      neuron.bias += lr * hiddenDeltas[i];
+    });
+
+    // Update output layer weights
     outputNeuron.weights = outputNeuron.weights.map(
       (w, i) => w + lr * outputDelta * hiddenOut[i]
     );
     outputNeuron.bias += lr * outputDelta;
 
-    // Backpropagate error to hidden layer
-    this.hiddenLayer.neurons.forEach((neuron, i) => {
-      const hiddenOut_i  = hiddenOut[i];
-      const hiddenError  = outputDelta * outputNeuron.weights[i];
-      const hiddenDelta  = hiddenError * hiddenOut_i * (1 - hiddenOut_i);
-      neuron.weights = neuron.weights.map((w, j) => w + lr * hiddenDelta * inputs[j]);
-      neuron.bias += lr * hiddenDelta;
-    });
-
     return outputError * outputError;
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: hidden layer (all neurons: weights then bias), then output layer.
+  getWeights(): number[] {
+    const w: number[] = [];
+    for (const n of this.hiddenLayer.neurons) {
+      w.push(...n.weights, n.bias);
+    }
+    for (const n of this.outputLayer.neurons) {
+      w.push(...n.weights, n.bias);
+    }
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    for (const n of this.hiddenLayer.neurons) {
+      for (let j = 0; j < n.weights.length; j++) n.weights[j] = weights[idx++];
+      n.bias = weights[idx++];
+    }
+    for (const n of this.outputLayer.neurons) {
+      for (let j = 0; j < n.weights.length; j++) n.weights[j] = weights[idx++];
+      n.bias = weights[idx++];
+    }
   }
 }

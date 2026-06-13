@@ -85,6 +85,9 @@ export class LSTMLayer {
   private _traj: Step[] = [];
 
   constructor(inputSize: number, hiddenSize: number) {
+    if (inputSize <= 0 || hiddenSize <= 0) {
+      throw new Error(`LSTMLayer: inputSize and hiddenSize must be positive, got ${inputSize} and ${hiddenSize}`);
+    }
     this.inputSize = inputSize;
     this.hSize     = hiddenSize;
     this.h = new Array(hiddenSize).fill(0);
@@ -105,6 +108,9 @@ export class LSTMLayer {
 
   // ── Forward pass ──────────────────────────────────────────────────────────
   predict(inputs: number[]): number[] {
+    if (!Array.isArray(inputs) || inputs.length !== this.inputSize) {
+      throw new Error(`LSTMLayer.predict: expected array of length ${this.inputSize}, got ${inputs?.length}`);
+    }
     const combined = [...inputs, ...this.h];
     const c_prev   = [...this.c];
 
@@ -242,5 +248,36 @@ export class LSTMLayer {
     this.cellGate.b   = data.cellGate.b;
     this.outputGate.W = data.outputGate.W;
     this.outputGate.b = data.outputGate.b;
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: forgetGate (W, b), inputGate (W, b), cellGate (W, b), outputGate (W, b).
+  getWeightsFlat(): number[] {
+    const w: number[] = [];
+    for (const row of this.forgetGate.W) w.push(...row);
+    w.push(...this.forgetGate.b);
+    for (const row of this.inputGate.W) w.push(...row);
+    w.push(...this.inputGate.b);
+    for (const row of this.cellGate.W) w.push(...row);
+    w.push(...this.cellGate.b);
+    for (const row of this.outputGate.W) w.push(...row);
+    w.push(...this.outputGate.b);
+    return w;
+  }
+
+  setWeightsFlat(weights: number[]): void {
+    let idx = 0;
+    for (let i = 0; i < this.forgetGate.W.length; i++)
+      for (let j = 0; j < this.forgetGate.W[i].length; j++) this.forgetGate.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.forgetGate.b.length; i++) this.forgetGate.b[i] = weights[idx++];
+    for (let i = 0; i < this.inputGate.W.length; i++)
+      for (let j = 0; j < this.inputGate.W[i].length; j++) this.inputGate.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.inputGate.b.length; i++) this.inputGate.b[i] = weights[idx++];
+    for (let i = 0; i < this.cellGate.W.length; i++)
+      for (let j = 0; j < this.cellGate.W[i].length; j++) this.cellGate.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.cellGate.b.length; i++) this.cellGate.b[i] = weights[idx++];
+    for (let i = 0; i < this.outputGate.W.length; i++)
+      for (let j = 0; j < this.outputGate.W[i].length; j++) this.outputGate.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.outputGate.b.length; i++) this.outputGate.b[i] = weights[idx++];
   }
 }

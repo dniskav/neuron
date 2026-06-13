@@ -1,5 +1,6 @@
 import { Activation, sigmoid }          from "./activations";
 import { Optimizer, OptimizerFactory, SGD } from "./optimizers";
+import { validateArray }                from "./Validation";
 
 const defaultOptimizer: OptimizerFactory = () => new SGD();
 
@@ -32,6 +33,7 @@ export class NeuronN {
   }
 
   predict(inputs: number[]): number {
+    validateArray(inputs, this.weights.length, 'NeuronN.predict');
     const sum = inputs.reduce((acc, e, i) => acc + e * this.weights[i], this.bias);
     return this.activation.fn(sum);
   }
@@ -46,6 +48,7 @@ export class NeuronN {
   train(inputs: number[], target: number, lr: number): void {
     const prediction = this.predict(inputs);
     const error = target - prediction;
-    this._update(inputs.map(inp => error * inp), error, lr);
+    const grad = error * this.activation.dfn(prediction);
+    this._update(inputs.map(inp => grad * inp), grad, lr);
   }
 }

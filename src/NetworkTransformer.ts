@@ -185,6 +185,34 @@ export class NetworkTransformer {
     return this.blocks.map(b => b.getAttentionWeights())
   }
 
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: tokenEmb, posEmb, block0, block1, ..., blockN, outputProj, outputBias.
+  getWeights(): number[] {
+    const w: number[] = [];
+    for (const row of this.tokenEmb.W) w.push(...row);
+    for (const row of this.posEmb.W) w.push(...row);
+    for (const block of this.blocks) w.push(...block.getWeights());
+    for (const row of this.outputProj.W) w.push(...row);
+    w.push(...this.outputBias);
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    for (let i = 0; i < this.tokenEmb.W.length; i++)
+      for (let j = 0; j < this.tokenEmb.W[i].length; j++) this.tokenEmb.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.posEmb.W.length; i++)
+      for (let j = 0; j < this.posEmb.W[i].length; j++) this.posEmb.W[i][j] = weights[idx++];
+    for (const block of this.blocks) {
+      const blockLen = block.getWeights().length;
+      block.setWeights(weights.slice(idx, idx + blockLen));
+      idx += blockLen;
+    }
+    for (let i = 0; i < this.outputProj.W.length; i++)
+      for (let j = 0; j < this.outputProj.W[i].length; j++) this.outputProj.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.outputBias.length; i++) this.outputBias[i] = weights[idx++];
+  }
+
   // ── Internal ──────────────────────────────────────────────────────────────
   // Shared embedding + block forward pass.
 

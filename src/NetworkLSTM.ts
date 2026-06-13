@@ -2,6 +2,7 @@ import { LSTMLayer }                         from "./LSTMLayer";
 import { Layer }                             from "./Layer";
 import { Activation, sigmoid }               from "./activations";
 import { OptimizerFactory, SGD }             from "./optimizers";
+import { validateArray }                     from "./Validation";
 
 const defaultOptimizer: OptimizerFactory = () => new SGD();
 
@@ -79,6 +80,7 @@ export class NetworkLSTM {
 
   // ── Forward pass ──────────────────────────────────────────────────────────
   predict(inputs: number[]): number[] {
+    validateArray(inputs, this.inputSize, 'NetworkLSTM.predict');
     const h = this.lstm.predict(inputs);  // advances LSTM state, stores step
 
     // Forward through dense layers, recording activations for backprop
@@ -181,5 +183,31 @@ export class NetworkLSTM {
         this.denseLayers[l].neurons[k].bias    = neuronData.bias;
       });
     });
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: LSTM (flat), then dense layer 0, dense layer 1, ..., dense layer N.
+  getWeightsFlat(): number[] {
+    const w: number[] = [];
+    w.push(...this.lstm.getWeightsFlat());
+    for (const layer of this.denseLayers) {
+      for (const n of layer.neurons) {
+        w.push(...n.weights, n.bias);
+      }
+    }
+    return w;
+  }
+
+  setWeightsFlat(weights: number[]): void {
+    let idx = 0;
+    const lstmLen = this.lstm.getWeightsFlat().length;
+    this.lstm.setWeightsFlat(weights.slice(idx, idx + lstmLen));
+    idx += lstmLen;
+    for (const layer of this.denseLayers) {
+      for (const n of layer.neurons) {
+        for (let j = 0; j < n.weights.length; j++) n.weights[j] = weights[idx++];
+        n.bias = weights[idx++];
+      }
+    }
   }
 }

@@ -25,6 +25,7 @@ export class MultiHeadAttention {
   readonly nHeads:  number
   readonly d_model: number
   readonly d_k:     number   // d_k = d_v = d_model / nHeads
+  readonly causal:  boolean
 
   heads: AttentionHead[]
   Wo:   WeightMatrix   // d_model × (nHeads * d_k)
@@ -32,13 +33,14 @@ export class MultiHeadAttention {
   // Cached for backward
   private _concat: number[][] | null = null   // seqLen × (nHeads * d_k)
 
-  constructor(d_model: number, nHeads: number) {
+  constructor(d_model: number, nHeads: number, causal = false) {
     this.nHeads  = nHeads
     this.d_model = d_model
     this.d_k     = Math.floor(d_model / nHeads)
+    this.causal  = causal
 
     this.heads = Array.from({ length: nHeads }, () =>
-      new AttentionHead(d_model, this.d_k, this.d_k)
+      new AttentionHead(d_model, this.d_k, this.d_k, causal)
     )
     this.Wo = new WeightMatrix(d_model, nHeads * this.d_k)
   }
@@ -109,5 +111,32 @@ export class MultiHeadAttention {
   // Returns: nHeads × seqLen × seqLen
   getAttentionWeights(): (number[][] | null)[] {
     return this.heads.map(h => h.getAttentionWeights())
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: head0 (Wq, Wk, Wv), head1, ..., headN, then Wo.
+  getWeights(): number[] {
+    const w: number[] = [];
+    for (const head of this.heads) {
+      for (const row of head.Wq.W) w.push(...row);
+      for (const row of head.Wk.W) w.push(...row);
+      for (const row of head.Wv.W) w.push(...row);
+    }
+    for (const row of this.Wo.W) w.push(...row);
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    for (const head of this.heads) {
+      for (let i = 0; i < head.Wq.W.length; i++)
+        for (let j = 0; j < head.Wq.W[i].length; j++) head.Wq.W[i][j] = weights[idx++];
+      for (let i = 0; i < head.Wk.W.length; i++)
+        for (let j = 0; j < head.Wk.W[i].length; j++) head.Wk.W[i][j] = weights[idx++];
+      for (let i = 0; i < head.Wv.W.length; i++)
+        for (let j = 0; j < head.Wv.W[i].length; j++) head.Wv.W[i][j] = weights[idx++];
+    }
+    for (let i = 0; i < this.Wo.W.length; i++)
+      for (let j = 0; j < this.Wo.W[i].length; j++) this.Wo.W[i][j] = weights[idx++];
   }
 }

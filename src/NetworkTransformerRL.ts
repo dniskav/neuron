@@ -68,9 +68,9 @@ export class NetworkTransformerRL {
     // Proyección de entrada
     this.inputProj = new WeightMatrix(d_model, inputDim)
 
-    // Bloques transformer
+    // Bloques transformer (causal: each step only sees the past)
     this.blocks = Array.from({ length: nBlocks }, () =>
-      new TransformerBlock({ d_model, nHeads, d_ff })
+      new TransformerBlock({ d_model, nHeads, d_ff, causal: true })
     )
 
     // Proyección de salida
@@ -138,9 +138,13 @@ export class NetworkTransformerRL {
       this.outputBias[c] = this.outBiasOpts[c].step(this.outputBias[c], dBout[c], lr)
 
     // Backprop through transformer blocks
-    // dH: gradient w.r.t. pooled output, broadcast to seqLen positions
+    // dH: gradient w.r.t. pooled output, distributed using the same weights as _pool()
+    const poolWeights = Array.from({ length: this.seqLen }, (_, i) =>
+      i === this.seqLen - 1 ? 2 : 1
+    )
+    const poolWeightSum = poolWeights.reduce((a, b) => a + b, 0)
     let dH: number[][] = Array.from({ length: this.seqLen }, (_, i) =>
-      dPooled.map(v => v / this.seqLen)  // Gradiente dividido entre posiciones
+      dPooled.map(v => v * poolWeights[i] / poolWeightSum)
     )
 
     for (let b = this.blocks.length - 1; b >= 0; b--)
@@ -166,7 +170,31 @@ export class NetworkTransformerRL {
     return this.blocks.map(b => b.getAttentionWeights())
   }
 
-  // ── Serialization ──────────────────────────────────────────────────────────
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: inputProj, block0, block1, ..., blockN, outputProj, outputBias.
+
+  getWeightsFlat(): number[] {
+    const w: number[] = [];
+    for (const row of this.inputProj.W) w.push(...row);
+    for (const block of this.blocks) w.push(...block.getWeights());
+    for (const row of this.outputProj.W) w.push(...row);
+    w.push(...this.outputBias);
+    return w;
+  }
+
+  setWeightsFlat(weights: number[]): void {
+    let idx = 0;
+    for (let i = 0; i < this.inputProj.W.length; i++)
+      for (let j = 0; j < this.inputProj.W[i].length; j++) this.inputProj.W[i][j] = weights[idx++];
+    for (const block of this.blocks) {
+      const blockLen = block.getWeights().length;
+      block.setWeights(weights.slice(idx, idx + blockLen));
+      idx += blockLen;
+    }
+    for (let i = 0; i < this.outputProj.W.length; i++)
+      for (let j = 0; j < this.outputProj.W[i].length; j++) this.outputProj.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.outputBias.length; i++) this.outputBias[i] = weights[idx++];
+  }
 
   getWeights() {
     return {

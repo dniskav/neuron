@@ -1,6 +1,7 @@
 import { Layer }                            from "./Layer";
 import { Activation, sigmoid }              from "./activations";
 import { OptimizerFactory, SGD }            from "./optimizers";
+import { validateArray }                    from "./Validation";
 
 const defaultOptimizer: OptimizerFactory = () => new SGD();
 
@@ -32,19 +33,35 @@ export class NetworkN {
     const activations = options.activations ?? Array.from({ length: nLayers }, () => sigmoid);
     const optimizer   = options.optimizer   ?? defaultOptimizer;
 
+    if (activations.length !== nLayers) {
+      throw new Error(`Expected ${nLayers} activations, got ${activations.length}`);
+    }
+
     this.layers = [];
     for (let i = 1; i < structure.length; i++) {
       this.layers.push(new Layer(structure[i], structure[i - 1], activations[i - 1], optimizer));
     }
+
+    // Validate all output neurons share the same activation
+    const outputLayer = this.layers[this.layers.length - 1];
+    const outputActivation = outputLayer.neurons[0].activation;
+    for (let i = 1; i < outputLayer.neurons.length; i++) {
+      if (outputLayer.neurons[i].activation !== outputActivation) {
+        throw new Error('All output neurons must share the same activation function');
+      }
+    }
   }
 
   predict(inputs: number[]): number[] {
+    validateArray(inputs, this.structure[0], 'NetworkN.predict');
     return this.layers.reduce((acc, layer) => layer.predict(acc), inputs);
   }
 
   // Generalized backpropagation across L layers.
   // Returns the mean squared error for the example.
   train(inputs: number[], targets: number[], lr: number): number {
+    validateArray(inputs, this.structure[0], 'NetworkN.train');
+    validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
     // Forward pass — store activations at every layer
     const act: number[][] = [inputs];
     for (const layer of this.layers) act.push(layer.predict(act[act.length - 1]));
@@ -98,6 +115,28 @@ export class NetworkN {
         n._update(layerIn.map(inp => deltas[k] * inp), deltas[k], lr);
       });
       deltas = prevDeltas;
+    }
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: layer 0 (all neurons), layer 1, ..., layer N.
+  getWeights(): number[] {
+    const w: number[] = [];
+    for (const layer of this.layers) {
+      for (const n of layer.neurons) {
+        w.push(...n.weights, n.bias);
+      }
+    }
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    for (const layer of this.layers) {
+      for (const n of layer.neurons) {
+        for (let j = 0; j < n.weights.length; j++) n.weights[j] = weights[idx++];
+        n.bias = weights[idx++];
+      }
     }
   }
 }

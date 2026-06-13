@@ -14,6 +14,11 @@ export function matMul(A: number[][], B: number[][]): number[][] {
   const rows  = A.length
   const inner = B.length
   const cols  = B[0].length
+
+  if (A[0].length !== B.length) {
+    throw new Error(`Incompatible dimensions for matrix multiplication: A cols (${A[0].length}) !== B rows (${B.length})`)
+  }
+
   const C = Array.from({ length: rows }, () => new Array(cols).fill(0))
   for (let i = 0; i < rows; i++)
     for (let k = 0; k < inner; k++) {
@@ -92,6 +97,19 @@ export class WeightMatrix {
           : dW[i][j]
         this.W[i][j] = this.opts[i][j].step(this.W[i][j], g, lr)
       }
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  getWeights(): number[] {
+    const w: number[] = [];
+    for (const row of this.W) w.push(...row);
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    for (let i = 0; i < this.W.length; i++)
+      for (let j = 0; j < this.W[i].length; j++) this.W[i][j] = weights[idx++];
   }
 }
 

@@ -85,4 +85,16 @@ export class LayerNorm {
 
     return D.map((d, i) => (d - mD - x_norm[i] * mDxn) / std)
   }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: gamma, beta.
+  getWeights(): number[] {
+    return [...this.gamma, ...this.beta];
+  }
+
+  setWeights(weights: number[]): void {
+    const dim = this.gamma.length;
+    for (let i = 0; i < dim; i++) this.gamma[i] = weights[i];
+    for (let i = 0; i < dim; i++) this.beta[i] = weights[dim + i];
+  }
 }

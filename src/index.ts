@@ -26,3 +26,21 @@ export type { NetworkLSTMOptions }        from "./NetworkLSTM";
 export type { NetworkTransformerOptions }    from "./NetworkTransformer";
 export type { NetworkTransformerRLOptions }  from "./NetworkTransformerRL";
 export type { TransformerBlockOptions }      from "./TransformerBlock";
+
+// New layers
+export { Dropout }     from "./Dropout";
+export { GRULayer }    from "./GRU";
+export { BatchNorm }   from "./BatchNorm";
+export { Conv1D }      from "./Conv1D";
+
+// New utilities
+export { Trainer }     from "./Trainer";
+export type { TrainerOptions, TrainDataset, TrainableNetwork } from "./Trainer";
+export { DataLoader }  from "./DataLoader";
+export type { DataPair } from "./DataLoader";
+export { LRScheduler } from "./LRScheduler";
+export { ModelSaver }  from "./ModelSaver";
+export type { Serializable } from "./ModelSaver";
+
+// Validation
+export { validateArray, validateArrayMinLength, validate2DArray, validateNumber } from "./Validation";

@@ -28,6 +28,7 @@ export interface TransformerBlockOptions {
   d_model: number
   nHeads:  number
   d_ff:    number
+  causal?: boolean
 }
 
 export class TransformerBlock {
@@ -54,11 +55,11 @@ export class TransformerBlock {
   private _ff1Out:  number[][] | null = null   // post-ReLU
   private _ff2Out:  number[][] | null = null
 
-  constructor({ d_model, nHeads, d_ff }: TransformerBlockOptions) {
+  constructor({ d_model, nHeads, d_ff, causal = false }: TransformerBlockOptions) {
     this.d_model = d_model
     this.d_ff    = d_ff
 
-    this.attn  = new MultiHeadAttention(d_model, nHeads)
+    this.attn  = new MultiHeadAttention(d_model, nHeads, causal)
     this.norm1 = new LayerNorm(d_model)
     this.norm2 = new LayerNorm(d_model)
 
@@ -208,5 +209,36 @@ export class TransformerBlock {
   // Attention weights from the last predict() — for visualization.
   getAttentionWeights(): (number[][] | null)[] {
     return this.attn.getAttentionWeights()
+  }
+
+  // ── Flat weight serialization ─────────────────────────────────────────────
+  // Order: attn (MHA), norm1 (gamma, beta), ff1, b1, ff2, b2, norm2 (gamma, beta).
+  getWeights(): number[] {
+    const w: number[] = [];
+    w.push(...this.attn.getWeights());
+    w.push(...this.norm1.gamma, ...this.norm1.beta);
+    for (const row of this.ff1.W) w.push(...row);
+    w.push(...this.b1);
+    for (const row of this.ff2.W) w.push(...row);
+    w.push(...this.b2);
+    w.push(...this.norm2.gamma, ...this.norm2.beta);
+    return w;
+  }
+
+  setWeights(weights: number[]): void {
+    let idx = 0;
+    const attnLen = this.attn.getWeights().length;
+    this.attn.setWeights(weights.slice(idx, idx + attnLen));
+    idx += attnLen;
+    for (let i = 0; i < this.norm1.gamma.length; i++) this.norm1.gamma[i] = weights[idx++];
+    for (let i = 0; i < this.norm1.beta.length; i++) this.norm1.beta[i] = weights[idx++];
+    for (let i = 0; i < this.ff1.W.length; i++)
+      for (let j = 0; j < this.ff1.W[i].length; j++) this.ff1.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.b1.length; i++) this.b1[i] = weights[idx++];
+    for (let i = 0; i < this.ff2.W.length; i++)
+      for (let j = 0; j < this.ff2.W[i].length; j++) this.ff2.W[i][j] = weights[idx++];
+    for (let i = 0; i < this.b2.length; i++) this.b2[i] = weights[idx++];
+    for (let i = 0; i < this.norm2.gamma.length; i++) this.norm2.gamma[i] = weights[idx++];
+    for (let i = 0; i < this.norm2.beta.length; i++) this.norm2.beta[i] = weights[idx++];
   }
 }
