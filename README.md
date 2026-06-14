@@ -678,7 +678,41 @@ npm test        # run test suite
 
 If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
 
+## Roadmap (nice to have)
+
+These features are intentionally out of scope for the current didactic focus but are documented here for reference.
+
+### ONNX export
+
+Export trained models to the [ONNX](https://onnx.ai/) interchange format so they can be run in Python (onnxruntime), browsers (onnxruntime-web), mobile, or production inference servers.
+
+**What it would require:**
+- Serialize each layer's weights + op type to the protobuf ONNX schema (`onnx.proto`).
+- Map neuron layer types to standard ONNX operators (`Gemm`, `MatMul`, `LSTM`, `Conv`, `Relu`, `Softmax`, …).
+- Handle dynamic batch dimensions in the graph IR.
+- Ship a build step that compiles the `.proto` definitions (adds a dev dependency on `protobufjs` or `onnx-proto`).
+
+**Why it's skipped:** It adds a non-trivial build pipeline and a dependency. The library has zero runtime dependencies by design. ONNX export makes sense once you outgrow the library for training — at that point PyTorch/TF are the right tools.
+
+### WebGL / WASM backend
+
+Replace the current pure-JS number arrays with a GPU-accelerated or WASM-compiled backend so larger models (e.g. ViT, GPT-2 scale) become feasible in the browser.
+
+**What it would require:**
+- Abstract `Tensor` type that backends implement (JS arrays, WebGL textures, WASM memory).
+- WebGL backend: encode matrix ops as fragment-shader programs (similar to `gpu.js` or `tfjs-backend-webgl`).
+- WASM backend: compile a BLAS-like C/Rust core (e.g. `wasm-bindgen` + `ndarray`) and bind it to TypeScript.
+- Every layer's `forward` / `backward` rewritten against the `Tensor` API.
+
+**Why it's skipped:** The goal is to make the math readable. GPU shader code and WASM bindings are implementation details that obscure the algorithms. The library intentionally trades performance for pedagogical clarity.
+
+---
+
 ## Changelog
+
+### v0.3.2
+- **New — NLP:** `Tokenizer` (char / word / whitespace modes, special tokens PAD/UNK/BOS/EOS, one-hot encoding, `fit` / `encode` / `decode` / `encodeBatch`, JSON serialization)
+- **New — Data:** `DatasetLoader` (parse CSV and JSON into `DataPair`; auto one-hot encoding for string columns; returns `categoricalMaps` for decoding predictions)
 
 ### v0.3.1
 - **New — Embeddings:** `Word2Vec` (Skip-gram + CBOW, full-softmax, cosine similarity, analogies), `TSNE` (binary-search perplexity, Student-t kernel, KL gradient, early exaggeration, seeded PRNG), `PositionalEncoding` (sinusoidal, Vaswani et al.), `LearnedPositionalEncoding` (trainable), `ContrastiveLearning` (NT-Xent, SimCLR encoder + projection head), `Augmenter` (noise, feature dropout, `makePair`)

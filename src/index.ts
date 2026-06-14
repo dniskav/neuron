@@ -38,6 +38,8 @@ export { Trainer }     from "./Trainer";
 export type { TrainerOptions, TrainDataset, TrainableNetwork, TrainableNetworkWithWeights, TrainMetrics } from "./Trainer";
 export { DataLoader }  from "./DataLoader";
 export type { DataPair } from "./DataLoader";
+export { DatasetLoader } from "./DatasetLoader";
+export type { DatasetLoaderOptions, DatasetLoaderResult, CategoricalMap } from "./DatasetLoader";
 export { LRScheduler } from "./LRScheduler";
 export { ModelSaver }  from "./ModelSaver";
 export type { Serializable } from "./ModelSaver";
@@ -104,6 +106,10 @@ export {
   printConfusionMatrix,
   classificationReport,
 } from "./Metrics";
+
+// Tokenizer
+export { Tokenizer }        from "./Tokenizer";
+export type { TokenizerMode, TokenizerOptions, EncodeOptions, EncodeBatchOptions, TokenizerSnapshot } from "./Tokenizer";
 
 // Training utilities
 export { EarlyStopping }    from "./EarlyStopping";
