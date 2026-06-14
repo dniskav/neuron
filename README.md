@@ -3,7 +3,7 @@
 
 A minimal, dependency-free neural network library built from scratch in TypeScript. Designed for learning and experimentation — every line of math is readable.
 
-Each class is a building block for the next: from a single neuron to a full Transformer with causal attention. v0.3.0 adds classical ML, unsupervised learning, generative models, autograd, and training utilities — all in pure TypeScript, zero dependencies.
+Each class is a building block for the next: from a single neuron to a full Transformer with causal attention. Includes classical ML, unsupervised learning, generative models, embeddings, and autograd — all in pure TypeScript, zero dependencies.
 
 ```mermaid
 graph TD
@@ -125,6 +125,17 @@ graph TD
 | Export | Description |
 |--------|-------------|
 | `Value` | Scalar autograd node. Builds a computational graph and propagates gradients with `.backward()`. Inspired by micrograd. |
+
+### Embeddings
+
+| Export | Description |
+|--------|-------------|
+| `Word2Vec` | Learns word embeddings via Skip-gram or CBOW. Full-softmax, cosine similarity, analogies (`king - man + woman ≈ queen`). |
+| `TSNE` | t-SNE dimensionality reduction. Binary-search perplexity, Student-t kernel, KL gradient, early exaggeration. |
+| `PositionalEncoding` | Sinusoidal positional encoding (Vaswani et al.). Static — no parameters, generalizes to unseen lengths. |
+| `LearnedPositionalEncoding` | Trainable positional encoding. Xavier-initialized, learnable up to a fixed `maxSeqLen`. |
+| `ContrastiveLearning` | SimCLR-style self-supervised learning. NT-Xent loss, encoder + projection head, temperature τ. |
+| `Augmenter` | Data augmentation helpers for contrastive pairs: Gaussian noise, feature dropout, `makePair()`. |
 
 ### Activations & math
 
@@ -396,6 +407,79 @@ const { mu, logVar } = vae.encode(image);  // encode → distribution params
 const z = vae.reparametrize(mu, logVar);   // sample z ~ N(μ, σ²)
 ```
 
+### Word2Vec — aprende embeddings de palabras
+
+```ts
+import { Word2Vec } from "@dniskav/neuron";
+
+const w2v = new Word2Vec(64, { model: 'skipgram', windowSize: 2 });
+
+const corpus = [
+  ["the", "king", "rules", "the", "kingdom"],
+  ["the", "queen", "rules", "the", "land"],
+  ["man", "and", "woman", "are", "human"],
+];
+
+w2v.buildVocab(corpus);
+w2v.train(corpus, 0.05, 200);
+
+console.log(w2v.similarity("king", "queen")); // high
+console.log(w2v.mostSimilar("king", 3));
+// [{ word: 'queen', score: 0.91 }, ...]
+
+// Vector arithmetic: king - man + woman ≈ queen
+console.log(w2v.analogy("king", "man", "woman", 1));
+// [{ word: 'queen', score: 0.87 }]
+```
+
+### t-SNE — visualiza embeddings en 2D
+
+```ts
+import { TSNE } from "@dniskav/neuron";
+
+// Reduce 128-dim embeddings → 2D for plotting
+const tsne = new TSNE({ perplexity: 30, nIter: 1000, seed: 42 });
+const points2D = tsne.fitTransform(embeddings128D); // [n][2]
+
+console.log(tsne.kl()); // KL divergence — lower is better
+// Plot points2D with any charting library
+```
+
+### PositionalEncoding — orden sin parámetros
+
+```ts
+import { PositionalEncoding, LearnedPositionalEncoding } from "@dniskav/neuron";
+
+// Sinusoidal — deterministic, no training needed
+const pe = PositionalEncoding.encodeSequence(512, 128); // [512][128]
+const withPos = PositionalEncoding.apply(tokenEmbeddings); // add PE to embeddings
+
+// Learned — trainable, fixed maxSeqLen
+const lpe = new LearnedPositionalEncoding(512, 128);
+const withLearnedPos = lpe.apply(tokenEmbeddings);
+lpe.update(gradients, 0.001); // update during backprop
+```
+
+### ContrastiveLearning — representaciones sin etiquetas
+
+```ts
+import { ContrastiveLearning, Augmenter } from "@dniskav/neuron";
+
+// Encoder: 128 → [256, 128] → 64 latent, projection head: 64 → 32
+const cl = new ContrastiveLearning(128, [256, 128], 64, { temperature: 0.5 });
+
+// Create positive pairs from unlabeled data (two augmented views per sample)
+const pairs = unlabeledData.map(x => Augmenter.makePair(x));
+
+for (let step = 0; step < 1000; step++) {
+  const loss = cl.trainStep(pairs, 0.001);
+  if (step % 100 === 0) console.log(`step ${step}: ${loss.toFixed(4)}`);
+}
+
+// Use encoder for downstream tasks (classification, clustering, etc.)
+const representation = cl.encode(newSample); // 64-dim vector
+```
+
 ### Value / Tape — automatic differentiation
 
 ```ts
@@ -595,6 +679,9 @@ npm test        # run test suite
 If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
 
 ## Changelog
+
+### v0.3.1
+- **New — Embeddings:** `Word2Vec` (Skip-gram + CBOW, full-softmax, cosine similarity, analogies), `TSNE` (binary-search perplexity, Student-t kernel, KL gradient, early exaggeration, seeded PRNG), `PositionalEncoding` (sinusoidal, Vaswani et al.), `LearnedPositionalEncoding` (trainable), `ContrastiveLearning` (NT-Xent, SimCLR encoder + projection head), `Augmenter` (noise, feature dropout, `makePair`)
 
 ### v0.3.0
 - **New — Classical ML:** `Perceptron`, `LinearRegression` (normal equation + GD), `LogisticRegression`, `SoftmaxRegression`, `GaussianNaiveBayes`, `DecisionTree` (CART, Gini/MSE)

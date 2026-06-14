@@ -71,6 +71,14 @@ export { RNN }                              from "./RNN";
 export { Seq2Seq }                          from "./Seq2Seq";
 export { CausalConv1D, TCN }               from "./TCN";
 
+// Embeddings
+export { Word2Vec }                         from "./Word2Vec";
+export type { Word2VecOptions, Word2VecModel } from "./Word2Vec";
+export { TSNE }                             from "./TSNE";
+export type { TSNEOptions }                 from "./TSNE";
+export { PositionalEncoding, LearnedPositionalEncoding } from "./PositionalEncoding";
+export { ContrastiveLearning, Augmenter }   from "./ContrastiveLearning";
+
 // Generative models
 export { GAN }  from "./GAN";
 export { VAE }  from "./VAE";
