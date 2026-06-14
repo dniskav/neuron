@@ -3,7 +3,7 @@
 
 A minimal, dependency-free neural network library built from scratch in TypeScript. Designed for learning and experimentation — every line of math is readable.
 
-Each class is a building block for the next: from a single neuron to a full Transformer with causal attention.
+Each class is a building block for the next: from a single neuron to a full Transformer with causal attention. v0.3.0 adds classical ML, unsupervised learning, generative models, autograd, and training utilities — all in pure TypeScript, zero dependencies.
 
 ```mermaid
 graph TD
@@ -20,12 +20,42 @@ graph TD
     K["NetworkTransformer\nembeddings → blocks → per-token logits"]
     L["NetworkTransformerRL\ncontinuous projection → causal attention → Q-values"]
 
+    subgraph Classical ML
+      P["Perceptron\nstep function · Rosenblatt rule"]
+      LR["LinearRegression\nnormal equation · gradient descent"]
+      LOG["LogisticRegression\nsigmoid · BCE · SoftmaxRegression"]
+      NB["GaussianNaiveBayes\nlog-probabilities · Gaussian P(x|c)"]
+      DT["DecisionTree\nCART · Gini · MSE split"]
+    end
+
+    subgraph Unsupervised
+      KM["KMeans\nK-Means++ · inertia · elbow"]
+      PCA["PCA\npower iteration · projection · reconstruction"]
+      SOM["SOM\nKohonen · BMU · Gaussian neighborhood"]
+      HN["HopfieldNetwork\nHebbian · energy · associative memory"]
+      AE["Autoencoder\nencoder · bottleneck · decoder"]
+    end
+
+    subgraph Generative
+      GAN["GAN\ngenerator · discriminator · min-max"]
+      VAE["VAE\nreparametrization trick · ELBO · KL"]
+    end
+
+    subgraph Autograd
+      TAP["Value / Tape\nreverse-mode · computational graph · backward"]
+    end
+
     A --> B --> C --> D --> E
     E --> F --> G
     E --> H --> I --> J --> K --> L
+    E --> AE
+    E --> GAN
+    E --> VAE
 ```
 
 ## What's inside
+
+### Neural network building blocks
 
 | Export | Description |
 |--------|-------------|
@@ -36,20 +66,115 @@ graph TD
 | `NetworkN` | Deep network of arbitrary depth. Define your architecture as `[inputs, ...hidden, outputs]`. |
 | `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
 | `NetworkLSTM` | Wraps an `LSTMLayer` + dense layers. Maintains memory across steps within an episode. |
+| `GRULayer` | Gated Recurrent Unit — lighter alternative to LSTM, two gates instead of three. |
 | `NetworkTransformer` | Full token-classification Transformer: embeddings → N blocks → per-token logits. |
-| `NetworkTransformerRL` | Transformer for RL agents: continuous input projection → causal attention → Q-values. Remembers the last N steps. |
+| `NetworkTransformerRL` | Transformer for RL agents: continuous input projection → causal attention → Q-values. |
 | `TransformerBlock` | One Transformer block: multi-head attention + FFN + LayerNorm × 2 with residuals. |
 | `MultiHeadAttention` | N parallel attention heads concatenated and projected to `d_model`. |
 | `AttentionHead` | Single scaled dot-product self-attention head (Q / K / V projections + backprop). |
+
+### Layers & components
+
+| Export | Description |
+|--------|-------------|
+| `Conv1D` | 1D convolution over sequences. Multi-channel, configurable stride and padding. |
+| `Conv2D` | 2D convolution for images. Kernels `[filters][kH][kW][C]`, full forward + backward. |
+| `MaxPool2D` | Max pooling 2D. Stores position mask for exact gradient routing in backprop. |
+| `Flatten` | Converts `[H][W][C]` tensors to flat vectors. Bridges Conv layers to dense layers. |
+| `RNN` | Vanilla RNN with BPTT. Explicitly shows where and why gradients vanish. |
+| `Seq2Seq` | Encoder + Decoder LSTMs with context vector transfer. Teacher forcing in training. |
+| `CausalConv1D` | Causal dilated 1D convolution. One building block of a TCN. |
+| `TCN` | Temporal Convolutional Network. Stacks causal dilated convolutions for sequences without recurrence. |
 | `LayerNorm` | Layer normalization with learnable γ / β per feature. |
-| `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers. Optional per-element gradient clipping via `update(dW, lr, clipValue)`. |
-| `BiasVector` | 1D bias vector with per-scalar Adam optimizers. Companion to `WeightMatrix` for bias terms. |
+| `BatchNorm` | Batch normalization with running mean/variance for inference. |
+| `Dropout` | Inverted dropout for regularization. Active only during training. |
+| `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers and optional gradient clipping. |
+| `BiasVector` | 1D bias vector with per-scalar Adam optimizers. |
 | `EmbeddingMatrix` | Lookup-table embedding matrix with SGD updates. |
-| `sigmoid` `relu` `tanh` `linear` | Built-in activation functions. |
-| `SGD` `Momentum` `Adam` `ClipOptimizer` | Optimizers. Each instance tracks its own state per weight. `ClipOptimizer` wraps any optimizer with gradient clipping. |
-| `defaultOptimizer` | Default `OptimizerFactory` (`() => new SGD()`). Shared across `NeuronN`, `Layer`, `NetworkN`, `NetworkLSTM`. |
-| `mse` `crossEntropy` | Loss functions for evaluation and logging. |
-| `mseDelta` `crossEntropyDelta` | Output-layer delta functions for use with `trainWithDeltas`. |
+
+### Classical ML
+
+| Export | Description |
+|--------|-------------|
+| `Perceptron` | The historical Rosenblatt perceptron (1957). Step function, linear rule. Shows why XOR is impossible. |
+| `LinearRegression` | Closed-form normal equation `(XᵀX)⁻¹Xᵀy` + gradient descent mode. Pure array arithmetic. |
+| `LogisticRegression` | Sigmoid + binary cross-entropy, no hidden layers. The boundary between classical ML and neural nets. |
+| `SoftmaxRegression` | Multinomial logistic regression. Log-sum-exp trick for numerical stability. |
+| `GaussianNaiveBayes` | `P(c|x) ∝ P(c)·∏P(xᵢ|c)` in log-space. Zero gradient descent — pure Bayes. |
+| `DecisionTree` | CART with Gini impurity (classification) or variance (regression). Fully recursive. |
+
+### Unsupervised learning
+
+| Export | Description |
+|--------|-------------|
+| `KMeans` | K-Means++ initialization + Lloyd's algorithm. `inertia()` for the elbow method. |
+| `PCA` | Principal Component Analysis via power iteration + Hotelling deflation. Projects, reconstructs, explains variance. |
+| `SOM` | Self-Organizing Map (Kohonen). BMU search, Gaussian neighborhood, topology preservation. |
+| `HopfieldNetwork` | Associative memory. Hebbian storage, energy function, async recall. Capacity ~0.138·N. |
+| `Autoencoder` | Encoder + bottleneck + decoder using two `NetworkN` instances. Learns compressed representations. |
+
+### Generative models
+
+| Export | Description |
+|--------|-------------|
+| `GAN` | Generator vs Discriminator min-max game. Documents Nash equilibrium and mode collapse. |
+| `VAE` | Variational Autoencoder. Reparametrization trick, ELBO = reconstruction + KL divergence. |
+
+### Automatic differentiation
+
+| Export | Description |
+|--------|-------------|
+| `Value` | Scalar autograd node. Builds a computational graph and propagates gradients with `.backward()`. Inspired by micrograd. |
+
+### Activations & math
+
+| Export | Description |
+|--------|-------------|
+| `sigmoid` `relu` `tanh` `linear` `leakyRelu` `elu` | Built-in activation functions with `fn` and `dfn` (derivative from output). |
+| `makeLeakyRelu(α)` `makeElu(α)` | Parametric variants. |
+| `matMul` `transpose` `softmax` `softmaxBackward` | Matrix math utilities. |
+
+### Optimizers
+
+| Export | Description |
+|--------|-------------|
+| `SGD` | Vanilla stochastic gradient descent. Stateless. |
+| `Momentum` | Accumulates velocity in the gradient direction. |
+| `Adam` | Adaptive moment estimation. Per-parameter first and second moments with bias correction. |
+| `ClipOptimizer` | Wraps any optimizer with gradient clipping. |
+| `ClippedOptimizerFactory` | Factory wrapper that clips all created optimizers. |
+| `defaultOptimizer` | Default factory (`() => new SGD()`). Shared fallback across all classes. |
+
+### Loss functions
+
+| Export | Description |
+|--------|-------------|
+| `mse` `crossEntropy` | Scalar loss functions for evaluation and logging. |
+| `mseDelta` `crossEntropyDelta` `crossEntropyDeltaRaw` | Output-layer delta functions for `trainWithDeltas`. |
+
+### Metrics & evaluation
+
+| Export | Description |
+|--------|-------------|
+| `confusionMatrix` | Returns `number[][]` confusion matrix. |
+| `accuracy` `precision` `recall` `f1Score` | Standard classification metrics. |
+| `rocCurve` `auc` | ROC curve points and area under the curve (trapezoidal rule). |
+| `mae` `rmse` `r2Score` | Regression metrics. |
+| `perplexity` | `exp(mean cross-entropy)` — natural metric for language models. |
+| `printConfusionMatrix` `classificationReport` | Console-formatted output tables. |
+
+### Training utilities
+
+| Export | Description |
+|--------|-------------|
+| `Trainer` | Training loop with epochs, batches, metrics, and callbacks. |
+| `DataLoader` | Dataset wrapper with shuffling and validation split. |
+| `LRScheduler` | Learning rate schedules (step, exponential, cosine). |
+| `EarlyStopping` | Stops training when a metric stalls. Configurable patience, mode, and best-weight restore. |
+| `LossPlotter` | Renders a loss curve as ASCII art in the terminal. |
+| `WeightInspector` | Per-layer weight statistics (mean, std, dead weights). Detects dead ReLUs. |
+| `DataAugmentation` | Noise, jitter, normalization, z-score, shuffle, train/val/test split. |
+| `ModelSaver` | Universal serialization via flat `getWeights()` / `setWeights()`. |
 
 ## Install
 
@@ -66,175 +191,381 @@ import { Neuron } from "@dniskav/neuron";
 
 const neuron = new Neuron();
 
-// Train: output 1 if input >= 18, else 0
 for (let epoch = 0; epoch < 1000; epoch++) {
   neuron.train(20, 1, 0.1); // adult
   neuron.train(15, 0, 0.1); // minor
 }
 
-console.log(neuron.predict(17)); // ~0.1 (minor)
-console.log(neuron.predict(25)); // ~0.9 (adult)
-```
-
-### N-input neuron — multi-feature classification
-
-```ts
-import { NeuronN } from "@dniskav/neuron";
-
-const neuron = new NeuronN(3); // 3 inputs: R, G, B
-
-// Teach it to detect bright colors (luminance > 0.65)
-neuron.train([1, 1, 1], 1, 0.05); // white → bright
-neuron.train([0, 0, 0], 0, 0.05); // black → dark
-
-console.log(neuron.predict([0.9, 0.9, 0.9])); // close to 1
-```
-
-### Network — non-linear classification
-
-```ts
-import { Network } from "@dniskav/neuron";
-
-// 2 inputs → 8 hidden neurons → 1 output
-const net = new Network(2, 8, 1);
-
-// Train on XOR (not linearly separable — needs hidden layer)
-const data = [[0,0,0], [0,1,1], [1,0,1], [1,1,0]];
-
-for (let epoch = 0; epoch < 5000; epoch++) {
-  for (const [x, y, t] of data) {
-    net.train([x, y], t, 0.3);
-  }
-}
-
-console.log(net.predict([0, 1])[0]); // ~0.97
-console.log(net.predict([1, 1])[0]); // ~0.03
+console.log(neuron.predict(17)); // ~0.1
+console.log(neuron.predict(25)); // ~0.9
 ```
 
 ### NetworkN — deep network with custom architecture
 
 ```ts
-import { NetworkN } from "@dniskav/neuron";
-
-// 3 inputs → 24 hidden → 16 hidden → 2 outputs
-const net = new NetworkN([3, 24, 16, 2]);
-
-// Train with multiple targets
-net.train([0.5, 0.3, 0.8], [1, 0], 0.05);
-
-// Predict returns an array — one value per output neuron
-const [out1, out2] = net.predict([0.5, 0.3, 0.8]);
-```
-
-### Activations — ReLU, tanh, and more
-
-Pass an activation per layer. The last layer typically uses `sigmoid` for binary output or `linear` for regression.
-
-```ts
-import { NetworkN, relu, sigmoid } from "@dniskav/neuron";
+import { NetworkN, relu, sigmoid, Adam } from "@dniskav/neuron";
 
 const net = new NetworkN([3, 64, 32, 1], {
   activations: [relu, relu, sigmoid],
-});
-```
-
-Available: `sigmoid`, `relu`, `tanh`, `linear`.
-
-### Optimizers — Adam, Momentum, SGD
-
-Pass an optimizer factory. Each weight gets its own instance with independent state.
-
-```ts
-import { NetworkN, relu, sigmoid, Adam } from "@dniskav/neuron";
-
-const net = new NetworkN([2, 64, 1], {
-  activations: [relu, sigmoid],
-  optimizer: () => new Adam(),          // default: beta1=0.9, beta2=0.999
+  optimizer: () => new Adam(),
 });
 
-// Momentum example
-import { Momentum } from "@dniskav/neuron";
-const net2 = new NetworkN([2, 32, 1], {
-  optimizer: () => new Momentum(0.9),
-});
+net.train([0.5, 0.3, 0.8], [1], 0.001);
+const [out] = net.predict([0.5, 0.3, 0.8]);
 ```
 
-Optimizers also work in `NetworkLSTM` (applied to the dense layers):
+### Historical Perceptron — step function, no hidden layers
 
 ```ts
-import { NetworkLSTM, relu, Adam } from "@dniskav/neuron";
+import { Perceptron } from "@dniskav/neuron";
 
-const net = new NetworkLSTM(1, 8, [4, 1], {
-  denseActivation: relu,
-  optimizer: () => new Adam(0.001),
-});
+const p = new Perceptron(2);
+
+// Learns AND gate (linearly separable)
+const data = [[0,0,0],[0,1,0],[1,0,0],[1,1,1]];
+for (let e = 0; e < 100; e++)
+  for (const [a, b, t] of data) p.train([a, b], t, 0.1);
+
+console.log(p.predict([1, 1])); // 1
+console.log(p.predict([0, 1])); // 0
+// XOR cannot be learned — not linearly separable
 ```
 
-### Loss utilities
+### Linear Regression — normal equation
 
 ```ts
-import { mse, crossEntropy } from "@dniskav/neuron";
+import { LinearRegression } from "@dniskav/neuron";
 
-const predicted = net.predict([0.5, 0.3]);
-console.log(mse(predicted, [1, 0]));
-console.log(crossEntropy(predicted, [1, 0]));
+const model = new LinearRegression();
+
+// Exact closed-form solution in one call
+model.fitNormal(
+  [[1], [2], [3], [4]],  // X
+  [2, 4, 6, 8]           // y = 2x
+);
+
+console.log(model.predict([5]));   // ~10
+console.log(model.getCoefficients()); // { weights: [2], bias: ~0 }
 ```
 
-### trainWithDeltas — custom loss / physics-based gradients
-
-`NetworkN` also exposes `trainWithDeltas` for when you compute your own output-layer deltas (e.g., from a physics simulation or a custom loss function):
+### Logistic Regression — sigmoid + BCE
 
 ```ts
-import { NetworkN, mseDelta } from "@dniskav/neuron";
+import { LogisticRegression } from "@dniskav/neuron";
 
-const net = new NetworkN([3, 16, 2]);
-const pred = net.predict(inputs);
+const clf = new LogisticRegression(2);
+const lossHistory = clf.train(
+  [[0,0],[1,1],[1,0],[0,1]],
+  [0, 1, 1, 0],
+  0.1, 500
+);
 
-// Compute deltas manually using a helper, or from any external signal
-const deltas = pred.map((p, i) => mseDelta(p, targets[i]));
-net.trainWithDeltas(inputs, deltas, 0.01);
+console.log(clf.classify([0.9, 0.9])); // 1
+console.log(clf.classify([0.1, 0.1])); // 0
 ```
 
-### NetworkLSTM — recurrent network with memory
+### Gaussian Naive Bayes — zero gradient descent
 
-`NetworkLSTM` adds within-episode memory: the network can remember what happened in previous steps of the same sequence.
+```ts
+import { GaussianNaiveBayes } from "@dniskav/neuron";
+
+const nb = new GaussianNaiveBayes();
+nb.fit(
+  [[1.2, 0.5], [1.4, 0.7], [5.0, 4.5], [5.2, 4.8]],
+  [0, 0, 1, 1]
+);
+
+console.log(nb.predict([1.3, 0.6])); // 0
+console.log(nb.predict([5.1, 4.6])); // 1
+```
+
+### Decision Tree — Gini split
+
+```ts
+import { DecisionTree } from "@dniskav/neuron";
+
+const tree = new DecisionTree({ maxDepth: 4, task: 'classification' });
+tree.fit(X_train, y_train);
+const predictions = tree.predictBatch(X_test);
+```
+
+### K-Means — unsupervised clustering
+
+```ts
+import { KMeans } from "@dniskav/neuron";
+
+const km = new KMeans(3); // 3 clusters
+km.fit(points);
+
+const cluster = km.predict([1.2, 0.5]); // index 0, 1 or 2
+console.log(km.inertia(points));        // lower = better fit
+```
+
+### PCA — dimensionality reduction
+
+```ts
+import { PCA } from "@dniskav/neuron";
+
+const pca = new PCA(2); // keep top 2 components
+pca.fit(X);             // 100 samples × 10 features
+
+const Z = pca.transform(X);       // 100 × 2
+const X2 = pca.inverseTransform(Z); // reconstructed 100 × 10
+
+console.log(pca.explainedVarianceRatio()); // [0.72, 0.15, ...]
+```
+
+### Self-Organizing Map
+
+```ts
+import { SOM } from "@dniskav/neuron";
+
+const som = new SOM(10, 10, 3); // 10×10 grid, 3-dimensional inputs (RGB)
+som.train(colors, 500);
+
+const [row, col] = som.getBMU([255, 0, 0]); // find best matching unit for red
+console.log(som.quantizationError(colors));
+```
+
+### Hopfield Network — associative memory
+
+```ts
+import { HopfieldNetwork } from "@dniskav/neuron";
+
+const net = new HopfieldNetwork(64); // 64 binary neurons
+
+// Store two 64-bit patterns
+net.store(HopfieldNetwork.binarize(pattern1)); // converts 0/1 → -1/+1
+net.store(HopfieldNetwork.binarize(pattern2));
+
+// Recall from noisy input
+const recovered = net.recall(HopfieldNetwork.binarize(noisyPattern1));
+console.log(net.energy(recovered)); // local minimum = stored memory
+```
+
+### Autoencoder — learn compressed representations
+
+```ts
+import { Autoencoder } from "@dniskav/neuron";
+
+// 784 → [128, 64] → 16 (latent) → [64, 128] → 784
+const ae = new Autoencoder(784, [128, 64], 16, [64, 128]);
+
+for (let e = 0; e < 1000; e++)
+  for (const x of images)
+    ae.train(x, 0.001);
+
+const latent       = ae.encode(image);       // compressed: 16 values
+const reconstructed = ae.reconstruct(image); // decoded back: 784 values
+```
+
+### GAN — generative adversarial training
+
+```ts
+import { GAN } from "@dniskav/neuron";
+
+const gan = new GAN(
+  16,          // latentDim
+  [32, 64],    // generator hidden layers
+  8,           // outputDim (size of generated samples)
+  [64, 32],    // discriminator hidden layers
+);
+
+for (let step = 0; step < 10000; step++) {
+  const { dLoss, gLoss } = gan.trainStep(realBatch, 0.0002);
+  if (step % 500 === 0) console.log(`D: ${dLoss.toFixed(3)}  G: ${gLoss.toFixed(3)}`);
+}
+
+const fake = gan.generate(); // new synthetic sample
+```
+
+### VAE — variational autoencoder
+
+```ts
+import { VAE } from "@dniskav/neuron";
+
+const vae = new VAE(784, [256, 128], 32, [128, 256]);
+
+for (const x of dataset) {
+  const { totalLoss, reconLoss, klLoss } = vae.train(x, 0.001);
+}
+
+// Sample from latent space
+const generated = vae.generate();          // random sample
+const { mu, logVar } = vae.encode(image);  // encode → distribution params
+const z = vae.reparametrize(mu, logVar);   // sample z ~ N(μ, σ²)
+```
+
+### Value / Tape — automatic differentiation
+
+```ts
+import { Value } from "@dniskav/neuron";
+
+// Build a computation graph
+const x = new Value(2.0);
+const w = new Value(-3.0);
+const b = new Value(6.7);
+const n = x.mul(w).add(b);         // n = x*w + b
+const o = n.tanh();                  // o = tanh(n)
+
+// Backward pass — fills .grad for every node
+o.backward();
+
+console.log(x.grad); // ∂o/∂x
+console.log(w.grad); // ∂o/∂w
+console.log(b.grad); // ∂o/∂b
+```
+
+### Conv2D + MaxPool2D + Flatten — CNN pipeline
+
+```ts
+import { Conv2D, MaxPool2D, Flatten, NetworkN, relu, sigmoid } from "@dniskav/neuron";
+
+const conv    = new Conv2D(28, 28, 1, 3, 8);  // 28×28×1 → 26×26×8
+const pool    = new MaxPool2D(2);              // 26×26×8 → 13×13×8
+const flatten = new Flatten();
+const dense   = new NetworkN([13*13*8, 64, 10]);
+
+// Forward
+const featureMaps = conv.forward(image);       // [H][W][C]
+const pooled      = pool.forward(featureMaps);
+const flat        = flatten.forward(pooled);   // 1352 values
+const logits      = dense.predict(flat);
+```
+
+### RNN — vanilla recurrent network
+
+```ts
+import { RNN } from "@dniskav/neuron";
+
+// 1 input → 16 hidden → 1 output, over a sequence
+const rnn = new RNN(1, 16, 1);
+
+const sequence = [[0.1], [0.3], [0.7], [0.9]]; // 4 timesteps
+const { outputs, hiddens } = rnn.forward(sequence);
+
+// BPTT backward — returns MSE loss
+const targets = [[0.2], [0.5], [0.8], [1.0]];
+const loss = rnn.backward(sequence, targets, 0.01);
+```
+
+### TCN — Temporal Convolutional Network
+
+```ts
+import { TCN } from "@dniskav/neuron";
+
+// 3 input channels → 32 channels × 4 levels → 1 output
+// Receptive field = (3-1)·(2⁴-1)+1 = 30 timesteps
+const tcn = new TCN(3, 32, 3, 4, 1);
+
+const sequence = Array.from({ length: 50 }, () => [Math.random(), Math.random(), Math.random()]);
+const outputs  = tcn.forward(sequence); // [50][1]
+```
+
+### NetworkLSTM — recurrent memory
 
 ```ts
 import { NetworkLSTM } from "@dniskav/neuron";
 
-// 1 input → LSTM(8 hidden) → Dense(4) → 1 output
 const net = new NetworkLSTM(1, 8, [4, 1]);
 
-// Task: predict 1 if we're past step 3 in the episode, else 0
-// A feedforward net can't do this — it has no memory of step count.
-
 for (let epoch = 0; epoch < 300; epoch++) {
-  net.resetState();             // clear memory at episode start
-
-  const targets: number[][] = [];
-  for (let step = 0; step < 6; step++) {
-    net.predict([1]);           // same input every step
-    targets.push([step >= 3 ? 1 : 0]);
-  }
-
-  net.train(targets, 0.05);    // BPTT across the full episode
+  net.resetState();
+  for (let step = 0; step < 6; step++) net.predict([1]);
+  net.train([[0],[0],[0],[1],[1],[1]], 0.05);
 }
-
-// Run a fresh episode and check predictions
-net.resetState();
-for (let step = 0; step < 6; step++) {
-  const [out] = net.predict([1]);
-  console.log(`step ${step}: ${out.toFixed(2)}  (expected: ${step >= 3 ? 1 : 0})`);
-}
-// step 0: 0.07  (expected: 0)
-// step 1: 0.11  (expected: 0)
-// step 2: 0.18  (expected: 0)
-// step 3: 0.81  (expected: 1)
-// step 4: 0.89  (expected: 1)
-// step 5: 0.93  (expected: 1)
 ```
 
-The network learns to count steps using its hidden state — no external counter needed.
+### Metrics — evaluate your model
+
+```ts
+import { accuracy, f1Score, confusionMatrix, printConfusionMatrix, auc, classificationReport } from "@dniskav/neuron";
+
+const yTrue = [0, 1, 1, 0, 1];
+const yPred = [0, 1, 0, 0, 1];
+
+console.log(accuracy(yTrue, yPred));          // 0.8
+console.log(f1Score(yTrue, yPred));           // 0.8
+
+const cm = confusionMatrix(yTrue, yPred);
+printConfusionMatrix(cm, ['neg', 'pos']);
+
+// AUC-ROC
+const scores = [0.1, 0.9, 0.4, 0.2, 0.8];
+console.log(auc(yTrue, scores));              // ~0.9
+
+classificationReport(yTrue, yPred, ['neg', 'pos']);
+```
+
+### EarlyStopping
+
+```ts
+import { EarlyStopping } from "@dniskav/neuron";
+
+const stopper = new EarlyStopping({ patience: 10, minDelta: 1e-4, mode: 'min' });
+
+for (let epoch = 0; epoch < 1000; epoch++) {
+  const valLoss = trainEpoch();
+  if (stopper.update(valLoss, epoch)) {
+    console.log(`Stopped at epoch ${epoch}`);
+    break;
+  }
+}
+```
+
+### LossPlotter — ASCII loss curve
+
+```ts
+import { LossPlotter } from "@dniskav/neuron";
+
+const plotter = new LossPlotter({ width: 60, height: 12, title: 'Training Loss' });
+
+for (let e = 0; e < 500; e++) {
+  const loss = trainStep();
+  plotter.add(loss, e);
+}
+
+plotter.print();
+// Training Loss
+// ┌────────────────────────────────────────────────────────────┐
+// │ 2.31 ·
+// │      · ·
+// │          · · ·
+// │                · · · · · · ·
+// │ 0.02                        · · · · · · · · · · · · · · ·
+// └────────────────────────────────────────────────────────────┘
+//   0                          250                         499
+```
+
+### DataAugmentation
+
+```ts
+import { DataAugmentation } from "@dniskav/neuron";
+
+// Split dataset
+const { trainX, trainY, valX, valY } = DataAugmentation.split(X, y, 0.8, 0.1);
+
+// Normalize (fit on train, apply to all)
+const { normalized: normTrain, min, max } = DataAugmentation.normalize(trainX);
+const normVal = valX.map(x => DataAugmentation.normalizePoint(x, min, max));
+
+// Augment training set (×3 copies with Gaussian noise)
+const { X: augX, y: augY } = DataAugmentation.augmentBatch(normTrain, trainY, 3, 0.02);
+```
+
+### WeightInspector — diagnose your network
+
+```ts
+import { NetworkN, WeightInspector, relu } from "@dniskav/neuron";
+
+const net = new NetworkN([784, 256, 128, 10], { activations: [relu, relu, relu] });
+// ... train ...
+
+WeightInspector.print(net);
+// Layer 0:  mean=0.001  std=0.056  min=-0.21  max=0.19  dead=0   params=200960
+// Layer 1:  mean=0.000  std=0.079  min=-0.31  max=0.28  dead=3   params=32896
+// Layer 2:  mean=-0.001 std=0.091  min=-0.28  max=0.32  dead=0   params=1290
+```
 
 ## How it works
 
@@ -245,124 +576,54 @@ weight += lr × delta × input
 bias   += lr × delta
 ```
 
-`NetworkN` implements full **backpropagation** across all layers, propagating deltas from the output back to the first layer using the chain rule. The derivative of the chosen activation is applied at each layer.
+`NetworkN` implements full **backpropagation** across all layers, propagating deltas from the output back to the first layer using the chain rule. `NeuronN` uses **Xavier initialization** — weights start in `[-√(1/n), +√(1/n)]`.
 
-`NeuronN` uses simplified **Xavier initialization** — weights start in `[-√(1/n), +√(1/n)]` — so gradients flow well from the start of training.
+When an **optimizer** is used (e.g., Adam), the raw gradient is passed to the optimizer instead of being applied directly. Each weight maintains its own optimizer state.
 
-When an **optimizer** is used (e.g., Adam), the raw gradient is passed to the optimizer instead of being applied directly. Each weight maintains its own optimizer state (velocity, moments).
+The `Value` class implements **reverse-mode automatic differentiation**: every operation records its inputs and a backward function. Calling `.backward()` on the output node performs a topological sort and propagates `∂L/∂w` through the entire graph.
 
 ## Build
 
 ```bash
 npm run build   # outputs CJS + ESM + type declarations to dist/
 npm run dev     # watch mode
+npm test        # run test suite
 ```
 
 ## For AI agents
 
 If you are an AI agent or LLM working with this codebase, read [AGENTS.md](AGENTS.md) first. It contains the full class hierarchy, design constraints, and what this library does not do.
 
-### NetworkTransformer — self-attention over sequences
-
-```ts
-import { NetworkTransformer } from "@dniskav/neuron";
-
-// Sudoku solver: 81 cells (tokens), values 0–9, predict digit 1–9 per cell
-const net = new NetworkTransformer(81, {
-  vocabSize: 10,   // digits 0–9
-  d_model:   64,   // embedding / hidden dimension
-  nHeads:    4,    // attention heads (d_k = d_model / nHeads = 16)
-  d_ff:      128,  // FFN hidden size
-  nBlocks:   4,    // number of transformer blocks
-  nClasses:  9,    // output classes per token (digits 1–9)
-});
-
-// tokens: 81 cell values (0 = empty)
-const puzzle   = [5,3,0, 0,7,0, 0,0,0, ...];
-const targets  = [...];   // 81*9 one-hot values
-const mask     = puzzle.map(v => v === 0);   // only train on empty cells
-
-const loss = net.train(puzzle, targets, 0.001, mask);
-// loss is cross-entropy (not MSE) — decreases from ~2.2 toward 0 as training progresses
-const logits = net.predict(puzzle);   // 729 logits (81 × 9)
-
-// Attention weights from all blocks for visualization
-const weights = net.getAttentionWeights();
-// weights[blockIdx][headIdx]  → seqLen × seqLen matrix
-```
-
-Each head in each block learns a different type of relationship (row, column,
-3×3 box). The network figures this out by itself through training.
-
-### NetworkTransformerRL — Transformer for reinforcement learning
-
-`NetworkTransformerRL` uses causal self-attention over a sliding window of past states to output Q-values. Unlike `NetworkLSTM`, the agent attends to specific past moments rather than compressing them into a single hidden vector.
-
-```ts
-import { NetworkTransformerRL } from "@dniskav/neuron";
-
-// Agent sees the last 8 steps, each step is a 7-value sensor vector → 4 actions
-const net = new NetworkTransformerRL(8, 7, {
-  d_model:  32,
-  nHeads:   2,
-  d_ff:     64,
-  nBlocks:  2,
-  nActions: 4,
-});
-
-// Each step: feed the last N states as a sequence
-const sequence = getLastNStates();      // number[][] — shape: [8, 7]
-const qValues  = net.predict(sequence); // number[4]
-
-// Q-learning update: train toward Bellman target
-const action  = argmax(qValues);
-const reward  = env.step(action);
-const targets = qValues.slice();
-targets[action] = reward + 0.99 * Math.max(...net.predict(nextSequence));
-
-const loss = net.train(sequence, targets, 0.001);
-```
-
-The last step in the sequence gets 2× pooling weight — the most recent state contributes more to the decision.
-
-```ts
-// Inspect what the agent is attending to
-const attnWeights = net.getAttentionWeights();
-// attnWeights[blockIdx][headIdx] → seqLen × seqLen matrix
-```
-
 ## Changelog
 
+### v0.3.0
+- **New — Classical ML:** `Perceptron`, `LinearRegression` (normal equation + GD), `LogisticRegression`, `SoftmaxRegression`, `GaussianNaiveBayes`, `DecisionTree` (CART, Gini/MSE)
+- **New — Unsupervised:** `KMeans` (K-Means++ init), `PCA` (power iteration + Hotelling deflation), `SOM` (Kohonen map), `HopfieldNetwork` (Hebbian storage + energy), `Autoencoder`
+- **New — Deep Learning:** `Conv2D` (full forward/backward), `MaxPool2D` (position mask for exact backprop), `Flatten`, `RNN` (BPTT, documents vanishing gradient), `Seq2Seq` (encoder-decoder LSTM), `CausalConv1D`, `TCN` (dilated temporal convolutions)
+- **New — Generative:** `GAN` (min-max game, Box-Muller sampling), `VAE` (reparametrization trick, ELBO = MSE + KL)
+- **New — Autograd:** `Value` / `Tape` — scalar reverse-mode AD with topological backprop (micrograd-style)
+- **New — Metrics:** `confusionMatrix`, `accuracy`, `precision`, `recall`, `f1Score`, `rocCurve`, `auc`, `mae`, `rmse`, `r2Score`, `perplexity`, `printConfusionMatrix`, `classificationReport`
+- **New — Utilities:** `EarlyStopping` (patience + best-weight restore), `LossPlotter` (ASCII terminal curve), `WeightInspector` (per-layer stats, dead ReLU detection), `DataAugmentation` (noise, normalize, z-score, shuffle, split)
+
 ### v0.2.7
-- **Docs:** Added architecture diagram to README — visual progression from `Neuron` to `NetworkTransformerRL`
+- **Docs:** Added architecture diagram to README
 
 ### v0.2.6
 - **Fix:** `Network.predict` now returns `number[]` (consistent with all other network classes)
-- **Fix:** `Network.train` now uses the configured optimizer and `activation.dfn()` instead of hardcoded SGD and sigmoid derivative
-- **Fix:** `LayerNorm.backwardOne` now correctly uses pre-update γ when computing the input gradient
-- **Fix:** LSTM and GRU gate initialization corrected from He (`√(2/n)`) to Xavier fan-in+out (`√(2/(fanIn+fanOut))`), matching the sigmoid/tanh activations used in those gates
-- **New:** `BiasVector` — 1D counterpart to `WeightMatrix` with per-scalar Adam optimizers; replaces repeated `number[] + Adam[]` pairs in `TransformerBlock`, `NetworkTransformer`, and `NetworkTransformerRL`
-- **New:** `defaultOptimizer` exported from `optimizers.ts` — single source of truth for the default `() => new SGD()` factory
-- **Refactor:** `NetworkN.train` and `trainWithDeltas` share extracted `_forwardAll()` and `_backpropLayers()` internals — eliminates ~50 lines of duplication
-- **Refactor:** `Transformer` backward methods now throw descriptive errors instead of crashing with a cryptic `TypeError` when called before `predict()`
-- **Refactor:** `NetworkTransformer.setWeights()` and `NetworkTransformerRL.setWeightsFlat()` use each component's own `setWeights()` instead of direct `.W` mutation
+- **Fix:** `Network.train` now uses the configured optimizer and `activation.dfn()`
+- **Fix:** `LayerNorm.backwardOne` correctly uses pre-update γ
+- **Fix:** LSTM and GRU gate initialization corrected to Xavier fan-in+out
+- **New:** `BiasVector` — 1D counterpart to `WeightMatrix`
+- **New:** `defaultOptimizer` — shared default factory
+- **Refactor:** `NetworkN` extracts `_forwardAll()` and `_backpropLayers()`
 
 ### v0.2.5
-- Unified optimizer factories for `LSTMLayer`, `GRULayer`, `Conv1D` (per-scalar Adam/Momentum/SGD)
-- `NetworkN`: residual connections (`residual` option) and dropout (`dropoutRate`)
-- `Conv1D`: multi-channel input (`inputChannels`)
-- `NetworkTransformerRL`: configurable pooling (`avg` / `max` / `last` / `weighted`)
-- `Trainer`: weight decay, early stopping, classification metrics, gradient clipping support
-- `DataLoader`: validation split (`validationSplit` + `getValidationData()`)
-- `ModelSaver`: universal serialization via flat `getWeights()`/`setWeights()` for all classes
-- Gradient check test suite (`tests/GradientCheck.test.ts`)
-
-## Possible improvements
-
-1. **Support for batches** in training to improve efficiency and gradient stability.
-2. **Global gradient norm clipping** — `WeightMatrix.update` supports per-element clipping; a utility to clip across all matrices by total norm would be more principled.
-3. **Learning rate warmup** — standard practice for Transformers; ramp LR from 0 to target over the first N steps.
-4. **Pre-norm architecture** — LayerNorm before the residual add (instead of after) is more stable for deep stacks.
+- Unified optimizer factories for `LSTMLayer`, `GRULayer`, `Conv1D`
+- `NetworkN`: residual connections and dropout
+- `Conv1D`: multi-channel input
+- `Trainer`: weight decay, early stopping, classification metrics
+- `DataLoader`: validation split
+- `ModelSaver`: universal serialization
 
 ## License
 
