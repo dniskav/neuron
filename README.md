@@ -3,6 +3,28 @@
 
 A minimal, dependency-free neural network library built from scratch in TypeScript. Designed for learning and experimentation — every line of math is readable.
 
+Each class is a building block for the next: from a single neuron to a full Transformer with causal attention.
+
+```mermaid
+graph TD
+    A["Neuron\n1 input · 1 weight · 1 bias"]
+    B["NeuronN\nN inputs · Xavier init · configurable activation"]
+    C["Layer\ngroup of NeuronN sharing the same inputs"]
+    D["Network\nhidden + output · backprop"]
+    E["NetworkN\narbitrary depth · define as [inputs, ...hidden, outputs]"]
+    F["LSTMLayer\nrecurrent · hidden + cell state · BPTT"]
+    G["NetworkLSTM\nLSTM + dense layers · sequence memory"]
+    H["AttentionHead\nQ · K · V · scaled dot-product"]
+    I["MultiHeadAttention\nN heads in parallel"]
+    J["TransformerBlock\nattention + FFN + LayerNorm × 2 + residuals"]
+    K["NetworkTransformer\nembeddings → blocks → per-token logits"]
+    L["NetworkTransformerRL\ncontinuous projection → causal attention → Q-values"]
+
+    A --> B --> C --> D --> E
+    E --> F --> G
+    E --> H --> I --> J --> K --> L
+```
+
 ## What's inside
 
 | Export | Description |
@@ -310,6 +332,9 @@ const attnWeights = net.getAttentionWeights();
 ```
 
 ## Changelog
+
+### v0.2.7
+- **Docs:** Added architecture diagram to README — visual progression from `Neuron` to `NetworkTransformerRL`
 
 ### v0.2.6
 - **Fix:** `Network.predict` now returns `number[]` (consistent with all other network classes)
