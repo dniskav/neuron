@@ -27,7 +27,21 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check if version is already published
+        id: version_check
+        run: |
+          LOCAL=$(node -p "require('./package.json').version")
+          REMOTE=$(npm view @dniskav/neuron version 2>/dev/null || echo "0.0.0")
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish
+        if: steps.version_check.outputs.skip == 'false'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
