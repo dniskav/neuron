@@ -1,10 +1,8 @@
 import { Layer }                            from "./Layer";
 import { Dropout }                          from "./Dropout";
 import { Activation, sigmoid }              from "./activations";
-import { OptimizerFactory, SGD }            from "./optimizers";
+import { OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray }                    from "./Validation";
-
-const defaultOptimizer: OptimizerFactory = () => new SGD();
 
 export interface NetworkNOptions {
   // One activation per layer (hidden layers + output layer).
@@ -108,70 +106,12 @@ export class NetworkN {
   train(inputs: number[], targets: number[], lr: number): number {
     validateArray(inputs, this.structure[0], 'NetworkN.train');
     validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
-    // Forward pass — store activations at every layer (with dropout during training)
-    const act: number[][] = [inputs];
-    for (let i = 0; i < this.layers.length; i++) {
-      const layerInput = act[act.length - 1];
-      const layerOutput = this.layers[i].predict(layerInput);
 
-      let current: number[];
-      // Residual connection: add input to output when sizes match
-      if (this._shouldResidual(i)) {
-        if (this.structure[i] === this.structure[i + 1]) {
-          current = layerOutput.map((v, j) => v + layerInput[j]);
-        } else {
-          current = [...layerOutput];
-        }
-      } else {
-        current = [...layerOutput];
-      }
-
-      // Apply dropout to hidden layers only (not output layer)
-      if (i < this._dropouts.length) {
-        current = this._dropouts[i].forward(current, true);
-      }
-      act.push(current);
-    }
-
+    const act  = this._forwardAll(inputs, true);
     const pred = act[act.length - 1];
-
-    // Output layer deltas — use the output layer's activation derivative
     const outAct = this.layers[this.layers.length - 1].neurons[0].activation;
-    let deltas = pred.map((p, i) => (targets[i] - p) * outAct.dfn(p));
-
-    // Backprop from last layer to first
-    for (let l = this.layers.length - 1; l >= 0; l--) {
-      const layer   = this.layers[l];
-
-      // Apply dropout backward to hidden layers (not output layer)
-      if (l < this._dropouts.length) {
-        deltas = this._dropouts[l].backward(deltas);
-      }
-
-      const layerIn = act[l];
-
-      // Activation of the previous layer (null when l === 0: raw inputs, no activation).
-      const prevAct = l > 0 ? this.layers[l - 1].neurons[0].activation : null;
-
-      // Error reaching each neuron in the previous layer (computed before updating weights)
-      const prevDeltas = layerIn.map((out, j) => {
-        const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-        return prevAct ? errProp * prevAct.dfn(out) : errProp;
-      });
-
-      // Residual backprop: gradient also flows through skip connection
-      if (this._shouldResidual(l) && this.structure[l] === this.structure[l + 1]) {
-        for (let j = 0; j < prevDeltas.length; j++) {
-          prevDeltas[j] += deltas[j];
-        }
-      }
-
-      layer.neurons.forEach((n, k) => {
-        n._update(layerIn.map(inp => deltas[k] * inp), deltas[k], lr);
-      });
-
-      deltas = prevDeltas;
-    }
+    const deltas = pred.map((p, i) => (targets[i] - p) * outAct.dfn(p));
+    this._backpropLayers(act, deltas, lr);
 
     return pred.reduce((s, p, i) => s + (targets[i] - p) ** 2, 0) / pred.length;
   }
@@ -179,54 +119,8 @@ export class NetworkN {
   // Backprop with externally provided output-layer deltas.
   // Useful for custom loss functions (e.g. physics-based gradients).
   trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number): void {
-    const act: number[][] = [inputs];
-    for (let i = 0; i < this.layers.length; i++) {
-      const layerInput = act[act.length - 1];
-      const layerOutput = this.layers[i].predict(layerInput);
-
-      let current: number[];
-      if (this._shouldResidual(i)) {
-        if (this.structure[i] === this.structure[i + 1]) {
-          current = layerOutput.map((v, j) => v + layerInput[j]);
-        } else {
-          current = [...layerOutput];
-        }
-      } else {
-        current = [...layerOutput];
-      }
-
-      if (i < this._dropouts.length) {
-        current = this._dropouts[i].forward(current, true);
-      }
-      act.push(current);
-    }
-
-    let deltas = outputDeltas;
-    for (let l = this.layers.length - 1; l >= 0; l--) {
-      const layer   = this.layers[l];
-
-      if (l < this._dropouts.length) {
-        deltas = this._dropouts[l].backward(deltas);
-      }
-
-      const layerIn = act[l];
-      const prevAct = l > 0 ? this.layers[l - 1].neurons[0].activation : null;
-      const prevDeltas = layerIn.map((out, j) => {
-        const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-        return prevAct ? errProp * prevAct.dfn(out) : errProp;
-      });
-
-      if (this._shouldResidual(l) && this.structure[l] === this.structure[l + 1]) {
-        for (let j = 0; j < prevDeltas.length; j++) {
-          prevDeltas[j] += deltas[j];
-        }
-      }
-
-      layer.neurons.forEach((n, k) => {
-        n._update(layerIn.map(inp => deltas[k] * inp), deltas[k], lr);
-      });
-      deltas = prevDeltas;
-    }
+    const act = this._forwardAll(inputs, true);
+    this._backpropLayers(act, outputDeltas, lr);
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
@@ -255,9 +149,56 @@ export class NetworkN {
     }
   }
 
-  // ── Helper ───────────────────────────────────────────────────────────────
+  // ── Private helpers ──────────────────────────────────────────────────────
+
   private _shouldResidual(layerIndex: number): boolean {
     if (typeof this._residual === 'function') return this._residual(layerIndex);
     return this._residual;
+  }
+
+  // Forward pass storing activations at every layer boundary.
+  // Used by train(), trainWithDeltas(), and predict() shares the same logic.
+  private _forwardAll(inputs: number[], training: boolean): number[][] {
+    const act: number[][] = [inputs];
+    for (let i = 0; i < this.layers.length; i++) {
+      const layerInput  = act[act.length - 1];
+      const layerOutput = this.layers[i].predict(layerInput);
+      let current: number[];
+      if (this._shouldResidual(i) && this.structure[i] === this.structure[i + 1]) {
+        current = layerOutput.map((v, j) => v + layerInput[j]);
+      } else {
+        current = layerOutput;
+      }
+      if (i < this._dropouts.length) {
+        current = this._dropouts[i].forward(current, training);
+      }
+      act.push(current);
+    }
+    return act;
+  }
+
+  // Backward pass: updates all layer weights given the pre-computed activations
+  // and the initial output-layer deltas.
+  private _backpropLayers(act: number[][], outputDeltas: number[], lr: number): void {
+    let deltas = outputDeltas;
+    for (let l = this.layers.length - 1; l >= 0; l--) {
+      const layer = this.layers[l];
+      if (l < this._dropouts.length) {
+        deltas = this._dropouts[l].backward(deltas);
+      }
+      const layerIn = act[l];
+      const prevAct = l > 0 ? this.layers[l - 1].neurons[0].activation : null;
+      const prevDeltas = layerIn.map((out, j) => {
+        const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
+        return prevAct ? errProp * prevAct.dfn(out) : errProp;
+      });
+      if (this._shouldResidual(l) && this.structure[l] === this.structure[l + 1]) {
+        for (let j = 0; j < prevDeltas.length; j++) prevDeltas[j] += deltas[j];
+      }
+      layer.neurons.forEach((n, k) => {
+        n._update(layerIn.map(inp => deltas[k] * inp), deltas[k], lr);
+      });
+      deltas = prevDeltas;
+    }
   }
 }

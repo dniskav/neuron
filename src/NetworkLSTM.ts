@@ -1,10 +1,8 @@
 import { LSTMLayer }                         from "./LSTMLayer";
 import { Layer }                             from "./Layer";
 import { Activation, sigmoid }               from "./activations";
-import { OptimizerFactory, SGD }             from "./optimizers";
+import { OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray }                     from "./Validation";
-
-const defaultOptimizer: OptimizerFactory = () => new SGD();
 
 export interface NetworkLSTMOptions {
   // Activation for the dense layers that follow the LSTM.

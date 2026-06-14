@@ -20,8 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TransformerBlock } from './TransformerBlock'
-import { WeightMatrix } from './MatMul'
-import { Adam } from './optimizers'
+import { WeightMatrix, BiasVector } from './MatMul'
 
 export interface NetworkTransformerRLOptions {
   d_model?:  number    // dimensión del modelo (default: 32)
@@ -46,8 +45,7 @@ export class NetworkTransformerRL {
 
   // Pooling + output: d_model → nActions
   outputProj: WeightMatrix
-  outputBias: number[]
-  private outBiasOpts: Adam[]
+  outputBias: BiasVector
 
   // Forward caches para backprop
   private _projected: number[][] | null = null
@@ -83,9 +81,8 @@ export class NetworkTransformerRL {
     )
 
     // Proyección de salida
-    this.outputProj  = new WeightMatrix(nActions, d_model)
-    this.outputBias  = new Array(nActions).fill(0)
-    this.outBiasOpts = Array.from({ length: nActions }, () => new Adam())
+    this.outputProj = new WeightMatrix(nActions, d_model)
+    this.outputBias = new BiasVector(nActions)
   }
 
   // ── Forward ────────────────────────────────────────────────────────────────
@@ -97,7 +94,7 @@ export class NetworkTransformerRL {
     const pooled = this._pool(h)
     // Output: Q-values
     return this.outputProj.W.map((row, c) =>
-      row.reduce((s, w, m) => s + w * pooled[m], this.outputBias[c])
+      row.reduce((s, w, m) => s + w * pooled[m], this.outputBias.values[c])
     )
   }
 
@@ -114,7 +111,7 @@ export class NetworkTransformerRL {
 
     // Output projection
     const pred: number[] = this.outputProj.W.map((row, c) =>
-      row.reduce((s, w, m) => s + w * pooled[m], this.outputBias[c])
+      row.reduce((s, w, m) => s + w * pooled[m], this.outputBias.values[c])
     )
 
     // MSE loss: L = (1/n) * Σ (pred[c] - target[c])²
@@ -143,8 +140,7 @@ export class NetworkTransformerRL {
     const dBout = dPred.slice()
 
     this.outputProj.update(dWout, lr)
-    for (let c = 0; c < this.nActions; c++)
-      this.outputBias[c] = this.outBiasOpts[c].step(this.outputBias[c], dBout[c], lr)
+    this.outputBias.update(dBout, lr)
 
     // Backprop through transformer blocks
     // dH: gradient w.r.t. pooled output, distributed using the same pooling as _pool()
@@ -178,25 +174,27 @@ export class NetworkTransformerRL {
 
   getWeightsFlat(): number[] {
     const w: number[] = [];
-    for (const row of this.inputProj.W) w.push(...row);
+    w.push(...this.inputProj.getWeights());
     for (const block of this.blocks) w.push(...block.getWeights());
-    for (const row of this.outputProj.W) w.push(...row);
-    w.push(...this.outputBias);
+    w.push(...this.outputProj.getWeights());
+    w.push(...this.outputBias.getWeights());
     return w;
   }
 
   setWeightsFlat(weights: number[]): void {
     let idx = 0;
-    for (let i = 0; i < this.inputProj.W.length; i++)
-      for (let j = 0; j < this.inputProj.W[i].length; j++) this.inputProj.W[i][j] = weights[idx++];
+    const inputProjLen = this.inputProj.getWeights().length;
+    this.inputProj.setWeights(weights.slice(idx, idx + inputProjLen));
+    idx += inputProjLen;
     for (const block of this.blocks) {
       const blockLen = block.getWeights().length;
       block.setWeights(weights.slice(idx, idx + blockLen));
       idx += blockLen;
     }
-    for (let i = 0; i < this.outputProj.W.length; i++)
-      for (let j = 0; j < this.outputProj.W[i].length; j++) this.outputProj.W[i][j] = weights[idx++];
-    for (let i = 0; i < this.outputBias.length; i++) this.outputBias[i] = weights[idx++];
+    const outProjLen = this.outputProj.getWeights().length;
+    this.outputProj.setWeights(weights.slice(idx, idx + outProjLen));
+    idx += outProjLen;
+    this.outputBias.setWeights(weights.slice(idx, idx + this.outputBias.values.length));
   }
 
   getWeightsStructured() {
@@ -215,16 +213,16 @@ export class NetworkTransformerRL {
         norm2: { gamma: [...b.norm2.gamma], beta: [...b.norm2.beta] },
         ff1: b.ff1.W.map(r => [...r]),
         ff2: b.ff2.W.map(r => [...r]),
-        b1: [...b.b1],
-        b2: [...b.b2],
+        b1: [...b.b1.values],
+        b2: [...b.b2.values],
       })),
       outputProj: this.outputProj.W.map(r => [...r]),
-      outputBias: [...this.outputBias],
+      outputBias: [...this.outputBias.values],
     }
   }
 
   setWeightsStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): void {
-    data.inputProj.forEach((row, i) => { this.inputProj.W[i] = [...row] })
+    this.inputProj.setWeights(data.inputProj.flat())
     data.blocks.forEach((bd, b) => {
       const blk = this.blocks[b]
       bd.attn.heads.forEach((hd, h) => {
@@ -239,11 +237,11 @@ export class NetworkTransformerRL {
       blk.norm2.beta  = [...bd.norm2.beta]
       blk.ff1.W = bd.ff1.map(r => [...r])
       blk.ff2.W = bd.ff2.map(r => [...r])
-      blk.b1 = [...bd.b1]
-      blk.b2 = [...bd.b2]
+      blk.b1.setWeights(bd.b1)
+      blk.b2.setWeights(bd.b2)
     })
     this.outputProj.W = data.outputProj.map(r => [...r])
-    this.outputBias   = [...data.outputBias]
+    this.outputBias.setWeights(data.outputBias)
   }
 
   // ── Serializable interface (flat array) ────────────────────────────────────

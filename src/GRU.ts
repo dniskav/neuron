@@ -33,7 +33,7 @@ class Gate {
 
   constructor(inputSize: number, hSize: number, initBias = 0) {
     const n = inputSize + hSize;
-    const limit = Math.sqrt(2 / n);
+    const limit = Math.sqrt(2 / (n + hSize));  // Xavier fan-in+out for sigmoid/tanh gates
     this.W = Array.from({ length: hSize }, () =>
       Array.from({ length: n }, () => (Math.random() * 2 - 1) * limit)
     );

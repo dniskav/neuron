@@ -21,9 +21,11 @@ A minimal, dependency-free neural network library built from scratch in TypeScri
 | `AttentionHead` | Single scaled dot-product self-attention head (Q / K / V projections + backprop). |
 | `LayerNorm` | Layer normalization with learnable γ / β per feature. |
 | `WeightMatrix` | 2D weight matrix with per-scalar Adam optimizers. Optional per-element gradient clipping via `update(dW, lr, clipValue)`. |
+| `BiasVector` | 1D bias vector with per-scalar Adam optimizers. Companion to `WeightMatrix` for bias terms. |
 | `EmbeddingMatrix` | Lookup-table embedding matrix with SGD updates. |
 | `sigmoid` `relu` `tanh` `linear` | Built-in activation functions. |
-| `SGD` `Momentum` `Adam` | Optimizers. Each instance tracks its own state per weight. |
+| `SGD` `Momentum` `Adam` `ClipOptimizer` | Optimizers. Each instance tracks its own state per weight. `ClipOptimizer` wraps any optimizer with gradient clipping. |
+| `defaultOptimizer` | Default `OptimizerFactory` (`() => new SGD()`). Shared across `NeuronN`, `Layer`, `NetworkN`, `NetworkLSTM`. |
 | `mse` `crossEntropy` | Loss functions for evaluation and logging. |
 | `mseDelta` `crossEntropyDelta` | Output-layer delta functions for use with `trainWithDeltas`. |
 
@@ -83,8 +85,8 @@ for (let epoch = 0; epoch < 5000; epoch++) {
   }
 }
 
-console.log(net.predict([0, 1])); // ~0.97
-console.log(net.predict([1, 1])); // ~0.03
+console.log(net.predict([0, 1])[0]); // ~0.97
+console.log(net.predict([1, 1])[0]); // ~0.03
 ```
 
 ### NetworkN — deep network with custom architecture
@@ -306,6 +308,29 @@ The last step in the sequence gets 2× pooling weight — the most recent state 
 const attnWeights = net.getAttentionWeights();
 // attnWeights[blockIdx][headIdx] → seqLen × seqLen matrix
 ```
+
+## Changelog
+
+### v0.2.6
+- **Fix:** `Network.predict` now returns `number[]` (consistent with all other network classes)
+- **Fix:** `Network.train` now uses the configured optimizer and `activation.dfn()` instead of hardcoded SGD and sigmoid derivative
+- **Fix:** `LayerNorm.backwardOne` now correctly uses pre-update γ when computing the input gradient
+- **Fix:** LSTM and GRU gate initialization corrected from He (`√(2/n)`) to Xavier fan-in+out (`√(2/(fanIn+fanOut))`), matching the sigmoid/tanh activations used in those gates
+- **New:** `BiasVector` — 1D counterpart to `WeightMatrix` with per-scalar Adam optimizers; replaces repeated `number[] + Adam[]` pairs in `TransformerBlock`, `NetworkTransformer`, and `NetworkTransformerRL`
+- **New:** `defaultOptimizer` exported from `optimizers.ts` — single source of truth for the default `() => new SGD()` factory
+- **Refactor:** `NetworkN.train` and `trainWithDeltas` share extracted `_forwardAll()` and `_backpropLayers()` internals — eliminates ~50 lines of duplication
+- **Refactor:** `Transformer` backward methods now throw descriptive errors instead of crashing with a cryptic `TypeError` when called before `predict()`
+- **Refactor:** `NetworkTransformer.setWeights()` and `NetworkTransformerRL.setWeightsFlat()` use each component's own `setWeights()` instead of direct `.W` mutation
+
+### v0.2.5
+- Unified optimizer factories for `LSTMLayer`, `GRULayer`, `Conv1D` (per-scalar Adam/Momentum/SGD)
+- `NetworkN`: residual connections (`residual` option) and dropout (`dropoutRate`)
+- `Conv1D`: multi-channel input (`inputChannels`)
+- `NetworkTransformerRL`: configurable pooling (`avg` / `max` / `last` / `weighted`)
+- `Trainer`: weight decay, early stopping, classification metrics, gradient clipping support
+- `DataLoader`: validation split (`validationSplit` + `getValidationData()`)
+- `ModelSaver`: universal serialization via flat `getWeights()`/`setWeights()` for all classes
+- Gradient check test suite (`tests/GradientCheck.test.ts`)
 
 ## Possible improvements
 

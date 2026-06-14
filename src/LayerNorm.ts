@@ -69,17 +69,17 @@ export class LayerNorm {
     const { x_norm, std } = this._cache[pos]
     const N = dOut.length
 
+    // Capture gamma before update — D must use pre-update values
+    const gammaOld = this.gamma.slice()
+
     // Update γ and β
     for (let i = 0; i < N; i++) {
       this.gamma[i] += lr * dOut[i] * x_norm[i]
       this.beta[i]  += lr * dOut[i]
     }
 
-    // D = dOut ⊙ gamma  (element-wise; gamma already updated above)
-    // Note: we use the gamma AFTER the update, which introduces a tiny
-    // approximation. For production code you would cache the pre-update gamma,
-    // but the effect is negligible at typical learning rates.
-    const D    = dOut.map((d, i) => d * this.gamma[i])
+    // D = dOut ⊙ gamma  (element-wise; use pre-update gamma)
+    const D    = dOut.map((d, i) => d * gammaOld[i])
     const mD   = D.reduce((s, v) => s + v, 0) / N
     const mDxn = D.reduce((s, d, i) => s + d * x_norm[i], 0) / N
 

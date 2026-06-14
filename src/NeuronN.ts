@@ -1,8 +1,6 @@
 import { Activation, sigmoid }          from "./activations";
-import { Optimizer, OptimizerFactory, SGD } from "./optimizers";
+import { Optimizer, OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray }                from "./Validation";
-
-const defaultOptimizer: OptimizerFactory = () => new SGD();
 
 // ─── N-INPUT NEURON ───────────────────────────────────────────────────────────
 // Generalized version of Neuron: accepts any number of inputs.

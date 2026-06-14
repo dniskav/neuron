@@ -70,10 +70,11 @@ export class MultiHeadAttention {
   // dOut: seqLen × d_model  →  dX: seqLen × d_model
 
   backward(dOut: number[][], lr: number): number[][] {
+    if (!this._concat) throw new Error('MultiHeadAttention.backward() called before predict()');
     const seqLen   = dOut.length
     const concatD  = this.nHeads * this.d_k
     const d_model  = this.d_model
-    const concat   = this._concat!
+    const concat   = this._concat
 
     // dConcat[i] = Wo^T @ dOut[i]
     const dConcat: number[][] = dOut.map(do_ =>

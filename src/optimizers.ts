@@ -19,6 +19,9 @@ export interface Optimizer {
 // A factory function that produces one fresh Optimizer per weight.
 export type OptimizerFactory = () => Optimizer;
 
+// Default factory used by NeuronN, Layer, NetworkN, NetworkLSTM when none is provided.
+export const defaultOptimizer: OptimizerFactory = () => new SGD();
+
 // ── SGD ───────────────────────────────────────────────────────────────────────
 // Vanilla stochastic gradient descent. Stateless.
 //   w ← w + lr·g

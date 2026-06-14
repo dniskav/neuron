@@ -1,8 +1,6 @@
 import { NeuronN }                           from "./NeuronN";
 import { Activation, sigmoid }               from "./activations";
-import { OptimizerFactory, SGD }             from "./optimizers";
-
-const defaultOptimizer: OptimizerFactory = () => new SGD();
+import { OptimizerFactory, defaultOptimizer } from "./optimizers";
 
 // ─── LAYER ────────────────────────────────────────────────────────────────────
 // A group of neurons that share the same inputs.

@@ -102,7 +102,8 @@ export class AttentionHead {
   //   6. dX   = dQ @ Wq  +  dK @ Wk  +  dV @ Wv
 
   backward(dOut: number[][], lr: number): number[][] {
-    const { X, Q, K, V, attn } = this.cache!
+    if (!this.cache) throw new Error('AttentionHead.backward() called before predict()');
+    const { X, Q, K, V, attn } = this.cache
     const seqLen  = X.length
     const d_model = X[0].length
     const scale   = 1 / Math.sqrt(this.d_k)

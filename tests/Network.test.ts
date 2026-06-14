@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { Network } from '../src/Network'
 
 describe('Network', () => {
-  it('predict returns a number', () => {
+  it('predict returns a number[]', () => {
     const net = new Network(2, 4, 1)
     const out = net.predict([0, 1])
-    expect(typeof out).toBe('number')
-    expect(isFinite(out)).toBe(true)
+    expect(Array.isArray(out)).toBe(true)
+    expect(typeof out[0]).toBe('number')
+    expect(isFinite(out[0])).toBe(true)
   })
 
   it('validates input length', () => {
@@ -34,10 +35,10 @@ describe('Network', () => {
     }
 
     // Check predictions
-    expect(net.predict([0, 0])).toBeCloseTo(0, 0)
-    expect(net.predict([0, 1])).toBeCloseTo(1, 0)
-    expect(net.predict([1, 0])).toBeCloseTo(1, 0)
-    expect(net.predict([1, 1])).toBeCloseTo(0, 0)
+    expect(net.predict([0, 0])[0]).toBeCloseTo(0, 0)
+    expect(net.predict([0, 1])[0]).toBeCloseTo(1, 0)
+    expect(net.predict([1, 0])[0]).toBeCloseTo(1, 0)
+    expect(net.predict([1, 1])[0]).toBeCloseTo(0, 0)
   }, 30000)
 
   it('getWeights and setWeights work correctly', () => {
@@ -61,6 +62,6 @@ describe('Network', () => {
     // Set same weights
     net.setWeights(w)
     const pred2 = net.predict([0.5, 0.5])
-    expect(pred1).toBeCloseTo(pred2, 10)
+    expect(pred1[0]).toBeCloseTo(pred2[0], 10)
   })
 })

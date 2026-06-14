@@ -113,6 +113,32 @@ export class WeightMatrix {
   }
 }
 
+// ── BiasVector ────────────────────────────────────────────────────────────────
+//
+// A 1D bias array with one Adam optimizer per element.
+// Companion to WeightMatrix for the bias terms in FFN and output projections.
+
+export class BiasVector {
+  values: number[]
+  private opts: Adam[]
+
+  constructor(size: number) {
+    this.values = new Array(size).fill(0)
+    this.opts = Array.from({ length: size }, () => new Adam())
+  }
+
+  update(grad: number[], lr: number): void {
+    for (let i = 0; i < this.values.length; i++)
+      this.values[i] = this.opts[i].step(this.values[i], grad[i], lr)
+  }
+
+  getWeights(): number[] { return [...this.values] }
+
+  setWeights(weights: number[]): void {
+    for (let i = 0; i < this.values.length; i++) this.values[i] = weights[i]
+  }
+}
+
 // ── EmbeddingMatrix ───────────────────────────────────────────────────────────
 //
 // Lookup table: vocabSize × d_model.

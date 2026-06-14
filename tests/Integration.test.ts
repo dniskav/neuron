@@ -17,10 +17,10 @@ describe('Integration: XOR with Network', () => {
       net.train([1, 1], 0, lr)
     }
 
-    expect(net.predict([0, 0])).toBeCloseTo(0, 0)
-    expect(net.predict([0, 1])).toBeCloseTo(1, 0)
-    expect(net.predict([1, 0])).toBeCloseTo(1, 0)
-    expect(net.predict([1, 1])).toBeCloseTo(0, 0)
+    expect(net.predict([0, 0])[0]).toBeCloseTo(0, 0)
+    expect(net.predict([0, 1])[0]).toBeCloseTo(1, 0)
+    expect(net.predict([1, 0])[0]).toBeCloseTo(1, 0)
+    expect(net.predict([1, 1])[0]).toBeCloseTo(0, 0)
   }, 30000)
 })
 
@@ -77,13 +77,13 @@ describe('Integration: Gradient check with finite differences', () => {
     const lr = 0.01
 
     // Get initial prediction
-    const predBefore = net.predict(inputs)
+    const predBefore = net.predict(inputs)[0]
 
     // Train one step
     net.train(inputs, target, lr)
 
     // Get prediction after training
-    const predAfter = net.predict(inputs)
+    const predAfter = net.predict(inputs)[0]
 
     // Prediction should have moved toward target
     const errBefore = Math.abs(target - predBefore)

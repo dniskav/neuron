@@ -21,8 +21,7 @@
 
 import { MultiHeadAttention } from './MultiHeadAttention'
 import { LayerNorm }          from './LayerNorm'
-import { WeightMatrix }       from './MatMul'
-import { Adam }               from './optimizers'
+import { WeightMatrix, BiasVector } from './MatMul'
 
 export interface TransformerBlockOptions {
   d_model: number
@@ -41,11 +40,8 @@ export class TransformerBlock {
 
   ff1: WeightMatrix   // d_ff    × d_model  (expand)
   ff2: WeightMatrix   // d_model × d_ff     (project)
-  b1:  number[]       // d_ff
-  b2:  number[]       // d_model
-
-  private b1Opts: Adam[]
-  private b2Opts: Adam[]
+  b1:  BiasVector     // d_ff
+  b2:  BiasVector     // d_model
 
   // Forward caches (needed for backprop)
   private _X:       number[][] | null = null
@@ -65,11 +61,8 @@ export class TransformerBlock {
 
     this.ff1 = new WeightMatrix(d_ff, d_model)
     this.ff2 = new WeightMatrix(d_model, d_ff)
-    this.b1  = new Array(d_ff).fill(0)
-    this.b2  = new Array(d_model).fill(0)
-
-    this.b1Opts = Array.from({ length: d_ff },    () => new Adam())
-    this.b2Opts = Array.from({ length: d_model }, () => new Adam())
+    this.b1  = new BiasVector(d_ff)
+    this.b2  = new BiasVector(d_model)
   }
 
   // ── Forward ───────────────────────────────────────────────────────────────
@@ -90,13 +83,13 @@ export class TransformerBlock {
     // ── FFN sub-layer ────────────────────────────────────────────────────────
     // ff1: expand  d_model → d_ff  with ReLU
     const ff1Pre: number[][] = h1.map(h =>
-      this.ff1.W.map((row, k) => row.reduce((s, w, m) => s + w * h[m], this.b1[k]))
+      this.ff1.W.map((row, k) => row.reduce((s, w, m) => s + w * h[m], this.b1.values[k]))
     )
     const ff1Out: number[][] = ff1Pre.map(pre => pre.map(v => Math.max(0, v)))
 
     // ff2: project  d_ff → d_model  (linear)
     const ff2Out: number[][] = ff1Out.map(h =>
-      this.ff2.W.map((row, k) => row.reduce((s, w, m) => s + w * h[m], this.b2[k]))
+      this.ff2.W.map((row, k) => row.reduce((s, w, m) => s + w * h[m], this.b2.values[k]))
     )
 
     this.norm2.resetCache(seqLen)
@@ -120,11 +113,14 @@ export class TransformerBlock {
   // dOut: seqLen × d_model  →  dX: seqLen × d_model
 
   backward(dOut: number[][], lr: number): number[][] {
+    if (!this._h1 || !this._ff1Out || !this._ff1Pre) {
+      throw new Error('TransformerBlock.backward() called before predict()');
+    }
     const seqLen  = dOut.length
     const d_model = this.d_model
-    const h1      = this._h1!
-    const ff1Out  = this._ff1Out!
-    const ff1Pre  = this._ff1Pre!
+    const h1      = this._h1
+    const ff1Out  = this._ff1Out
+    const ff1Pre  = this._ff1Pre
 
     // ── FFN backward ─────────────────────────────────────────────────────────
 
@@ -152,8 +148,7 @@ export class TransformerBlock {
       dAdded2.reduce((s, da) => s + da[m], 0)
     )
     this.ff2.update(dW2, lr)
-    for (let m = 0; m < d_model; m++)
-      this.b2[m] = this.b2Opts[m].step(this.b2[m], db2[m], lr)
+    this.b2.update(db2, lr)
 
     // ReLU backward
     const dFf1Pre = dFf1Out.map((d, i) =>
@@ -177,8 +172,7 @@ export class TransformerBlock {
       dFf1Pre.reduce((s, dp) => s + dp[k], 0)
     )
     this.ff1.update(dW1, lr)
-    for (let k = 0; k < this.d_ff; k++)
-      this.b1[k] = this.b1Opts[k].step(this.b1[k], db1[k], lr)
+    this.b1.update(db1, lr)
 
     // Total dH1 = gradient from ff1 path + gradient through skip to norm2 residual
     const dH1: number[][] = Array.from({ length: seqLen }, (_, i) =>
@@ -218,9 +212,9 @@ export class TransformerBlock {
     w.push(...this.attn.getWeights());
     w.push(...this.norm1.gamma, ...this.norm1.beta);
     for (const row of this.ff1.W) w.push(...row);
-    w.push(...this.b1);
+    w.push(...this.b1.values);
     for (const row of this.ff2.W) w.push(...row);
-    w.push(...this.b2);
+    w.push(...this.b2.values);
     w.push(...this.norm2.gamma, ...this.norm2.beta);
     return w;
   }
@@ -230,15 +224,16 @@ export class TransformerBlock {
     const attnLen = this.attn.getWeights().length;
     this.attn.setWeights(weights.slice(idx, idx + attnLen));
     idx += attnLen;
-    for (let i = 0; i < this.norm1.gamma.length; i++) this.norm1.gamma[i] = weights[idx++];
-    for (let i = 0; i < this.norm1.beta.length; i++) this.norm1.beta[i] = weights[idx++];
-    for (let i = 0; i < this.ff1.W.length; i++)
-      for (let j = 0; j < this.ff1.W[i].length; j++) this.ff1.W[i][j] = weights[idx++];
-    for (let i = 0; i < this.b1.length; i++) this.b1[i] = weights[idx++];
-    for (let i = 0; i < this.ff2.W.length; i++)
-      for (let j = 0; j < this.ff2.W[i].length; j++) this.ff2.W[i][j] = weights[idx++];
-    for (let i = 0; i < this.b2.length; i++) this.b2[i] = weights[idx++];
-    for (let i = 0; i < this.norm2.gamma.length; i++) this.norm2.gamma[i] = weights[idx++];
-    for (let i = 0; i < this.norm2.beta.length; i++) this.norm2.beta[i] = weights[idx++];
+    this.norm1.setWeights(weights.slice(idx, idx + this.norm1.getWeights().length));
+    idx += this.norm1.getWeights().length;
+    this.ff1.setWeights(weights.slice(idx, idx + this.ff1.getWeights().length));
+    idx += this.ff1.getWeights().length;
+    this.b1.setWeights(weights.slice(idx, idx + this.b1.values.length));
+    idx += this.b1.values.length;
+    this.ff2.setWeights(weights.slice(idx, idx + this.ff2.getWeights().length));
+    idx += this.ff2.getWeights().length;
+    this.b2.setWeights(weights.slice(idx, idx + this.b2.values.length));
+    idx += this.b2.values.length;
+    this.norm2.setWeights(weights.slice(idx, idx + this.norm2.getWeights().length));
   }
 }

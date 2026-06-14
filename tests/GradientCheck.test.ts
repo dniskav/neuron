@@ -134,7 +134,7 @@ describe('GradientCheck', () => {
       const target = 0.7
 
       const computeLoss = () => {
-        const pred = net.predict(inputs)
+        const pred = net.predict(inputs)[0]
         return (pred - target) ** 2
       }
 
@@ -171,7 +171,7 @@ describe('GradientCheck', () => {
       // Get numerical gradient of the first weight
       const epsilon = 1e-4
       const computeLoss = () => {
-        const pred = net.predict(inputs)
+        const pred = net.predict(inputs)[0]
         return (pred - target) ** 2
       }
       const baselineLoss = computeLoss()

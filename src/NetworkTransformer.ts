@@ -26,8 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TransformerBlock }  from './TransformerBlock'
-import { EmbeddingMatrix, WeightMatrix, softmax } from './MatMul'
-import { Adam }              from './optimizers'
+import { EmbeddingMatrix, WeightMatrix, BiasVector, softmax } from './MatMul'
 
 export interface NetworkTransformerOptions {
   vocabSize?: number    // default: 10 (0–9)
@@ -53,8 +52,7 @@ export class NetworkTransformer {
 
   // Output projection: nClasses × d_model  (one row per class)
   outputProj: WeightMatrix
-  outputBias: number[]
-  private outBiasOpts: Adam[]
+  outputBias: BiasVector
 
   constructor(seqLen: number, options: NetworkTransformerOptions = {}) {
     const {
@@ -79,8 +77,7 @@ export class NetworkTransformer {
     )
 
     this.outputProj  = new WeightMatrix(nClasses, d_model)
-    this.outputBias  = new Array(nClasses).fill(0)
-    this.outBiasOpts = Array.from({ length: nClasses }, () => new Adam())
+    this.outputBias  = new BiasVector(nClasses)
   }
 
   // ── Forward pass ──────────────────────────────────────────────────────────
@@ -91,7 +88,7 @@ export class NetworkTransformer {
     // Output projection per token: logits[i][c] = outputProj[c] · h[i] + bias[c]
     return h.flatMap(hi =>
       this.outputProj.W.map((row, c) =>
-        row.reduce((s, w, m) => s + w * hi[m], this.outputBias[c])
+        row.reduce((s, w, m) => s + w * hi[m], this.outputBias.values[c])
       )
     )
   }
@@ -110,7 +107,7 @@ export class NetworkTransformer {
     // Output projection
     const logits: number[][] = h.map(hi =>
       this.outputProj.W.map((row, c) =>
-        row.reduce((s, w, m) => s + w * hi[m], this.outputBias[c])
+        row.reduce((s, w, m) => s + w * hi[m], this.outputBias.values[c])
       )
     )
 
@@ -160,8 +157,7 @@ export class NetworkTransformer {
       dLogits.reduce((s, dl) => s + dl[c], 0)
     )
     this.outputProj.update(dWout, lr)
-    for (let c = 0; c < this.nClasses; c++)
-      this.outputBias[c] = this.outBiasOpts[c].step(this.outputBias[c], dBout[c], lr)
+    this.outputBias.update(dBout, lr)
 
     // Backprop through transformer blocks (reverse order)
     let dX = dH
@@ -189,28 +185,31 @@ export class NetworkTransformer {
   // Order: tokenEmb, posEmb, block0, block1, ..., blockN, outputProj, outputBias.
   getWeights(): number[] {
     const w: number[] = [];
-    for (const row of this.tokenEmb.W) w.push(...row);
-    for (const row of this.posEmb.W) w.push(...row);
+    w.push(...this.tokenEmb.getWeights());
+    w.push(...this.posEmb.getWeights());
     for (const block of this.blocks) w.push(...block.getWeights());
-    for (const row of this.outputProj.W) w.push(...row);
-    w.push(...this.outputBias);
+    w.push(...this.outputProj.getWeights());
+    w.push(...this.outputBias.getWeights());
     return w;
   }
 
   setWeights(weights: number[]): void {
     let idx = 0;
-    for (let i = 0; i < this.tokenEmb.W.length; i++)
-      for (let j = 0; j < this.tokenEmb.W[i].length; j++) this.tokenEmb.W[i][j] = weights[idx++];
-    for (let i = 0; i < this.posEmb.W.length; i++)
-      for (let j = 0; j < this.posEmb.W[i].length; j++) this.posEmb.W[i][j] = weights[idx++];
+    const tokenEmbLen = this.tokenEmb.getWeights().length;
+    this.tokenEmb.setWeights(weights.slice(idx, idx + tokenEmbLen));
+    idx += tokenEmbLen;
+    const posEmbLen = this.posEmb.getWeights().length;
+    this.posEmb.setWeights(weights.slice(idx, idx + posEmbLen));
+    idx += posEmbLen;
     for (const block of this.blocks) {
       const blockLen = block.getWeights().length;
       block.setWeights(weights.slice(idx, idx + blockLen));
       idx += blockLen;
     }
-    for (let i = 0; i < this.outputProj.W.length; i++)
-      for (let j = 0; j < this.outputProj.W[i].length; j++) this.outputProj.W[i][j] = weights[idx++];
-    for (let i = 0; i < this.outputBias.length; i++) this.outputBias[i] = weights[idx++];
+    const outProjLen = this.outputProj.getWeights().length;
+    this.outputProj.setWeights(weights.slice(idx, idx + outProjLen));
+    idx += outProjLen;
+    this.outputBias.setWeights(weights.slice(idx, idx + this.outputBias.values.length));
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────

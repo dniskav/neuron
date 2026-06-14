@@ -14,10 +14,10 @@ export class Network {
     this.outputLayer = new Layer(nOutputs, nHidden);
   }
 
-  predict(inputs: number[]): number {
+  predict(inputs: number[]): number[] {
     validateArray(inputs, this.hiddenLayer.neurons[0].weights.length, 'Network.predict');
     const hiddenOut = this.hiddenLayer.predict(inputs);
-    return this.outputLayer.predict(hiddenOut)[0];
+    return this.outputLayer.predict(hiddenOut);
   }
 
   // Trains on a single example. Returns the squared error.
@@ -28,29 +28,23 @@ export class Network {
     const hiddenOut  = this.hiddenLayer.predict(inputs);
     const prediction = this.outputLayer.predict(hiddenOut)[0];
 
-    const outputError = target - prediction;
-    const outputDelta = outputError * prediction * (1 - prediction);
-
     const outputNeuron = this.outputLayer.neurons[0];
+    const outputError  = target - prediction;
+    const outputDelta  = outputError * outputNeuron.activation.dfn(prediction);
 
     // Compute hidden deltas using ORIGINAL output weights (before update)
     const hiddenDeltas = this.hiddenLayer.neurons.map((neuron, i) => {
-      const hiddenOut_i  = hiddenOut[i];
-      const hiddenError  = outputDelta * outputNeuron.weights[i];
-      return hiddenError * hiddenOut_i * (1 - hiddenOut_i);
+      const hiddenError = outputDelta * outputNeuron.weights[i];
+      return hiddenError * neuron.activation.dfn(hiddenOut[i]);
     });
 
-    // Update hidden layer weights first
+    // Update hidden layer via optimizer
     this.hiddenLayer.neurons.forEach((neuron, i) => {
-      neuron.weights = neuron.weights.map((w, j) => w + lr * hiddenDeltas[i] * inputs[j]);
-      neuron.bias += lr * hiddenDeltas[i];
+      neuron._update(inputs.map(inp => hiddenDeltas[i] * inp), hiddenDeltas[i], lr);
     });
 
-    // Update output layer weights
-    outputNeuron.weights = outputNeuron.weights.map(
-      (w, i) => w + lr * outputDelta * hiddenOut[i]
-    );
-    outputNeuron.bias += lr * outputDelta;
+    // Update output layer via optimizer
+    outputNeuron._update(hiddenOut.map(h => outputDelta * h), outputDelta, lr);
 
     return outputError * outputError;
   }
