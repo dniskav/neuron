@@ -4,10 +4,10 @@
 // última posición de W). Convención (constitución II): el paso real debe seguir
 // -dL/dw, así que el coseno con el gradiente numérico es ~ +1.
 //
-// Particularidad de la API: fitGD REINICIA los pesos a cero en cada llamada. Por eso
-// el oráculo se evalúa desde w = 0 (el punto del que parte el paso real) y
-// expectLearns usa como "paso" un fitGD completo: no hay entrenamiento incremental.
-// fitNormal se usa como referencia de solución cerrada.
+// Desde T014 (Q7) fitGD CONTINUA desde los pesos existentes si weights.length === nFeatures + 1
+// (solo inicializa a cero si no hay pesos o la forma no coincide). Por eso el paso es un
+// `fitGD(X, y, lr, 1)` real que parte del punto que fija el oráculo, y expectLearns acumula
+// pasos de 1 época. fitNormal se usa como referencia de solución cerrada.
 import { describe, it, expect } from 'vitest'
 import { LinearRegression } from '../../src/LinearRegression'
 import { expectGradientMatches } from '../helpers/gradientOracle'
@@ -30,7 +30,7 @@ const W_EXACT = [2, -1, 0.5]
 
 function setup(X: number[][], y: number[]) {
   const model = new LinearRegression()
-  // Estado inicial explícito: fitGD lo reinicia a cero, así que el punto de partida es 0.
+  // Estado inicial explícito: fitGD continúa desde estos pesos (punto de partida 0).
   model.weights = new Array(X[0].length + 1).fill(0)
   const nFeat = X[0].length
   // Pérdida MSE del objetivo que minimiza fitGD, leyendo los pesos actuales.
@@ -73,9 +73,9 @@ describe('LinearRegression oraculo (fitGD)', () => {
     expectGradientMatches(setup(X4, Y4))
   })
 
-  it('expectLearns: fitGD (2000 epocas) baja la perdida a menos de la mitad', () => {
+  it('expectLearns: fitGD en 2000 pasos de 1 epoca baja la perdida a menos de la mitad', () => {
     const m = setup(X4, Y4)
-    expectLearns({ loss: m.loss, step: () => m.fit(0.2, 2000), steps: 1 })
+    expectLearns({ loss: m.loss, step: () => m.step(0.2), steps: 2000 })
   })
 
   it('convergencia: fitGD llega a la solucion de fitNormal (tolerancia 1e-6)', () => {
