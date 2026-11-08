@@ -288,3 +288,31 @@ describe('VAE learns', () => {
     }
   })
 })
+
+// T013 gap 3: the totalLoss that train() returns carries klWeight (recon + beta * kl).
+describe('VAE totalLoss with klWeight (T013)', () => {
+  for (const beta of [2.5, 0, 1]) {
+    it(`beta = ${beta}: totalLoss = recon + beta * kl, computed independently`, () => {
+      const vae = build(0x5eed, beta)
+      resetRng()
+      const { reconstruction, mu, logVar } = vae.forward(INPUT)
+      const recon = mseOf(INPUT, reconstruction)
+      // KL(N(mu, sigma^2) || N(0, I)) by hand, summed over the latent
+      let kl = 0
+      for (let i = 0; i < mu.length; i++) {
+        kl += 0.5 * (mu[i] * mu[i] + Math.exp(logVar[i]) - 1 - logVar[i])
+      }
+      // the case must be sensitive: the KL term is clearly non-zero and so is recon
+      expect(kl).toBeGreaterThan(1e-3)
+      expect(recon).toBeGreaterThan(1e-3)
+
+      resetRng()
+      const r = vae.train(INPUT, LR)
+      expect(r.reconLoss).toBeCloseTo(recon, 12)
+      expect(r.klLoss).toBeCloseTo(kl, 12)
+      expect(r.totalLoss).toBeCloseTo(recon + beta * kl, 12)
+      if (beta === 1) expect(r.totalLoss).toBeCloseTo(r.reconLoss + r.klLoss, 12) // standard ELBO
+      if (beta === 0) expect(r.totalLoss).toBeCloseTo(recon, 12)
+    })
+  }
+})
