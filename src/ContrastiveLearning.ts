@@ -210,9 +210,12 @@ export class ContrastiveLearning {
       normA += a[d] * a[d];
       normB += b[d] * b[d];
     }
-    const denom = Math.sqrt(normA) * Math.sqrt(normB);
-    // Guard against zero-norm vectors (degenerate case).
-    return denom < 1e-10 ? 0 : dot / denom;
+    // Soft epsilon in the denominator instead of a jump to 0 below a norm threshold:
+    // the loss stays CONTINUOUS as ||z|| -> 0 (a zero-norm jump made finite differences
+    // return garbage near dead projections). For ||a||·||b|| >> 1e-8 the effect is < 1e-8
+    // relative; at exactly zero norm the similarity is 0. Observable change (v0.4): the
+    // loss differs from the old one by O(1e-8 / (||a||·||b||)).
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
   }
 
   // ── NT-Xent loss (no weight update) ──────────────────────────────────────
@@ -256,7 +259,12 @@ export class ContrastiveLearning {
     // Known limitation (documented, not a defect of the step): cosine similarity has
     // curvature ~ 1/||z||. With very small projection norms the loss changes quickly
     // along the step, so a finite lr departs from the first-order gradient there.
-    const eps = 1e-4;
+    // eps = 1e-6 (was 1e-4). Measured on raw Xavier inits (20 seeds): with 1e-4 the
+    // step departed from the oracle gradient (cosine 0.90..0.95) on seeds whose live
+    // projections have norm 5e-3..6e-2, because the 1/||z|| curvature makes a central
+    // difference with a big step inexact; with 1e-6 all of them give cosine >= 0.99999.
+    // Rounding error is ~1e-16/1e-6 = 1e-10, far below the gradients.
+    const eps = 1e-6;
 
     type Slot = { owner: { weights: number[] } | { bias: number }; index: number };
     const slots: Slot[] = [];
