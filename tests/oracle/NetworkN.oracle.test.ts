@@ -26,7 +26,9 @@ import { seedRandom } from '../helpers/seed'
 const INPUT = [0.5, -0.3, 0.8]
 const TARGET = [0.7]
 
-// L = 0.5 * sum (t - p)^2 ; train() usa g = t - p = -dL/d(salida) y delta = g * f'(f(z)).
+// L = MSE media = (1/n) * sum (t - p)^2, lo que devuelve train() (N10, Q8). train() usa
+// g = (2/n)(t - p) = -dL/d(salida) y delta = g * f'(f(z)). Antes de 0.4.0 el paso era el de
+// L = 0.5 * sum (t - p)^2 (n/2 veces el gradiente de la MSE media).
 function setup(
   structure: number[],
   opts: { residual?: boolean | ((i: number) => boolean); dropoutRate?: number } = {},
@@ -36,7 +38,7 @@ function setup(
   const net = new NetworkN(structure, { optimizer: () => new SGD(), ...opts })
   const loss = () => {
     const p = net.predict(INPUT, training)
-    return p.reduce((s, v, i) => s + 0.5 * (target[i] - v) ** 2, 0)
+    return p.reduce((s, v, i) => s + (target[i] - v) ** 2, 0) / p.length
   }
   return {
     net,
@@ -63,6 +65,27 @@ describe('NetworkN oraculo (sin residual)', () => {
     // que no altera el coseno.
     expect(r.ratio).toBeCloseTo(1, 6)
   })
+
+  // N10 (Q8): la escala del paso es el gradiente de la MSE media que devuelve train().
+  // n = 2 no basta (el factor 2/n vale 1): se prueban n = 1, 2, 3 y 4, con lr x0.97/x1.03 y
+  // semillas 1..5. La escala antigua daba ratio n/2 (0.5, 1, 1.5, 2).
+  const T_BY_N: Record<number, number[]> = {
+    1: [0.7], 2: [0.7, 0.2], 3: [0.7, 0.2, -0.4], 4: [0.7, 0.2, -0.4, 0.5],
+  }
+  for (const n of [1, 2, 3, 4]) {
+    it(`escala (N10): ratio en [0.99, 1.01] con n = ${n} salidas, semillas 1..5, lr x0.97/x1.03`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const k of [0.97, 1.03]) {
+          seedRandom(seed)
+          const m = setup([3, 4, 3, n], {}, T_BY_N[n])
+          const r = gradientOracle({ ...m, lr: 1e-3 * k })
+          expect(r.cosine, `n ${n} seed ${seed} x${k}`).toBeGreaterThan(0.999)
+          expect(r.ratio, `n ${n} seed ${seed} x${k}`).toBeGreaterThan(0.99)
+          expect(r.ratio, `n ${n} seed ${seed} x${k}`).toBeLessThan(1.01)
+        }
+      }
+    })
+  }
 
   it('expectLearns: la perdida baja a la mitad', () => {
     const m = setup(S)

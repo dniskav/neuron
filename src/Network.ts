@@ -23,7 +23,9 @@ export class Network {
   // Trains on a single example. `target` is a number (only if nOutputs === 1)
   // or one value per output neuron. Every output neuron is updated.
   // Returns the MEAN squared error over the outputs (the one-output case
-  // gives the squared error).
+  // gives the squared error). The step is the gradient of that returned loss:
+  // the output delta is scaled by 2 / nOutputs (N10, Q8), so with one output the
+  // step is twice the one of versions before 0.4.0 (which trained 0.5 sum (t - p)^2).
   train(inputs: number[], target: number | number[], lr: number): number {
     validateArray(inputs, this.hiddenLayer.neurons[0].weights.length, 'Network.train');
     const targets = this._targetVector(target);
@@ -34,7 +36,7 @@ export class Network {
     const predictions = this.outputLayer.predict(hiddenOut);
     const outputDeltas = outputNeurons.map((neuron, k) => {
       const outputError = targets[k] - predictions[k];
-      return outputError * neuron.activation.dfn(predictions[k]);
+      return (2 / outputNeurons.length) * outputError * neuron.activation.dfn(predictions[k]);
     });
 
     // Hidden deltas: sum over ALL outputs, using ORIGINAL output weights

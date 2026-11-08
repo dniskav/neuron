@@ -102,16 +102,19 @@ export class NetworkN {
   }
 
   // Generalized backpropagation across L layers.
-  // Returns the mean squared error for the example.
+  // Returns the mean squared error for the example, L = (1/n) sum (t - p)^2, and the step is
+  // the gradient of THAT loss: g = -dL/d(output) = (2/n)(t - p) (N10, Q8). With n = 1 the step
+  // is twice the one of versions before 0.4.0 (which trained 0.5 sum (t - p)^2).
+  // trainWithDeltas / inputGradient take deltas computed by the caller and do not rescale.
   train(inputs: number[], targets: number[], lr: number): number {
     validateArray(inputs, this.structure[0], 'NetworkN.train');
     validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
 
     const { act, pre } = this._forwardAll(inputs, true);
     const pred = act[act.length - 1];
-    // g_L = -dL/d(output) for L = 0.5 * sum (t - p)^2. The output derivative
-    // is applied inside _backward, on the output of f (before any residual).
-    const g = pred.map((p, i) => targets[i] - p);
+    // g_L = -dL/d(output) for L = (1/n) * sum (t - p)^2, i.e. (2/n)(t - p). The output
+    // derivative is applied inside _backward, on the output of f (before any residual).
+    const g = pred.map((p, i) => (2 / pred.length) * (targets[i] - p));
     this._backward(act, pre, g, null, lr);
 
     return pred.reduce((s, p, i) => s + (targets[i] - p) ** 2, 0) / pred.length;
