@@ -1,4 +1,4 @@
-// Gradient-oracle test for Conv1D (feature 002, T010).
+// Gradient-oracle test for Conv1D.
 //
 // Same template as tests/oracle/NetworkN.oracle.test.ts:
 //   1. smoke   - forward/backward finitos, forma de la salida y numero de pesos.
@@ -118,12 +118,15 @@ describe('Conv1D oraculo', () => {
   })
 })
 
-// ── Oraculo de dInput por componente (T008, N5) ─────────────────────────────
+// ── Oraculo de dInput por componente ────────────────────────────────────────
 // L = 1/2 * sum (y - t)^2 sobre la ENTRADA. Conv1D es lineal en la entrada, asi que
 // la diferencia central con h = 1e-4 es exacta salvo redondeo (~1e-11): el umbral
 // 1e-6 deja cinco ordenes de margen. Pesos, entrada y objetivo salen de formulas
 // deterministas (sin semilla). backward(dOut = y - t) devuelve dL/dx; lr = 0 no
 // modifica los pesos.
+// Limite: el oraculo compara backward con forward del mismo codigo, asi que un
+// intercambio de left/right aplicado a los dos no se detecta aqui; lo cubre el caso
+// calculado a mano (k = 4, L = 6, same) de tests/api/Conv1D.padding.test.ts.
 describe('Conv1D oraculo de dInput (diferencias finitas)', () => {
   const val = (i: number, salt: number) => Math.sin(1.9 * i + salt) * 0.8 + 0.1
 
