@@ -57,11 +57,17 @@ export class LayerNorm {
 
   // Backprop through layer norm for one position.
   //
-  // Given dL/dy (dOut), computes dL/dx:
-  //   Let D = dOut ⊙ γ
-  //   dL/dx_i = (1/std) * (D_i − mean(D) − x_norm_i * mean(D ⊙ x_norm))
+  // Sign convention (the one used by TransformerBlock): dOut is −dL/dy, not dL/dy,
+  // and the returned vector is −dL/dx, not dL/dx. Both are consumed by the
+  // block's sums as negated gradients, so no sign flip is needed in between.
   //
-  // Also updates γ and β via SGD:
+  // Let D = dOut ⊙ γ, where γ is the copy of gamma saved in the forward pass
+  // for this position (not the current gamma, which earlier positions of the
+  // same sequence may already have updated):
+  //   −dL/dx_i = (1/std) * (D_i − mean(D) − x_norm_i * mean(D ⊙ x_norm))
+  //
+  // Also updates γ and β via SGD. Because dOut = −dL/dy, these steps are the
+  // usual −lr · dL/dγ and −lr · dL/dβ:
   //   γ_i += lr * dOut_i * x_norm_i
   //   β_i += lr * dOut_i
   //
