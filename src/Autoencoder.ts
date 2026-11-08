@@ -142,7 +142,7 @@ export class Autoencoder {
   //
   // Gradient flow:
   //   1. Forward:  z = encoder(x),  x̂ = decoder(z)
-  //   2. Compute MSE output deltas at x̂: δᵢ = (xᵢ − x̂ᵢ) · act'(x̂ᵢ)
+  //   2. Compute MSE output deltas at x̂: δᵢ = (2/d)(xᵢ − x̂ᵢ) · act'(x̂ᵢ)
   //   3. Walk backward through decoder layers to get ∂L/∂z (BEFORE updating weights)
   //   4. Update decoder weights via trainWithDeltas(z, outputDeltas, lr)
   //   5. Update encoder weights via trainWithDeltas(x, dLdz, lr)
@@ -161,9 +161,15 @@ export class Autoencoder {
 
     const loss = mse(xHat, x);
 
-    // ── Output-layer deltas: δᵢ = (xᵢ − x̂ᵢ) · act'(x̂ᵢ) ─────────────────
+    // ── Output-layer deltas: δᵢ = (2/d) · (xᵢ − x̂ᵢ) · act'(x̂ᵢ) ───────────
+    // L = (1/d)·Σ(xᵢ − x̂ᵢ)² (the MEAN MSE this method returns), so
+    // −∂L/∂x̂ᵢ = (2/d)·(xᵢ − x̂ᵢ). The step is therefore exactly the gradient of the
+    // returned loss (AUDIT N10). Before, the 2/d factor was missing and the step was
+    // d/2 times larger (1.5x with d = 3), so the effective lr is now d/2 times smaller:
+    // to keep the old dynamics, multiply lr by d/2.
+    const d             = x.length;
     const decoderOutAct = this.decoder.layers[this.decoder.layers.length - 1].neurons[0].activation;
-    const outputDeltas  = xHat.map((xh, i) => (x[i] - xh) * decoderOutAct.dfn(xh));
+    const outputDeltas  = xHat.map((xh, i) => (2 / d) * (x[i] - xh) * decoderOutAct.dfn(xh));
 
     // ── Propagate deltas backward through all decoder layers to reach ∂L/∂z ─
     // We walk through the decoder layer stack manually (using CURRENT weights,
