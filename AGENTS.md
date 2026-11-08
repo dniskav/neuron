@@ -2,6 +2,8 @@
 
 This file is intended for AI agents and LLMs working with this codebase.
 
+> **Active repair toward v0.4.0:** several sections below are outdated, and some models currently train in the wrong direction. Before changing code, read `specs/HANDOFF.md`, `specs/ORCHESTRATION.md` and `.specify/memory/constitution.md`.
+
 ## What this library is
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, and each abstraction builds on the previous one. There are no external dependencies.
