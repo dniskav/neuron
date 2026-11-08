@@ -18,6 +18,7 @@
 import { describe, it, expect } from 'vitest'
 import { NetworkN } from '../../src/NetworkN'
 import { SGD } from '../../src/optimizers'
+import { relu, sigmoid, tanh, leakyRelu } from '../../src/activations'
 import { expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
 import { seedRandom } from '../helpers/seed'
@@ -154,5 +155,133 @@ describe('NetworkN dropout (estabilidad)', () => {
     for (let i = 0; i < 20; i++) losses.push(net.train(INPUT, TARGET, 0.01))
     expect(losses.every(Number.isFinite)).toBe(true)
     expect(losses[losses.length - 1]).toBeLessThan(losses[0] * 20)
+  })
+})
+
+// ─── inputGradient (T005, Q1/Q2) ─────────────────────────────────────────────
+// inputGradient(x, deltas) devuelve -dL/dx con deltas = (t - p) * dfn(p) (el
+// contrato de trainWithDeltas) y no modifica pesos. Se compara con diferencias
+// finitas centrales de L = 0.5 * sum (t - p)^2 respecto a CADA componente de
+// la entrada (|a - b| < 1e-6), ademas de coseno y ratio.
+describe('NetworkN.inputGradient', () => {
+  type Res = boolean | ((i: number) => boolean)
+  const outDeltas = (net: NetworkN, x: number[], t: number[]) => {
+    const p = net.predict(x)
+    const dfn = net.layers[net.layers.length - 1].neurons[0].activation.dfn
+    return p.map((v, i) => (t[i] - v) * dfn(v))
+  }
+  const fdInput = (net: NetworkN, x: number[], t: number[], training = false, reset?: () => void) => {
+    const L = (xx: number[]) => {
+      reset?.()
+      return net.predict(xx, training).reduce((s, v, i) => s + 0.5 * (t[i] - v) ** 2, 0)
+    }
+    const eps = 1e-6
+    return x.map((_, j) => {
+      const xp = [...x]; xp[j] += eps
+      const xm = [...x]; xm[j] -= eps
+      return -(L(xp) - L(xm)) / (2 * eps)
+    })
+  }
+  const cosine = (a: number[], b: number[]) => {
+    const d = a.reduce((s, v, i) => s + v * b[i], 0)
+    return d / (Math.hypot(...a) * Math.hypot(...b))
+  }
+  const ratio = (a: number[], b: number[]) => {
+    const d = a.reduce((s, v, i) => s + v * b[i], 0)
+    return d / b.reduce((s, v) => s + v * v, 0)
+  }
+
+  const CASES: [string, number[], Res, boolean][] = [
+    ['[3,4,3,1] sigmoide', [3, 4, 3, 1], false, false],
+    ['[3,4,3,1] relu', [3, 4, 3, 1], false, true],
+    ['[3,3,3,1] sigmoide residual: true', [3, 3, 3, 1], true, false],
+    ['[3,3,3,1] relu residual: true', [3, 3, 3, 1], true, true],
+    ['[3,3,3,1] residual: i === 1', [3, 3, 3, 1], (i: number) => i === 1, false],
+    ['[3,4,4,4,2] relu residual: true', [3, 4, 4, 4, 2], true, true],
+  ]
+  const target = (n: number) => (n === 1 ? [0.7] : [0.7, -0.2])
+
+  for (const [name, st, residual, useRelu] of CASES) {
+    const mk = () => {
+      const n = st.length - 1
+      const acts = Array.from({ length: n }, (_, i) => (useRelu && i < n - 1 ? relu : sigmoid))
+      return new NetworkN(st, { activations: acts, residual, optimizer: () => new SGD() })
+    }
+
+    it(`coincide con diferencias finitas, semillas 1..5 (${name})`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const net = mk()
+        const t = target(st[st.length - 1])
+        const x = [0.5, -0.3, 0.8]
+        const got = net.inputGradient(x, outDeltas(net, x, t))
+        const want = fdInput(net, x, t)
+        got.forEach((v, j) => expect(Math.abs(v - want[j])).toBeLessThan(1e-6))
+        expect(cosine(got, want)).toBeGreaterThan(0.999)
+        expect(ratio(got, want)).toBeGreaterThan(0.99)
+        expect(ratio(got, want)).toBeLessThan(1.01)
+      }
+    })
+
+    it(`no modifica pesos y es repetible (${name})`, () => {
+      seedRandom(3)
+      const net = mk()
+      const t = target(st[st.length - 1])
+      const x = [0.5, -0.3, 0.8]
+      const d = outDeltas(net, x, t)
+      const before = net.getWeights()
+      const a = net.inputGradient(x, d)
+      const b = net.inputGradient(x, d)
+      expect(net.getWeights()).toEqual(before)
+      expect(b).toEqual(a)
+    })
+  }
+
+  for (const residual of [false, true]) {
+    it(`con dropout y mascara fija coincide con diferencias finitas (residual ${residual})`, () => {
+      for (const seed of [7, 8, 9]) {
+        seedRandom(1)
+        const net = new NetworkN([3, 6, 6, 1], {
+          optimizer: () => new SGD(), dropoutRate: 0.3, residual,
+          activations: [tanh, leakyRelu, sigmoid],
+        })
+        const x = [0.5, -0.3, 0.8]
+        const t = [0.7]
+        seedRandom(seed)
+        const p = net.predict(x, true)
+        const d = [(t[0] - p[0]) * p[0] * (1 - p[0])]
+        seedRandom(seed)
+        const got = net.inputGradient(x, d)
+        const want = fdInput(net, x, t, true, () => seedRandom(seed))
+        got.forEach((v, j) => expect(Math.abs(v - want[j])).toBeLessThan(1e-6))
+        expect(Math.hypot(...want)).toBeGreaterThan(1e-4) // no degenerado
+        expect(cosine(got, want)).toBeGreaterThan(0.999)
+        expect(ratio(got, want)).toBeGreaterThan(0.99)
+        expect(ratio(got, want)).toBeLessThan(1.01)
+      }
+    })
+  }
+
+  it('lanza con residual en la ultima capa sin tocar pesos (Q2)', () => {
+    const net = new NetworkN([3, 3, 3, 3], { residual: true })
+    const before = net.getWeights()
+    expect(() => net.inputGradient(INPUT, [0.1, 0.1, 0.1])).toThrow(/residual/)
+    expect(net.getWeights()).toEqual(before)
+  })
+
+  it('valida longitudes y valores', () => {
+    const net = new NetworkN([3, 4, 1])
+    expect(() => net.inputGradient([1, 2], [0.1])).toThrow(/inputGradient/)
+    expect(() => net.inputGradient(INPUT, [0.1, 0.2])).toThrow(/inputGradient/)
+    expect(() => net.inputGradient(INPUT, [NaN])).toThrow(/inputGradient/)
+  })
+
+  it('un paso en x a favor del resultado baja la perdida', () => {
+    seedRandom(2)
+    const net = new NetworkN([3, 4, 1])
+    const t = [0.9]
+    const loss = (x: number[]) => 0.5 * (t[0] - net.predict(x)[0]) ** 2
+    const g = net.inputGradient(INPUT, outDeltas(net, INPUT, t))
+    expect(loss(INPUT.map((v, j) => v + 0.1 * g[j]))).toBeLessThan(loss(INPUT))
   })
 })
