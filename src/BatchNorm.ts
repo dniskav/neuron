@@ -11,7 +11,20 @@
 //   running_mean = momentum * running_mean + (1 − momentum) * x
 //   running_var  = momentum * running_var  + (1 − momentum) * (x − mean)²
 //
+// `momentum` (m) is the RETENTION factor of the running statistics (m = 1 keeps
+// them frozen; m = 0 uses only the current sample), as in the formulas above.
+//
 // Gamma and beta are learnable parameters.
+//
+// Input gradient (exact derivative of forward() w.r.t. x, feature 004 / N2):
+// forward() updates the statistics with x and normalizes with the UPDATED ones.
+// With u = x − mean_old:  x − mean_new = m·u  and
+// var_new = m·var_old + (1−m)·m²·u², s = sqrt(var_new + eps), y = γ·m·u/s + β, so
+//   dy/dx = γ · ( m/s − (1−m)·m³·u² / s³ )
+// (the second term is the dependence of the variance on x). Behavior change vs
+// earlier versions, which treated the statistics as constants and returned
+// γ/s: the returned dX is now about m times smaller (≈10× with m = 0.1).
+// With m = 1 both coincide.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -27,6 +40,7 @@ export class BatchNorm {
 
   private _xNorm: number[] | null = null
   private _std: number[] | null = null
+  private _u: number[] | null = null // x − mean_old, saved by forward()
 
   constructor(dim: number, momentum = 0.1) {
     this.dim = dim
@@ -45,6 +59,9 @@ export class BatchNorm {
 
     const eps = 1e-5
 
+    // u = x − mean_old (before the update), needed for the exact backward
+    this._u = x.map((v, i) => v - this.runningMean[i])
+
     // Update running statistics
     for (let i = 0; i < this.dim; i++) {
       this.runningMean[i] = this.momentum * this.runningMean[i] + (1 - this.momentum) * x[i]
@@ -62,20 +79,18 @@ export class BatchNorm {
 
   // ── Backward ──────────────────────────────────────────────────────────────
   backward(dOut: number[]): number[] {
-    if (!this._xNorm || !this._std) {
+    if (!this._xNorm || !this._std || !this._u) {
       throw new Error('BatchNorm.backward: call forward() first')
     }
 
-    // Update gamma and beta (SGD)
-    for (let i = 0; i < this.dim; i++) {
-      // Gradient w.r.t. gamma: dOut * x_norm
-      // Gradient w.r.t. beta: dOut
-      // We don't apply lr here — caller should handle that
-    }
-
-    // Gradient w.r.t. input
-    // dx = dOut * gamma / std
-    return dOut.map((d, i) => d * this.gamma[i] / this._std![i])
+    // dx = dOut · γ · (m/s − (1−m)·m³·u²/s³)  (see header). The caller applies
+    // gamma/beta updates via trainParams().
+    const m = this.momentum
+    return dOut.map((d, i) => {
+      const s = this._std![i]
+      const u = this._u![i]
+      return d * this.gamma[i] * (m / s - ((1 - m) * m ** 3 * u * u) / (s * s * s))
+    })
   }
 
   // ── Train gamma and beta (call after backward) ────────────────────────────

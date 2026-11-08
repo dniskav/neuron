@@ -10,11 +10,9 @@
 //   gamma += lr * (t - y) * x_norm   y   beta += lr * (t - y),
 // es decir, sigue -dL/dgamma y -dL/dbeta con L = 0.5 * sum (t - y)^2.
 //
-// La derivada respecto a la entrada se comprueba aparte: backward() devuelve
-// dOut * gamma / std, que es la derivada con estadisticas tratadas como
-// constantes. Con momentum = 1 las estadisticas no cambian nunca, asi que
-// forward(x) es exactamente esa funcion y la comparacion con diferencias
-// finitas es exacta.
+// La derivada respecto a la entrada (backward exacto, incluida la dependencia de
+// las estadisticas) se comprueba en BatchNorm.momentum.oracle.test.ts para varios
+// momentum; con momentum = 1 las estadisticas no cambian y reduce a gamma / std.
 import { describe, it, expect } from 'vitest'
 import { BatchNorm } from '../../src/BatchNorm'
 import { expectGradientMatches } from '../helpers/gradientOracle'
