@@ -58,6 +58,10 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
   - `GAN` (C2): generador −0.948; discriminador correcto (0.99999996). Trampa: con salida de dimensión 1 el coseno sale +1 por casualidad; usar dimensión ≥ 3.
   - Al corregir cada modelo: quitar `it.fails` Y borrar los controles de signo (se ponen en rojo).
 
+- **N7 `LogisticRegression.predict` / `SoftmaxRegression.predictProba`:** lanzan con `weights` asignados a mano sin `train()` previo (validan contra `_nFeatures` privado). `it.fails // AUDIT N7`; corregir en 005. Además `SoftmaxRegression.train` reinicia siempre pesos con `Math.random` y `LinearRegression.fitGD` reinicia a cero: no hay entrenamiento incremental (documentar o cambiar en 005).
+- **N8 `VAE` (3 causas, 003/004):** (1) el encoder no recibe dMSE/dz por la reparametrización (C2; `mu` no varía con la entrada), (2) los deltas del decoder/encoder no llevan la derivada de la sigmoide de salida, (3) al delta del decoder le falta el factor 2 del MSE. Los bloques sueltos pasan; solo el coseno global detecta la escala relativa. El umbral de dispersión de `mu` (0.05) lo puso el agente, no la spec.
+- **Limitación de 002 (Q9):** el coseno es invariante a la escala, así que un factor constante equivocado en el gradiente no lo detecta el oráculo. Se cubre con pruebas de solución exacta donde existe (p. ej. `LinearRegression`), no en general.
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.

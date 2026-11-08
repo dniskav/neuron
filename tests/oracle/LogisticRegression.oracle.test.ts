@@ -277,3 +277,24 @@ describe('SoftmaxRegression oraculo', () => {
     })
   })
 })
+
+// AUDIT N7 (feature 005): predict/predictProba validate against the private
+// `_nFeatures`, which only train() sets, so a model whose public `weights`
+// were assigned by hand throws instead of predicting. Remove `.fails` when
+// the validation uses weights.length (or the fields stop being public).
+describe('API: pesos asignados sin train() (AUDIT N7)', () => {
+  it.fails('LogisticRegression.predict funciona con weights/bias asignados a mano', () => {
+    const m = new LogisticRegression()
+    m.weights = [...LR_W0]
+    m.bias = LR_B0
+    expect(Number.isFinite(m.predict(LR_X))).toBe(true)
+  })
+
+  it.fails('SoftmaxRegression.predictProba funciona con weights/biases asignados a mano', () => {
+    const m = new SoftmaxRegression()
+    m.weights = SM_W0.map((r) => [...r])
+    m.biases = [...SM_B0]
+    const p = m.predictProba(SM_X)
+    expect(p.reduce((s, v) => s + v, 0)).toBeCloseTo(1, 10)
+  })
+})
