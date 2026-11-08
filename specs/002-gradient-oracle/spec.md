@@ -123,7 +123,7 @@ Sin gradiente entrenable (se cubren en la feature 006): `KMeans`, `PCA`, `TSNE`,
 - **SC-001**: `for i in $(seq 1 20); do npx vitest run || exit 1; done` termina con código 0.
 - **SC-002**: Cada fila de la tabla tiene su archivo, y el meta-test de cobertura (T037) pasa.
 - **SC-003**: Con una mutación de signo en `NetworkN` (`src/NetworkN.ts`) o `LSTMLayer`, los tests de su archivo fallan; revertida, pasan.
-- **SC-004**: Las pruebas marcadas `it.fails` coinciden con C1, C2 e I1 y con nada más; cualquier otro modelo con coseno < 0.999 se reporta al orquestador, no se marca `it.fails` en silencio.
+- **SC-004**: Toda prueba `it.fails` lleva un id de auditoría (`// AUDIT <id>`) y una medición que la respalda, y falla por el motivo declarado; cualquier otro modelo con coseno < 0.999 se reporta al orquestador, no se marca `it.fails` en silencio. Ids al cierre de 002: C1 (NetworkTransformer, NetworkTransformerRL, RNN, TCN, Seq2Seq), C2 (GAN, VAE), I1 (NetworkN con residual), N1 (dX de AttentionHead, MultiHeadAttention, TransformerBlock), N6 (Autoencoder), N7 (LogisticRegression, SoftmaxRegression) y Q3 (encoder de Seq2Seq). *(Actualizado el 2026-11-08: la redacción original limitaba los ids a C1, C2 e I1; la ejecución descubrió defectos adicionales, todos medidos y documentados en HANDOFF.md.)*
 - **SC-005**: `npx tsc --noEmit -p .`, `npm run typecheck`, `npm run build` y `npx vitest run` en verde.
 
 ## Assumptions

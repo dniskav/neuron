@@ -50,7 +50,11 @@ describe('NetworkN oraculo (sin residual)', () => {
   })
 
   it('oraculo: el paso sigue -dL/dw', () => {
-    expectGradientMatches(setup(S))
+    const r = expectGradientMatches(setup(S))
+    // With plain SGD and one output the step is exactly lr * g. The scale is
+    // checked here because a missing output-activation derivative is a global
+    // scalar for a single output and leaves the cosine untouched (T038 review).
+    expect(r.ratio).toBeCloseTo(1, 6)
   })
 
   it('expectLearns: la perdida baja a la mitad', () => {

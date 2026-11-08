@@ -167,8 +167,8 @@ describe('VAE learns', () => {
     [0.5, 0.5, 0.9],
   ]
 
-  // Measured: MSE drops only to 0.91 of its start (plateau at the mean, 2000 epochs, lr 0.5).
-  // Measured: MSE falls only to 0.91 of its start (plateau at the mean; 2000 epochs, lr 0.5).
+  // AUDIT C2 / N8: the encoder gets no reconstruction gradient. Measured: MSE falls only to 0.91
+  // of its start (plateau at the mean; 2000 epochs, lr 0.5).
   it.fails('learns: reconstruction MSE beats predicting the mean', () => {
     const vae = build()
     const meanVec = [0, 1, 2].map((j) => data.reduce((s, x) => s + x[j], 0) / data.length)
@@ -183,8 +183,8 @@ describe('VAE learns', () => {
     expect(loss()).toBeLessThan(0.5 * baseline)
   })
 
-  // Measured: mu spread across inputs is ~2e-5 after training (needs > 0.05).
-  // Measured: spread of mu across inputs ~2e-5 after training (needs > 0.05).
+  // AUDIT C2 / N8: measured spread of mu across inputs ~2e-5 after training. The 0.05
+  // threshold is ours (not from the spec); see HANDOFF N8.
   it.fails('learns: mu varies with the input', () => {
     const vae = build()
     for (let i = 0; i < 2000; i++) data.forEach((x) => vae.train(x, 0.5))
