@@ -107,7 +107,7 @@ describe('LayerNorm oraculo', () => {
       setParams: (p) => norm.setWeights(p),
       loss: () => loss(norm),
       step: (lr) => step(norm, lr),
-      lr: 0.01,
+      lr: 0.05,
     })
     expect(r.cosine).toBeGreaterThan(0.999)
   })
