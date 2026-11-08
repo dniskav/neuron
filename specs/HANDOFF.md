@@ -9,7 +9,7 @@
 
 ## Dónde estamos
 
-- **Rama de trabajo:** `fix/v0.4`, solo local. Sin push, sin publicar y con `master` intacto.
+- **Rama de trabajo:** `fix/v0.4`, ya en `origin` y fusionada una vez en `master` (PR #4). `master` está protegida: nada se publica salvo aprobación del usuario (versión nueva en `package.json`).
 - **Prueba base:** typecheck, build y 327 tests en verde; `npm audit` sin vulnerabilidades. Los tests siguen siendo inestables hasta la feature 002.
 - **Hecho en la preparación:**
   - Quitadas las dependencias de runtime sin uso; `vitest` subido y `npm audit fix` aplicado. Los cambios previos de los lockfiles se descartaron. Eran derivados de esas dependencias, y una copia queda solo en el scratchpad de la sesión del 2026-11-08.
@@ -18,13 +18,13 @@
 
 ## Siguiente acción
 
-Esperar el check `ci` en verde en el PR de `fix/v0.4`, que el usuario fusione, y entonces activar la protección de `master` (T011, requiere aprobación). Después, feature 002 `gradient-oracle`.
+Empezar la **feature 002 `gradient-oracle`** con `spec-author`. Con `master` protegida, todo llega por PR desde `fix/v0.4` (o ramas por feature).
 
 ## Avance
 
 | Feature | Estado |
 |---|---|
-| 001 `release-safety` | T001–T010 hechas y verificadas; PR abierto. Falta T011 (protección de `master`) tras el merge |
+| 001 `release-safety` | **Hecha.** PR #4 fusionado, `publish.yml` saltó la publicación (0.3.2 ya publicada) y `master` protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos) |
 | 002 `gradient-oracle` | Pendiente |
 | 003 `sign-fix` | Pendiente |
 | 004 `models-fix` | Pendiente |
