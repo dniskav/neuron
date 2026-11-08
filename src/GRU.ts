@@ -149,9 +149,21 @@ export class GRULayer {
     return h;
   }
 
+  // Throws (and leaves the trajectory intact) when dh_seq does not match the
+  // trajectory or a row does not measure hiddenSize. An empty trajectory with an
+  // empty dh_seq is a no-op, as before.
   backprop(dh_seq: number[][], lr: number): void {
     const T = this._traj.length;
-    if (T === 0 || dh_seq.length !== T) return;
+    if (!Array.isArray(dh_seq)) {
+      throw new Error(`GRULayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
+    }
+    if (dh_seq.length !== T) {
+      throw new Error(`GRULayer.backprop: expected dh_seq of length ${T}, got ${dh_seq.length}`);
+    }
+    for (let t = 0; t < T; t++) {
+      validateArray(dh_seq[t], this.hSize, `GRULayer.backprop(dh_seq[${t}])`);
+    }
+    if (T === 0) return;
 
     const hSize = this.hSize;
     const combSize = this.inputSize + hSize;
