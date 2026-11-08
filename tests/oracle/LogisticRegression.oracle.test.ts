@@ -13,15 +13,10 @@
 //
 // SoftmaxRegression (CE: L = -log softmax(scores)[y]):
 //   - `weights[k][j]` y `biases[k]` son publicos.
-//   - train() REINICIA SIEMPRE los pesos con Math.random y los sesgos a 0. Para que el
-//     paso parta del punto p0 que fija el oraculo, `withRandomValues` sustituye Math.random
-//     durante ese train() por valores que reproducen p0. train() inicializa
-//     w = (2r - 1) * limit con limit = sqrt(2 / nFeatures), en orden (k, j); por tanto
-//     r = (w / limit + 1) / 2. Los sesgos iniciales son 0, que es lo que train() usa.
-//   - Consecuencia: llamadas sucesivas a train() no acumulan aprendizaje (cada una parte
-//     de pesos aleatorios), asi que expectLearns usa UNA llamada con muchas epocas.
+//   - Desde T014 (Q7) train() CONTINUA desde los pesos existentes si su forma coincide con
+//     los datos, asi que el paso es `train(X, y, lr, 1)` real, sin stub de Math.random, y el
+//     oraculo mide desde cualquier punto (tambien con sesgos distintos de 0).
 //   - Gradiente: dL/dW_k = (P_k - 1{k=y}) x, dL/db_k = (P_k - 1{k=y}).
-//   - Limitacion: el oraculo mide con sesgos 0 (el estado con que train() arranca).
 //
 // predict() y predictProba() validan contra la forma de `weights` (N7, feature 005), así
 // que también funcionan con pesos asignados a mano (ver el bloque final de este archivo).
@@ -50,24 +45,6 @@ function softmaxProbs(W: number[][], b: number[], x: number[]): number[] {
 
 function softmaxCE(W: number[][], b: number[], x: number[], label: number): number {
   return -Math.log(softmaxProbs(W, b, x)[label])
-}
-
-// Sustituye Math.random durante fn por `values`, en orden. Exige consumir todos los
-// valores: si train() pide mas o menos, el punto inicial no es el esperado y se falla.
-function withRandomValues<T>(values: number[], fn: () => T): T {
-  const previous = Math.random
-  let i = 0
-  Math.random = () => {
-    if (i >= values.length) throw new Error(`Math.random: stub agotado tras ${values.length} valores`)
-    return values[i++]
-  }
-  try {
-    const result = fn()
-    if (i !== values.length) throw new Error(`Math.random: consumidos ${i} de ${values.length} valores`)
-    return result
-  } finally {
-    Math.random = previous
-  }
 }
 
 // ─── LogisticRegression ──────────────────────────────────────────────────────
@@ -168,10 +145,7 @@ const SM_W0 = [
   [-0.3, 0.25, 0.6],
   [0.5, 0.1, -0.5],
 ]
-const SM_B0 = [0, 0, 0]
-
-// Valor de Math.random que hace que train() inicialice el peso w (ver cabecera).
-const randomFor = (w: number, limit: number) => (w / limit + 1) / 2
+const SM_B0 = [0.1, -0.2, 0.05]
 
 function setupSoftmax() {
   const m = new SoftmaxRegression()
@@ -182,10 +156,7 @@ function setupSoftmax() {
     m,
     loss,
     step: (lr: number) => {
-      // Parte exactamente de los pesos actuales (p0) y sesgos 0.
-      const limit = Math.sqrt(2 / SM_X.length)
-      const draws = m.weights.flat().map((w) => randomFor(w, limit))
-      withRandomValues(draws, () => m.train([SM_X], [SM_LABEL], lr, 1))
+      m.train([SM_X], [SM_LABEL], lr, 1)
     },
     getParams: () => bindParams(m.weights, m.biases).getParams(),
     setParams: (p: number[]) => bindParams(m.weights, m.biases).setParams(p),
@@ -208,7 +179,13 @@ describe('SoftmaxRegression oraculo', () => {
     // Tras el paso exacto de la prueba siguiente: W = [[-0.1,-0.2],[-0.1,-0.2],[0.2,0.4]],
     // b = [-0.1,-0.1,0.2]. Para x=[0.5,-0.3]: s = [-0.09, -0.09, 0.18] (a mano), y softmax de s.
     const m = new SoftmaxRegression()
-    withRandomValues(Array(6).fill(0.5), () => m.train([[1, 2]], [2], 0.3, 1))
+    m.weights = [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]
+    m.biases = [0, 0, 0]
+    m.train([[1, 2]], [2], 0.3, 1)
     const W = [
       [-0.1, -0.2],
       [-0.1, -0.2],
@@ -226,9 +203,14 @@ describe('SoftmaxRegression oraculo', () => {
     // 3 clases, 2 rasgos, x=[1,2], y=2, lr=0.3. Con pesos 0: P_k = 1/3.
     // delta_k = P_k - 1{k=2} = [1/3, 1/3, -2/3].  W_k -= lr * delta_k * x.
     // W0 = W1 = [-0.1, -0.2] ; W2 = [0.2, 0.4] ; b = [-0.1, -0.1, 0.2].
-    // Inicializacion: limit = sqrt(2/2) = 1, peso 0 <- r = 0.5.
     const m = new SoftmaxRegression()
-    withRandomValues(Array(6).fill(0.5), () => m.train([[1, 2]], [2], 0.3, 1))
+    m.weights = [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]
+    m.biases = [0, 0, 0]
+    m.train([[1, 2]], [2], 0.3, 1)
     expect(m.weights[0][0]).toBeCloseTo(-0.1, 12)
     expect(m.weights[0][1]).toBeCloseTo(-0.2, 12)
     expect(m.weights[1][0]).toBeCloseTo(-0.1, 12)
@@ -266,13 +248,8 @@ describe('SoftmaxRegression oraculo', () => {
       for (let i = 0; i < X.length; i++) s += softmaxCE(m.weights, m.biases, X[i], Y[i])
       return s / X.length
     }
-    // train() reinicia los pesos (con Math.random); el stub los fija a 0, el mismo punto que se mide.
-    // Una sola llamada con 200 epocas: llamadas sucesivas no acumulan (ver cabecera).
-    expectLearns({
-      loss: meanCE,
-      step: () => withRandomValues(Array(6).fill(0.5), () => m.train(X, Y, 0.5, 200)),
-      steps: 1,
-    })
+    // train() continua desde los pesos (desde T014): 200 pasos de 1 epoca acumulan aprendizaje.
+    expectLearns({ loss: meanCE, step: () => void m.train(X, Y, 0.5, 1), steps: 200 })
   })
 })
 
