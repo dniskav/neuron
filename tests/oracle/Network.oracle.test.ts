@@ -44,7 +44,6 @@ describe('Network oracle', () => {
       },
       lr: LR,
     })
-    console.info(`Network oracle: cosine=${r.cosine} ratio=${r.ratio} n=${r.n}`)
     expect(r.cosine).toBeGreaterThan(0.999)
   })
 
@@ -56,12 +55,11 @@ describe('Network oracle', () => {
       [[0.9, 0.1, -0.7], 0.8],
     ]
     const loss = () => data.reduce((s, [x, t]) => s + (net.predict(x)[0] - t) ** 2, 0) / data.length
-    const r = expectLearns({
+    expectLearns({
       loss,
       step: () => data.forEach(([x, t]) => net.train(x, t, 0.5)),
       steps: 300,
     })
-    console.info(`Network learns: initial=${r.initial} final=${r.final} ratio=${r.ratio}`)
   })
 
   // AUDIT I5: Network(nIn, nHid, nOut > 1) builds nOut output neurons, but

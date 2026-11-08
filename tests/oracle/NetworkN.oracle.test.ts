@@ -50,8 +50,7 @@ describe('NetworkN oraculo (sin residual)', () => {
   })
 
   it('oraculo: el paso sigue -dL/dw', () => {
-    const r = expectGradientMatches(setup(S))
-    console.log('NetworkN cos', r.cosine, 'ratio', r.ratio)
+    expectGradientMatches(setup(S))
   })
 
   it('expectLearns: la perdida baja a la mitad', () => {
@@ -77,7 +76,6 @@ describe('NetworkN oraculo (residual)', () => {
 
   it('el coseno del residual es parcial, como en la auditoria (0.8-0.95)', () => {
     const r = gradientOracle(setup(S, { residual: true }))
-    console.log('NetworkN residual cos', r.cosine, 'ratio', r.ratio)
     expect(r.cosine).toBeGreaterThan(0.8)
     expect(r.cosine).toBeLessThan(0.95)
   })
