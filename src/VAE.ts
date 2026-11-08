@@ -143,7 +143,14 @@ export class VAE {
     reconLoss: number;
     klLoss: number;
   } {
-    const { reconstruction, mu, logVar, z, eps } = this.forward(x);
+    // Training forward (dropout ACTIVE, one mask per sub-network, reused below; Q9). Same
+    // Math.random order as forward(): encoder masks, eps, decoder masks. With dropoutRate = 0
+    // it is exactly forward().
+    const encOut = this.encoder.predict(x, true);
+    const mu     = encOut.slice(0, this.latentDim);
+    const logVar = encOut.slice(this.latentDim);
+    const { z, eps } = this._reparametrizeWithEps(mu, logVar);
+    const reconstruction = this.decoder.predict(z, true);
 
     const reconLoss = x.reduce((s, xi, i) => s + (xi - reconstruction[i]) ** 2, 0) / x.length;
     const klLoss = mu.reduce((s, m, i) => {
@@ -156,8 +163,8 @@ export class VAE {
     const decoderDeltas = reconstruction.map(
       (r, i) => (2 * (x[i] - r) / x.length) * decLayer.neurons[i].activation.dfn(r),
     );
-    const gz = this.decoder.inputGradient(z, decoderDeltas);
-    this.decoder.trainWithDeltas(z, decoderDeltas, lr);
+    const gz = this.decoder.inputGradient(z, decoderDeltas, true);
+    this.decoder.trainWithDeltas(z, decoderDeltas, lr, true);
 
     // ── Encoder deltas ────────────────────────────────────────────────────
     const encLayer = this.encoder.layers[this.encoder.layers.length - 1];
@@ -172,7 +179,7 @@ export class VAE {
       const g = gz[i] * 0.5 * sigma * eps[i] - beta * 0.5 * (Math.exp(logVar[i]) - 1);
       encoderDeltas.push(g * encLayer.neurons[k + i].activation.dfn(logVar[i]));
     }
-    this.encoder.trainWithDeltas(x, encoderDeltas, lr);
+    this.encoder.trainWithDeltas(x, encoderDeltas, lr, true);
 
     return { totalLoss, reconLoss, klLoss };
   }

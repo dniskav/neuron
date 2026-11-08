@@ -179,7 +179,9 @@ export class Autoencoder {
     // the decoder are honoured (the old hand-written layer walk ignored both: cosine
     // 0.9949 with residual). Same pattern as VAE. If the decoder's LAST layer has a
     // residual skip it throws (Q2, same as VAE/GAN) before touching any weight.
-    const gz = this.decoder.inputGradient(z, outputDeltas);
+    // reuseMasks = true (Q9): with dropout, loss, gradient and update share the masks drawn by
+    // the two predict(…, true) above (one mask per step); it draws no Math.random.
+    const gz = this.decoder.inputGradient(z, outputDeltas, true);
 
     // gz is the gradient at the encoder's OUTPUT (post-activation z). trainWithDeltas
     // expects deltas at the pre-activation of the output layer, so apply the chain rule
@@ -192,8 +194,8 @@ export class Autoencoder {
     // residual skip trainWithDeltas throws before the decoder is modified, so a failing
     // call never leaves a half-updated model. The two sub-networks share no weights, so
     // the order does not change the result.
-    this.encoder.trainWithDeltas(x, dLdz, lr);
-    this.decoder.trainWithDeltas(z, outputDeltas, lr);
+    this.encoder.trainWithDeltas(x, dLdz, lr, true);
+    this.decoder.trainWithDeltas(z, outputDeltas, lr, true);
 
     return loss;
   }

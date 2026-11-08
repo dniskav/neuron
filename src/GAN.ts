@@ -105,18 +105,21 @@ export class GAN {
 
     for (const xReal of realBatch) {
       // ── Discriminator update (real sample, label = 1) ──────────────────
-      const dReal = Math.max(eps, Math.min(1 - eps, this.discriminate(xReal)));
+      // Every D forward of the step runs in training mode (dropout active) and its update
+      // reuses that mask (reuseMasks = true; Q9): the score, the delta and the weight update
+      // belong to the same network. With dropoutRate = 0 this is exactly discriminate().
+      const dReal = Math.max(eps, Math.min(1 - eps, this.discriminator.predict(xReal, true)[0]));
       // delta = (target - prediction) for sigmoid output
       const dRealDelta = [1 - dReal];
-      this.discriminator.trainWithDeltas(xReal, dRealDelta, lr);
+      this.discriminator.trainWithDeltas(xReal, dRealDelta, lr, true);
       dLossSum += -Math.log(dReal);
 
       // ── Discriminator update (fake sample, label = 0) ──────────────────
       const z = this.sampleLatent();
       const xFake = this.generate(z);
-      const dFake = Math.max(eps, Math.min(1 - eps, this.discriminate(xFake)));
+      const dFake = Math.max(eps, Math.min(1 - eps, this.discriminator.predict(xFake, true)[0]));
       const dFakeDelta = [0 - dFake];
-      this.discriminator.trainWithDeltas(xFake, dFakeDelta, lr);
+      this.discriminator.trainWithDeltas(xFake, dFakeDelta, lr, true);
       dLossSum += -Math.log(1 - dFake);
 
       // ── Generator update (wants D to output 1 for fake samples) ────────
@@ -131,13 +134,16 @@ export class GAN {
       // inputGradient does not modify any weight of D, so only G learns here.
       // Math.random order is unchanged: z, then z2.
       const z2 = this.sampleLatent();
-      const xFake2 = this.generate(z2);
-      const dScore = Math.max(eps, Math.min(1 - eps, this.discriminate(xFake2)));
+      // G also runs in training mode and D scores in training mode; D.inputGradient and
+      // G.trainWithDeltas reuse those masks (Q9). Math.random order: z, z2 (plus the dropout
+      // masks, which exist only with dropoutRate > 0).
+      const xFake2 = this.generator.predict(z2, true);
+      const dScore = Math.max(eps, Math.min(1 - eps, this.discriminator.predict(xFake2, true)[0]));
       const dOutAct = this.discriminator.layers[this.discriminator.layers.length - 1].neurons[0].activation;
-      const dxHat = this.discriminator.inputGradient(xFake2, [dOutAct.dfn(dScore) / dScore]);
+      const dxHat = this.discriminator.inputGradient(xFake2, [dOutAct.dfn(dScore) / dScore], true);
       const gOutLayer = this.generator.layers[this.generator.layers.length - 1];
       const gDelta = xFake2.map((xh, i) => dxHat[i] * gOutLayer.neurons[i].activation.dfn(xh));
-      this.generator.trainWithDeltas(z2, gDelta, lr);
+      this.generator.trainWithDeltas(z2, gDelta, lr, true);
       gLossSum += -Math.log(dScore);
     }
 

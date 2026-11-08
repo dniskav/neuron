@@ -295,3 +295,122 @@ describe('Autoencoder oracle (decoder with residual / dropout, T013)', () => {
     expect(getParams(ae)).toEqual(before)
   })
 })
+
+// ─── T015 (Q9): one dropout mask per step ────────────────────────────────────
+// Golden (dropoutRate = 0): 5 train() steps with seedRandom(42) on a [3,[4],2,[4]] SGD model,
+// lr 0.5. Constants captured on the base BEFORE touching src (digest of each block: count, sum,
+// sum of w_i*(i+1) and sum of squares; tolerance 1e-9), together with the number of Math.random
+// calls inside the 5 steps (0: the autoencoder itself draws nothing). With dropoutRate = 0 the
+// change must not alter either the trajectory or the generator use.
+describe('Autoencoder dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
+  const XS = [
+    [0.2, 0.7, 0.5],
+    [0.9, 0.1, 0.4],
+    [0.3, 0.3, 0.8],
+    [0.6, 0.5, 0.2],
+    [0.1, 0.9, 0.7],
+  ]
+  const digest = (w: number[]) => ({
+    n: w.length,
+    sum: w.reduce((s, v) => s + v, 0),
+    wsum: w.reduce((s, v, i) => s + v * (i + 1), 0),
+    sq: w.reduce((s, v) => s + v * v, 0),
+  })
+  const GOLDEN = {
+    enc: { n: 26, sum: 0.2629851007419487, wsum: -4.9523582939721535, sq: 1.3932334391974033 },
+    dec: { n: 27, sum: -2.7538057495101333, wsum: -30.99434873892924, sq: 2.9263587797612196 },
+    calls: 0,
+  }
+  it('weights after 5 steps equal the base constants (1e-9) and Math.random is not called', () => {
+    seedRandom(42)
+    const ae = new Autoencoder(3, [4], 2, [4], { optimizer: () => new SGD() })
+    const original = Math.random
+    let calls = 0
+    Math.random = () => {
+      calls++
+      return original()
+    }
+    try {
+      for (const x of XS) ae.train(x, 0.5)
+    } finally {
+      Math.random = original
+    }
+    for (const [name, got, want] of [
+      ['encoder', digest(ae.encoder.getWeights()), GOLDEN.enc],
+      ['decoder', digest(ae.decoder.getWeights()), GOLDEN.dec],
+    ] as const) {
+      expect(got.n, name).toBe(want.n)
+      expect(got.sum, name).toBeCloseTo(want.sum, 9)
+      expect(got.wsum, name).toBeCloseTo(want.wsum, 9)
+      expect(got.sq, name).toBeCloseTo(want.sq, 9)
+    }
+    expect(calls).toBe(GOLDEN.calls)
+  })
+})
+
+// Dropout in BOTH sub-networks (the options are shared): encoder [4,[3],2] has 3 draws, decoder
+// [2,[3,3],4] has 6, in the order encoder.predict(x, true), decoder.predict(z, true). The loss is
+// the reconstruction MSE with the mask of THAT step: reseeding before loss() and step() makes
+// both see the same masks. Before T015 the inputGradient and trainWithDeltas of train() drew
+// other masks (mask seeds 11 and 12, init seeds 1..5, lr x0.97 / x1.03).
+describe('Autoencoder with dropout in encoder and decoder: one mask per step (T015, Q9)', () => {
+  const X4b = [0.2, 0.7, 0.5, 0.3]
+  const SEEDS = [1, 2, 3, 4, 5]
+  const MASK_SEEDS = [11, 12]
+  const LR_FACTORS = [0.97, 1.03]
+
+  for (const block of ['all', 'encoder', 'decoder'] as const) {
+    it(`${block}: cosine > 0.999 and ratio in [0.9, 1.1] against the loss with the step's mask`, () => {
+      for (const seed of SEEDS) {
+        for (const maskSeed of MASK_SEEDS) {
+          for (const f of LR_FACTORS) {
+            seedRandom(seed)
+            const ae = new Autoencoder(4, [3], 2, [3, 3], { optimizer: () => new SGD(), dropoutRate: 0.3 })
+            const nEnc = ae.encoder.getWeights().length
+            const slice = (p: number[]) =>
+              block === 'encoder' ? p.slice(0, nEnc) : block === 'decoder' ? p.slice(nEnc) : p
+            const r = gradientOracle({
+              getParams: () => slice(getParams(ae)),
+              setParams: (p) =>
+                setParams(
+                  ae,
+                  block === 'encoder'
+                    ? [...p, ...ae.decoder.getWeights()]
+                    : block === 'decoder'
+                      ? [...ae.encoder.getWeights(), ...p]
+                      : p,
+                ),
+              loss: () => mse(ae.decoder.predict(ae.encoder.predict(X4b, true), true), X4b),
+              step: (lr) => {
+                ae.train(X4b, lr)
+              },
+              lr: LR * f,
+              resetRng: () => seedRandom(maskSeed),
+            })
+            const tag = `${block} init ${seed} mask ${maskSeed} x${f}: cosine ${r.cosine} ratio ${r.ratio}`
+            expect(r.cosine, tag).toBeGreaterThan(0.999)
+            expect(r.ratio, tag).toBeGreaterThan(0.9)
+            expect(r.ratio, tag).toBeLessThan(1.1)
+          }
+        }
+      }
+    })
+  }
+
+  it('train() draws exactly one mask per sub-network per step (3 + 6 values)', () => {
+    seedRandom(3)
+    const ae = new Autoencoder(4, [3], 2, [3, 3], { optimizer: () => new SGD(), dropoutRate: 0.3 })
+    const original = Math.random
+    let calls = 0
+    Math.random = () => {
+      calls++
+      return original()
+    }
+    try {
+      ae.train(X4b, 0.1)
+    } finally {
+      Math.random = original
+    }
+    expect(calls).toBe(9)
+  })
+})
