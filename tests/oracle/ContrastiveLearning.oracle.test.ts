@@ -1,41 +1,43 @@
-// Gradient-oracle test for ContrastiveLearning (features 002 T031, 004 T006 / N9).
+// Test de oráculo de gradiente para ContrastiveLearning.
 //
-// trainStep does NOT use analytic backprop: it estimates dL/dw with its own internal central
-// finite differences over computeLoss and applies w += lr * (-grad). The oracle compares that
-// step with an independent finite-difference gradient of the same computeLoss (eps 1e-5). It is
-// NOT evidence of a hand-written backprop (there is none). It checks the sign convention
-// (descent), that encoder and head are both updated, and that the step is SIMULTANEOUS.
+// trainStep NO usa backprop analítico: estima dL/dw con diferencias finitas centrales propias
+// sobre computeLoss y aplica w += lr * (-grad). El oráculo compara ese paso con un gradiente
+// independiente por diferencias finitas de la misma computeLoss (eps 1e-5). NO es evidencia de un
+// backprop escrito a mano (no lo hay). Comprueba el signo (descenso), que encoder y cabeza se
+// actualizan, y que el paso es SIMULTÁNEO.
 //
-// Fixes covered here (004 T006, Q7):
-//  - the projection head is [relu, linear] (no final ReLU: it could map every projection to zero);
-//  - trainStep evaluates ALL gradients at the original weights and updates at the end (before it
-//    updated in place, so later gradients used already-updated weights);
-//  - cosineSimilarity uses a soft epsilon (dot / (|a||b| + 1e-8)) instead of a jump to 0 below a
-//    norm threshold, so the loss is continuous at z = 0;
-//  - the internal finite-difference step is 1e-6 (was 1e-4, inexact when ||z|| is 5e-3..6e-2).
+// Lo que se verifica del diseño vigente:
+//  - la cabeza de proyección es [relu, lineal] (sin ReLU final, que podría llevar todas las
+//    proyecciones a cero);
+//  - trainStep evalúa TODOS los gradientes en los pesos originales y actualiza al final;
+//  - cosineSimilarity usa un epsilon blando (dot / (|a||b| + 1e-8)), así la pérdida es continua
+//    en z = 0;
+//  - la diferencia finita interna usa eps 1e-6.
 //
-// "Healthy" init (classifyInit): every encoder output h is non-zero for all 6 views and every
-// projection has norm > 1e-4. Measured on raw Xavier inits (no scaling, no chosen seed), seeds
-// 1..40: 21 healthy (1,2,3,5,8,9,10,17,20,24,25,28,29,30,31,33,35,36,37,38,39); the other 19
-// start dead (h = 0 or some z = 0: ReLU of the encoder's last layer or of the head's hidden
-// layer; or z ~ 4e-5, seed 7). On the healthy ones the oracle gives cosine >= 0.9999 and
-// ratio in [0.99, 1.02] for lr x0.97/1/1.03, and also at lr 0.05 (simultaneous step).
-// Dead inits are NOT skipped: a test pins their behavior (loss log(2N-1), zero gradient, no change).
+// Init "sana" (classifyInit): todo h no nulo para las 6 vistas y toda proyección con norma > 1e-4.
+// Sobre inits Xavier crudos (sin escalar, sin semilla elegida), semillas 1..40: 21 sanas
+// (1,2,3,5,8,9,10,17,20,24,25,28,29,30,31,33,35,36,37,38,39) y 19 muertas (h = 0 o algún z = 0:
+// ReLU de la última capa del encoder o de la capa oculta de la cabeza; o z ~ 4e-5, semilla 7).
+// En las sanas el oráculo da coseno >= 0.9999 y ratio en [0.99, 1.02] para lr x0.97/1/1.03, y
+// también con lr 0.05 (paso simultáneo). Las iniciales muertas NO se saltan: un test fija su
+// comportamiento (pérdida log(2N-1), gradiente nulo, sin cambio).
 //
-// Limitation (c), documented not fixed: cosine similarity has curvature ~ 1/||z||; with very
-// small norms a finite lr departs from the first-order gradient (seed 7, ||z|| 4e-5, is the
-// excluded borderline case: cosine 0.99988 at eps 1e-6, 0.965 at 1e-4).
+// Limitación documentada (no corregida): la similitud coseno tiene curvatura ~ 1/||z||; con normas
+// muy pequeñas un lr finito se aparta del gradiente de primer orden (semilla 7, ||z|| 4e-5, es el
+// caso límite excluido: coseno 0.99988 con eps 1e-6, 0.965 con 1e-4).
 //
-// Learns tests: NOT robust over raw Xavier seeds, and this is a finding, not hidden. With
-// temperature 0.1, lr 1e-3, 400 steps, only 12 of the 21 healthy seeds reach final/initial
-// < 0.35 (others end 1.0..1.9). Trace (seeds 3, 17, 24, 29): the loss first improves, a step
-// overshoots (gradient ~ 1/(tau ||z||) is huge at ||z|| ~ 1e-2), the head hidden ReLUs die, the
-// head output becomes the constant bias for every input (all cosines 1, loss log(2N-1), zero
-// gradient). A leakyRelu head hidden layer, other temperatures (0.3, 0.5, 1) and lr 1e-4..1e-3
-// did not fix it (measured). The cure belongs to init/activations (see the task report), which
-// is outside T006. So the learns tests keep the fixed healthy init (seed 9 x3, temperature 0.1,
-// lr 1e-3, 400 steps): final/initial ~0.15, 0.1453..0.1537 over 20 seeded 3 % perturbations,
-// asserted < 0.35 (30 % margin on the 0.5 threshold) and strictly decreasing at 100/200/300.
+// Tests de aprendizaje: NO son robustos sobre semillas Xavier crudas, y es un hallazgo, no algo
+// oculto. Con temperatura 0.1, lr 1e-3 y 400 pasos, solo 12 de las 21 semillas sanas bajan a
+// final/inicial < 0.35 (las demás acaban en 1.0..1.9). Traza (semillas 3, 17, 24, 29): la pérdida
+// mejora al principio, un paso se pasa (el gradiente ~ 1/(tau ||z||) es enorme con ||z|| ~ 1e-2),
+// las ReLU ocultas de la cabeza mueren y la salida de la cabeza pasa a ser el sesgo constante para
+// toda entrada (coseno 1 en todo, pérdida log(2N-1), gradiente nulo). Una capa oculta leakyRelu,
+// otras temperaturas (0.3, 0.5, 1) y lr 1e-4..1e-3 no lo arreglaron (medido). Recomendación
+// pendiente: revisar la inicialización (o las activaciones) de la cabeza; queda fuera de esta
+// suite. Por eso los tests de aprendizaje usan una init sana fija (semilla 9 x3, temperatura 0.1,
+// lr 1e-3, 400 pasos): final/inicial ~0.15, entre 0.1453 y 0.1537 sobre 20 perturbaciones
+// semilladas del 3 %, con aserción < 0.35 (margen del 30 % sobre el umbral 0.5) y decreciente
+// estricta en 100/200/300.
 import { describe, it, expect } from 'vitest'
 import { ContrastiveLearning } from '../../src/ContrastiveLearning'
 import { gradientOracle } from '../helpers/gradientOracle'
@@ -178,7 +180,7 @@ describe('ContrastiveLearning oracle', () => {
   }
 
   it('simultaneous step: with a large lr (0.05) the step still equals -dL/dw at the INITIAL point', () => {
-    // An in-place update makes later gradients use already-updated weights: O(lr) departure.
+    // Una actualización in situ (no simultánea) haría que los gradientes posteriores usen pesos ya cambiados: desvío O(lr).
     for (const k of HEALTHY) {
       const c = build(k)
       const r = gradientOracle({
@@ -209,14 +211,14 @@ describe('ContrastiveLearning oracle', () => {
     const cos = ContrastiveLearning.cosineSimilarity
     expect(cos([0, 0], [1, 2])).toBe(0)
     expect(cos([1, 2], [1, 2])).toBeCloseTo(1, 6)
-    // The old guard returned 0 below |a||b| = 1e-10 and ~1 just above: a jump of ~1.
+    // Con un umbral duro habría un salto de ~1 alrededor de |a||b| = 1e-10; con epsilon blando la diferencia es < 1e-3.
     const below = cos([0.99e-5, 0], [0.99e-5, 0])
     const above = cos([1.01e-5, 0], [1.01e-5, 0])
     expect(Math.abs(above - below)).toBeLessThan(1e-3)
   })
 
   it('dead init (N9): documented behavior, not skipped', () => {
-    // N9: red muerta de partida; limitación de inicialización, no de gradiente
+    // Red muerta de partida: limitación de inicialización, no de gradiente (documentada, no corregida).
     expect(DEAD.length).toBeGreaterThan(0)
     let allZero = 0
     const movers: number[] = []
@@ -259,10 +261,10 @@ describe('ContrastiveLearning oracle', () => {
     expect(ratio).toBeLessThan(0.35)
   })
 
-  // Platform robustness (CI ubuntu vs local macOS failed on the old test): tiny floating-point
-  // differences must not change the outcome. Each variant must stay clearly under 0.35 (the
-  // test threshold is 0.5, so the margin is >= 30 %). Measured worst/best final/initial over
-  // 20 init noise seeds (3 %), lr x0.97/0.99/1.01/1.03 and 1e-9 relative noise: see the header.
+  // Robustez de plataforma: diferencias mínimas de coma flotante no deben cambiar el resultado.
+  // Cada variante debe quedar claramente por debajo de 0.35 (el umbral del test es 0.5, así que el
+  // margen es >= 30 %). Medido peor/mejor final/inicial sobre 20 semillas de ruido de init (3 %),
+  // lr x0.97/0.99/1.01/1.03 y ruido relativo 1e-9: ver la cabecera.
   const VARIANTS: {
     name: string
     lrMul: number
