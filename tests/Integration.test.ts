@@ -69,8 +69,8 @@ describe('Integration: Sequence copy with LSTM', () => {
   }, 30000)
 })
 
-describe('Integration: Gradient check with finite differences', () => {
-  it('gradients match finite differences for Network', () => {
+describe('Integration: one training step moves the prediction', () => {
+  it('moves prediction toward target for Network', () => {
     const net = new Network(2, 4, 1)
     const inputs = [0.5, 0.7]
     const target = 1.0
@@ -91,7 +91,7 @@ describe('Integration: Gradient check with finite differences', () => {
     expect(errAfter).toBeLessThan(errBefore)
   })
 
-  it('gradients match finite differences for NetworkN', () => {
+  it('moves prediction toward target for NetworkN', () => {
     const net = new NetworkN([2, 4, 1])
     const inputs = [0.5, 0.7]
     const target = [1.0]
