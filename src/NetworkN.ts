@@ -122,7 +122,10 @@ export class NetworkN {
   // Deltas are already multiplied by the output activation derivative, so a
   // residual skip on the LAST layer (which needs dL/d(output)) cannot be
   // propagated: that case throws instead of training with a wrong gradient.
+  // Lengths and values are validated before any Math.random draw (dropout) or weight write.
   trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number): void {
+    validateArray(inputs, this.structure[0], 'NetworkN.trainWithDeltas');
+    validateArray(outputDeltas, this.structure[this.structure.length - 1], 'NetworkN.trainWithDeltas');
     this._assertDeltasSupported('trainWithDeltas');
     const { act, pre } = this._forwardAll(inputs, true);
     this._backward(act, pre, null, outputDeltas, lr);
@@ -166,7 +169,10 @@ export class NetworkN {
     return w;
   }
 
+  // Validates the total length BEFORE resetting dropout masks or writing, so a
+  // rejected call leaves the network exactly as it was (T010, I2).
   setWeights(weights: number[]): void {
+    validateArray(weights, this._weightCount(), 'NetworkN.setWeights');
     // Reset dropout masks to avoid stale state
     for (const d of this._dropouts) d.resetMask();
     let idx = 0;
@@ -179,6 +185,16 @@ export class NetworkN {
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────
+
+  // Flat weight count: each neuron of layer i has structure[i] weights and one bias,
+  // and layer i has structure[i + 1] neurons.
+  private _weightCount(): number {
+    let total = 0;
+    for (let i = 0; i < this.structure.length - 1; i++) {
+      total += (this.structure[i] + 1) * this.structure[i + 1];
+    }
+    return total;
+  }
 
   private _shouldResidual(layerIndex: number): boolean {
     if (typeof this._residual === 'function') return this._residual(layerIndex);
