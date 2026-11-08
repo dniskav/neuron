@@ -34,7 +34,14 @@
 // toda entrada (coseno 1 en todo, pérdida log(2N-1), gradiente nulo). Una capa oculta leakyRelu,
 // otras temperaturas (0.3, 0.5, 1) y lr 1e-4..1e-3 no lo arreglaron (medido). Recomendación
 // pendiente: revisar la inicialización (o las activaciones) de la cabeza; queda fuera de esta
-// suite. Por eso los tests de aprendizaje usan una init sana fija (semilla 9 x3, temperatura 0.1,
+// suite. Experimento T012 (sin cambio en src/): sobre las semillas crudas 1..40, T 0.1, lr 1e-3
+// x0.97/1/1.03, 400 pasos, se midieron 22 variantes: A (ultima capa del encoder lineal), B (sesgo
+// inicial 0.05/0.1/0.3/0.5/1 en capas ReLU), C (oculta de la cabeza de 8/16/32 unidades) y sus
+// combinaciones. Base: 19 muertas, 12 de 21 vivas no aprenden. Con A+B (>= 0.1) no queda ninguna
+// muerta y el oraculo da coseno >= 0.99999, pero 'aprende' (final/inicial < 0.35 con los 3 lr) falla
+// en 3..9 semillas vivas aun en la mejor (A+B 0.3+C 8: 3 de 40, estancadas en ~1.0; ademas empeora
+// la semilla sana 33) y B >= 0.5 empeora. Ninguna cumple el criterio de adopcion: se mantiene la
+// init y la limitacion. Por eso los tests de aprendizaje usan una init sana fija (semilla 9 x3, temperatura 0.1,
 // lr 1e-3, 400 pasos): final/inicial ~0.15, entre 0.1453 y 0.1537 sobre 20 perturbaciones
 // semilladas del 3 %, con aserción < 0.35 (margen del 30 % sobre el umbral 0.5) y decreciente
 // estricta en 100/200/300.
