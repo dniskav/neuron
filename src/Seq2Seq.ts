@@ -175,7 +175,8 @@ export class Seq2Seq {
       o.map((v, k) => {
         const diff = v - targetSeq[t][k];
         loss += diff * diff;
-        return 2 * diff / this.outputSize;
+        // Optimizers do w + lr*g, so hand them -dL/do.
+        return -2 * diff / this.outputSize;
       })
     );
     loss /= (T * this.outputSize);
@@ -213,16 +214,22 @@ export class Seq2Seq {
     }
 
     // ── Decoder BPTT ─────────────────────────────────────────────────────
-    this.decoder.backprop(dhSeq, lr);
+    // Returns the (unscaled) gradient w.r.t. the decoder's initial state, which is
+    // the encoder's final (h, c).
+    const { dh0, dc0 } = this.decoder.backprop(dhSeq, lr);
 
-    // ── Encoder BPTT: propagate context gradient ──────────────────────────
-    // Route gradient only to the last encoder step (the context producer).
-    // A full attention-based gradient would require storing all encoder states.
-    const dContext = dhSeq[0];
-    const encoderDhSeq: number[][] = inputSeq.map((_, t) =>
-      t === inputSeq.length - 1 ? [...dContext] : new Array(this.hiddenSize).fill(0)
-    );
-    this.encoder.backprop(encoderDhSeq, lr);
+    // ── Encoder BPTT: full gradient of the context vector ────────────────
+    // The context (h, c) is the encoder's last state: dh0 enters at the last
+    // step's h and dc0 as the final cell gradient. Each LSTMLayer divides its
+    // update by its own T, so the encoder lr is lr * T_in / T_out to make the
+    // total gradient that of the loss averaged over T_out * outputSize.
+    const Tin = inputSeq.length;
+    if (Tin > 0) {
+      const encoderDhSeq: number[][] = inputSeq.map((_, t) =>
+        t === Tin - 1 ? [...dh0] : new Array(this.hiddenSize).fill(0)
+      );
+      this.encoder.backprop(encoderDhSeq, (lr * Tin) / T, dc0);
+    }
 
     return loss;
   }

@@ -173,9 +173,20 @@ export class LSTMLayer {
   // dh_seq: dL/dh for each timestep, same length as trajectory.
   // Accumulates gradients across the full sequence, then applies them in one
   // update (batch gradient) scaled by lr / T.
-  backprop(dh_seq: number[][], lr: number): void {
+  //
+  // Convention: dh_seq[t] = -dL/dh_t (and dcFinal = -dL/dc_T if given). The
+  // returned { dh0, dc0 } is the gradient with respect to the initial state
+  // (h_{-1}, c_{-1}) in the same negated convention, UNSCALED (not divided by T),
+  // so a caller that chains layers (Seq2Seq) can feed it to the previous layer.
+  backprop(
+    dh_seq: number[][],
+    lr: number,
+    dcFinal?: number[],
+  ): { dh0: number[]; dc0: number[] } {
     const T = this._traj.length;
-    if (T === 0 || dh_seq.length !== T) return;
+    if (T === 0 || dh_seq.length !== T) {
+      return { dh0: new Array(this.hSize).fill(0), dc0: new Array(this.hSize).fill(0) };
+    }
 
     const hSize    = this.hSize;
     const combSize = this.inputSize + hSize;
@@ -191,7 +202,8 @@ export class LSTMLayer {
     const dbo  = new Array(hSize).fill(0);
 
     let dh_next: number[] = new Array(hSize).fill(0);
-    let dc_next: number[] = new Array(hSize).fill(0);
+    let dc_next: number[] =
+      dcFinal && dcFinal.length === hSize ? [...dcFinal] : new Array(hSize).fill(0);
 
     for (let t = T - 1; t >= 0; t--) {
       const s  = this._traj[t];
@@ -262,6 +274,7 @@ export class LSTMLayer {
     }
 
     this._traj = [];
+    return { dh0: dh_next, dc0: dc_next };
   }
 
   // ── Serialization ─────────────────────────────────────────────────────────
