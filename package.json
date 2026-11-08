@@ -7,9 +7,9 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -20,7 +20,8 @@
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [
     "neural-network",
@@ -31,8 +32,21 @@
   "author": "dniskav",
   "license": "MIT",
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.12",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dniskav/neuron.git"
+  },
+  "homepage": "https://github.com/dniskav/neuron#readme",
+  "bugs": {
+    "url": "https://github.com/dniskav/neuron/issues"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
   }
 }
