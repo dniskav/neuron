@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest'
 import { RNN } from '../../src/RNN'
 import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
+import { withSeed } from '../helpers/seed'
 import { expectLearns } from '../helpers/learns'
 
 const SEQ: number[][] = [
@@ -23,8 +24,8 @@ const SEQ: number[][] = [
 const TARGETS: number[][] = [[0.4], [-0.3], [0.5], [-0.2]]
 const LR = 1e-3
 
-function build(): RNN {
-  return new RNN(2, 3, 1)
+function build(outSize = 1): RNN {
+  return new RNN(2, 3, outSize)
 }
 
 function params(net: RNN) {
@@ -73,6 +74,43 @@ describe('RNN oracle', () => {
     })
     expect(r.cosine).toBeGreaterThan(0.999)
   })
+
+  // outputSize 2 and 3 (closes mutant M14: no /outputSize in dOutputs). The step has the
+  // scale of the mean loss, so the ratio is checked too (lr x0.97/x1.03, 5 seeds).
+  const MULTI_TARGETS: Record<number, number[][]> = {
+    2: [[0.4, -0.5], [-0.3, 0.2], [0.5, 0.6], [-0.2, -0.4]],
+    3: [[0.4, -0.5, 0.1], [-0.3, 0.2, -0.6], [0.5, 0.6, 0.3], [-0.2, -0.4, 0.7]],
+  }
+  for (const n of [2, 3]) {
+    it(`oracle with outputSize ${n}: cosine > 0.999 and ratio in (0.9, 1.1)`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const f of [0.97, 1.03]) {
+          withSeed(seed, () => {
+            const net = build(n)
+            const targets = MULTI_TARGETS[n]
+            const r = expectGradientMatches({
+              ...params(net),
+              loss: () => {
+                net.reset()
+                const { outputs } = net.forward(SEQ)
+                let s = 0
+                outputs.forEach((o, t) => o.forEach((v, k) => (s += (v - targets[t][k]) ** 2)))
+                return s / (SEQ.length * n)
+              },
+              step: (lr) => {
+                net.backward(SEQ, targets, lr)
+              },
+              lr: LR * f,
+              resetRng: () => net.reset(),
+            })
+            expect(r.cosine).toBeGreaterThan(0.999)
+            expect(r.ratio).toBeGreaterThan(0.9)
+            expect(r.ratio).toBeLessThan(1.1)
+          })
+        }
+      }
+    })
+  }
 
   it('learns: the loss drops below half after a few hundred steps', () => {
     const net = build()

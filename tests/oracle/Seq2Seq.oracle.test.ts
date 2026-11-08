@@ -43,8 +43,8 @@ const LONG_OUT: Data = {
 const HID = 3
 const LR = 1e-3
 
-function build(): Seq2Seq {
-  return new Seq2Seq(2, HID, 1)
+function build(outSize = 1): Seq2Seq {
+  return new Seq2Seq(2, HID, outSize)
 }
 
 /** Teacher-forced MSE, computed with encode/predict only (same loss trainStep returns). */
@@ -53,15 +53,15 @@ function loss(m: Seq2Seq, d: Data = SAME): number {
   m.decoder.reset()
   m.decoder.h = [...ctx.h]
   m.decoder.c = [...ctx.c]
-  let prev = [0]
+  let prev = new Array(m.outputSize).fill(0)
   let s = 0
   for (let t = 0; t < d.target.length; t++) {
     const h = m.decoder.predict(prev)
     const o = (m as any)._project(h) as number[]
-    s += (o[0] - d.target[t][0]) ** 2
+    o.forEach((v, k) => (s += (v - d.target[t][k]) ** 2))
     prev = d.target[t]
   }
-  return s / d.target.length
+  return s / (d.target.length * m.outputSize)
 }
 
 type Block = 'all' | 'enc' | 'dec' | 'out'
@@ -77,13 +77,14 @@ function parts(m: Seq2Seq) {
 function setParts(m: Seq2Seq, enc: number[], dec: number[], out: number[]): void {
   m.encoder.setWeightsFlat(enc)
   m.decoder.setWeightsFlat(dec)
-  m.W_out = [out.slice(0, HID)]
-  m.b_out = [out[HID]]
+  const n = m.outputSize
+  m.W_out = Array.from({ length: n }, (_, i) => out.slice(i * HID, (i + 1) * HID))
+  m.b_out = out.slice(n * HID, n * HID + n)
 }
 
 /** Runs the oracle on one block. */
-function oracle(block: Block, d: Data = SAME, lr = LR) {
-  const m = build()
+function oracle(block: Block, d: Data = SAME, lr = LR, outSize = 1) {
+  const m = build(outSize)
   return gradientOracle({
     getParams: () => {
       const p = parts(m)
@@ -104,6 +105,12 @@ function oracle(block: Block, d: Data = SAME, lr = LR) {
     },
     lr,
   })
+}
+
+// outputSize 2 and 3 (T_in = 3, T_out = 3); closes mutant M14 (no /outputSize in dProjOut).
+const MULTI: Record<number, Data> = {
+  2: { input: INPUT, target: [[0.3, -0.4], [-0.2, 0.5], [0.5, 0.1]] },
+  3: { input: INPUT, target: [[0.3, -0.4, 0.2], [-0.2, 0.5, -0.1], [0.5, 0.1, -0.6]] },
 }
 
 describe('Seq2Seq oracle', () => {
@@ -160,6 +167,27 @@ describe('Seq2Seq oracle', () => {
         withSeed(seed, () => {
           expect(oracle('all', d).cosine).toBeGreaterThan(0.999)
         })
+      }
+    })
+  }
+
+  for (const n of [2, 3]) {
+    it(`oracle with outputSize ${n}: follows -dL/dw with ratio ~ 1 (lr x0.97/x1.03, 5 seeds)`, () => {
+      for (const block of ['all', 'enc', 'dec', 'out'] as const) {
+        const r = oracle(block, MULTI[n], LR, n)
+        expect(r.cosine).toBeGreaterThan(0.999)
+        expect(r.ratio).toBeGreaterThan(0.9)
+        expect(r.ratio).toBeLessThan(1.1)
+      }
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const f of [0.97, 1.03]) {
+          withSeed(seed, () => {
+            const r = oracle('all', MULTI[n], LR * f, n)
+            expect(r.cosine).toBeGreaterThan(0.999)
+            expect(r.ratio).toBeGreaterThan(0.9)
+            expect(r.ratio).toBeLessThan(1.1)
+          })
+        }
       }
     })
   }
