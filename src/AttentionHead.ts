@@ -99,7 +99,8 @@ export class AttentionHead {
   //   3. dScores = softmaxBwd(dAttn) / √d_k
   //   4. dQ   = dScores @ K,   dK = dScores^T @ Q
   //   5. dWq  = dQ^T @ X,      dWk = dK^T @ X,  dWv = dV^T @ X
-  //   6. dX   = dQ @ Wq  +  dK @ Wk  +  dV @ Wv
+  //   6. dX   = dQ @ Wq  +  dK @ Wk  +  dV @ Wv   (pre-update weights)
+  //   7. update Wq, Wk, Wv
 
   backward(dOut: number[][], lr: number): number[][] {
     if (!this.cache) throw new Error('AttentionHead.backward() called before predict()');
@@ -158,10 +159,6 @@ export class AttentionHead {
       )
     )
 
-    this.Wq.update(dWq, lr)
-    this.Wk.update(dWk, lr)
-    this.Wv.update(dWv, lr)
-
     // 6. dX[i][m] = dQ[i] · Wq[:,m]  +  dK[i] · Wk[:,m]  +  dV[i] · Wv[:,m]
     const dX: number[][] = Array.from({ length: seqLen }, (_, i) =>
       Array.from({ length: d_model }, (_, m) =>
@@ -170,6 +167,12 @@ export class AttentionHead {
         dV[i].reduce((s, dv, k) => s + dv * this.Wv.W[k][m], 0)
       )
     )
+
+    // Update only after dX: dX must use the pre-update weights (N1), so it does
+    // not depend on lr. No other gradient above reads Wq/Wk/Wv (they use the cache).
+    this.Wq.update(dWq, lr)
+    this.Wk.update(dWk, lr)
+    this.Wv.update(dWv, lr)
 
     return dX
   }

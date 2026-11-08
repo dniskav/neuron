@@ -1,16 +1,16 @@
 // Input-sensitivity oracle for the attention family (feature 002, T040, finding N1).
 //
 // Template: the dX sensitivity check of tests/oracle/AttentionHead.oracle.test.ts.
-// AttentionHead.backward() calls Wq/Wk/Wv.update(...) BEFORE it computes dX, so dX
-// is built from already-updated weights. With lr = 0 the update is a no-op and dX is
-// exact; with lr > 0 it is wrong (up to ~85 % relative error at lr 0.05).
-//   1. control  - NOT it.fails: with lr = 0, dX matches -dL/dX from central finite
-//                 differences (cosine > 0.999). Proves the defect is only the order
-//                 of the update, not the dX formula.
-//   2. defect   - it.fails (// AUDIT N1): two identical copies, one backward with
-//                 lr = 0 and one with lr > 0, must return the same dX. They do not.
-// The same two checks run on MultiHeadAttention and TransformerBlock, which call
-// AttentionHead.backward() and so inherit the defect.
+// AttentionHead.backward() computes dX from the pre-update weights (N1 fixed), so dX
+// does not depend on lr.
+//   1. control  - with lr = 0, dX matches -dL/dX from central finite differences
+//                 (cosine > 0.999).
+//   2. property - two identical copies, one backward with lr = 0 and one with
+//                 lr > 0, must return the same dX (normal test for AttentionHead and
+//                 MultiHeadAttention).
+// TransformerBlock keeps its property as it.fails: the remaining dependence on lr
+// comes from LayerNorm.backwardOne (gamma updated at pos i is read at pos i+1),
+// handled by another task.
 // withPlainSGD makes the lr > 0 step deterministic (Adam would hide the size of lr).
 // Convention: backward receives dOut = -dL/dout and returns dX = -dL/dX.
 // A fixed seed (tests/setup.ts) fixes the initial weights.
@@ -96,16 +96,19 @@ function maxRelDiff(a: number[][], b: number[][]): number {
   return Math.max(...u.map((x, i) => Math.abs(x - v[i]))) / scale
 }
 
-const MODELS: { name: string; build: () => Model }[] = [
+const MODELS: { name: string; build: () => Model; layerNormN1?: boolean }[] = [
   { name: 'AttentionHead', build: () => new AttentionHead(4, 3, 2, false) },
   { name: 'MultiHeadAttention', build: () => new MultiHeadAttention(4, 2, false) },
   {
     name: 'TransformerBlock',
     build: () => new TransformerBlock({ d_model: 4, nHeads: 2, d_ff: 8, causal: false }),
+    // AUDIT N1 (LayerNorm.backwardOne: gamma updated at pos i is read at pos i+1). Handled by T008.
+    layerNormN1: true,
   },
 ]
 
-for (const { name, build } of MODELS) {
+for (const { name, build, layerNormN1 } of MODELS) {
+  const property = layerNormN1 ? it.fails : it
   describe(`${name} dX (N1)`, () => {
     it('control: with lr = 0, dX matches -dL/dX from finite differences', () => {
       const m = build()
@@ -114,8 +117,7 @@ for (const { name, build } of MODELS) {
       expect(cosine(dX, fd)).toBeGreaterThan(0.999)
     })
 
-    // AUDIT N1
-    it.fails('defect: dX with lr > 0 equals dX with lr = 0', () => {
+    property('property: dX with lr > 0 equals dX with lr = 0', () => {
       const a = build()
       const b = build()
       b.setWeights(a.getWeights())
