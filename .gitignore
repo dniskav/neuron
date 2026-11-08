@@ -5,3 +5,5 @@ app/
 *.d.ts
 *.js.map
 .rimuru/
+bun.lock
+*.tgz
