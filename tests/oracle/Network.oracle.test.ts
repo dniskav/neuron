@@ -3,11 +3,12 @@
 // Template (same structure as NetworkN.oracle.test.ts):
 //   1. smoke   - builds, predicts finite outputs in (0, 1), train() returns the squared error.
 //   2. oracle  - expectGradientMatches: the update train() really performs follows -dL/dw
-//                from central finite differences (cosine ~ 1). Loss = 0.5 (y - t)^2; its
-//                scale does not matter for the cosine. Optimizer is the default SGD.
+//                from central finite differences (cosine ~ 1). Loss = (y - t)^2 = the MSE that
+//                train() returns (N10, Q8); the ratio checks the scale. Optimizer is the default SGD.
 //   3. learns  - expectLearns: MSE on fixed data drops below half after a few epochs.
-//   4. T007    - nOutputs = 2 and 3 with a vector target: the oracle covers ALL weights
-//                (hidden and every output neuron), loss = 0.5 * sum_k (y_k - t_k)^2.
+//   4. T007    - nOutputs = 1, 2 and 3 with a vector target: the oracle covers ALL weights
+//                (hidden and every output neuron), loss = mean_k (y_k - t_k)^2 (T016: the
+//                step is the gradient of the mean MSE; before it was 0.5 * sum_k, ratio n/2).
 //                Robustness: 5 seeds x lr * 0.97 / 1.03 -> cosine > 0.999 and
 //                |ratio - 1| < 0.01 in every run (ratio = |delta| / (lr |g|)).
 //                "learns" for nOutputs = 2: both outputs get error < 0.5 x initial with
@@ -31,6 +32,7 @@ function build(): Network {
 const SEEDS = [1, 2, 3, 4, 5]
 const LR_SCALES_ORACLE = [0.97, 1, 1.03]
 const TARGETS_BY_OUTPUTS: Record<number, number[]> = {
+  1: [0.8],
   2: [0.2, 0.8],
   3: [0.2, 0.8, 0.5],
 }
@@ -44,7 +46,7 @@ function vectorOracle(nOut: number, seed: number, lr: number) {
     getParams: () => net.getWeights(),
     setParams: (p) => net.setWeights(p),
     loss: () =>
-      0.5 * target.reduce((s, t, k) => s + (net.predict(INPUT)[k] - t) ** 2, 0),
+      target.reduce((s, t, k) => s + (net.predict(INPUT)[k] - t) ** 2, 0) / target.length,
     step: (l) => {
       net.train(INPUT, target, l)
     },
@@ -69,13 +71,14 @@ describe('Network oracle', () => {
     const r = expectGradientMatches({
       getParams: () => net.getWeights(),
       setParams: (p) => net.setWeights(p),
-      loss: () => 0.5 * (net.predict(INPUT)[0] - TARGET) ** 2,
+      loss: () => (net.predict(INPUT)[0] - TARGET) ** 2,
       step: (lr) => {
         net.train(INPUT, TARGET, lr)
       },
       lr: LR,
     })
     expect(r.cosine).toBeGreaterThan(0.999)
+    expect(Math.abs(r.ratio - 1)).toBeLessThan(0.01)
   })
 
   it('learns: MSE on a fixed mini-set drops below half', () => {
@@ -93,7 +96,7 @@ describe('Network oracle', () => {
     })
   })
 
-  for (const nOut of [2, 3]) {
+  for (const nOut of [1, 2, 3]) {
     it(`oracle (nOutputs = ${nOut}): vector-target train() follows -dL/dw on all weights, 5 seeds x lr x0.97/x1.03`, () => {
       for (const seed of SEEDS) {
         for (const s of LR_SCALES_ORACLE) {
@@ -101,6 +104,39 @@ describe('Network oracle', () => {
           expect(r.cosine, `seed ${seed}, lr x${s}`).toBeGreaterThan(0.999)
           expect(Math.abs(r.ratio - 1), `seed ${seed}, lr x${s}, ratio ${r.ratio}`).toBeLessThan(0.01)
         }
+      }
+    })
+  }
+
+  // N10 (Q8): the step of the HIDDEN weights alone is also the gradient of the mean MSE. The hidden
+  // delta derives from the output delta, so scaling only the output layer (not the delta that
+  // flows back) would leave the output ratio right and the hidden one wrong. Slice = the first
+  // (3 + 1) * 4 weights; ratio = (delta . -g) / (lr |g|^2) on that slice, n = 1 and 3.
+  for (const nOut of [1, 3]) {
+    it(`scale (N10): the hidden-weights step has ratio in [0.99, 1.01] (nOutputs = ${nOut})`, () => {
+      for (const seed of SEEDS) {
+        seedRandom(seed)
+        const net = new Network(3, 4, nOut)
+        const target = TARGETS_BY_OUTPUTS[nOut]
+        const mse = () => target.reduce((s, t, k) => s + (net.predict(INPUT)[k] - t) ** 2, 0) / nOut
+        const w0 = net.getWeights()
+        const nHidden = (3 + 1) * 4
+        const eps = 1e-6
+        const g: number[] = []
+        for (let i = 0; i < nHidden; i++) {
+          const wp = [...w0]; wp[i] += eps
+          const wm = [...w0]; wm[i] -= eps
+          net.setWeights(wp); const lp = mse()
+          net.setWeights(wm); const lm = mse()
+          g.push(-(lp - lm) / (2 * eps)) // -dL/dw
+        }
+        net.setWeights(w0)
+        net.train(INPUT, target, LR)
+        const delta = net.getWeights().slice(0, nHidden).map((v, i) => v - w0[i])
+        const dot = delta.reduce((s, v, i) => s + v * g[i], 0)
+        const ratio = dot / (LR * g.reduce((s, v) => s + v * v, 0))
+        expect(ratio, `seed ${seed}, ratio ${ratio}`).toBeGreaterThan(0.99)
+        expect(ratio, `seed ${seed}, ratio ${ratio}`).toBeLessThan(1.01)
       }
     })
   }
