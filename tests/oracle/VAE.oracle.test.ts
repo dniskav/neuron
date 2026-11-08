@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest'
 import { VAE } from '../../src/VAE'
 import { NetworkN } from '../../src/NetworkN'
+import { SGD } from '../../src/optimizers'
 import { gradientOracle } from '../helpers/gradientOracle'
 import { seedRandom } from '../helpers/seed'
 
@@ -315,4 +316,130 @@ describe('VAE totalLoss with klWeight (T013)', () => {
       if (beta === 0) expect(r.totalLoss).toBeCloseTo(recon, 12)
     })
   }
+})
+
+// ─── T015 (Q9): one dropout mask per step ────────────────────────────────────
+// Golden (dropoutRate = 0): 5 train() steps with seedRandom(42) on VAE(3,[4],2,[4]) with SGD,
+// klWeight 0.05, lr 0.5. Constants captured on the base BEFORE touching src (digest of each
+// block: count, sum, sum of w_i*(i+1) and sum of squares; 1e-9) plus the number of Math.random
+// calls in the 5 steps (20 = 2 latent x 2 Box-Muller draws x 5): same trajectory, same order
+// and number of draws as before when there is no dropout.
+describe('VAE dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
+  const XS = [
+    [0.2, 0.7, 0.5],
+    [0.9, 0.1, 0.4],
+    [0.3, 0.3, 0.8],
+    [0.6, 0.5, 0.2],
+    [0.1, 0.9, 0.7],
+  ]
+  const digest = (w: number[]) => ({
+    n: w.length,
+    sum: w.reduce((s, v) => s + v, 0),
+    wsum: w.reduce((s, v, i) => s + v * (i + 1), 0),
+    sq: w.reduce((s, v) => s + v * v, 0),
+  })
+  const GOLDEN = {
+    enc: { n: 36, sum: -0.7617633891049692, wsum: -37.74971716210786, sq: 2.338038155313118 },
+    dec: { n: 27, sum: -1.474919761997956, wsum: -14.086468385192774, sq: 2.0435048027976093 },
+    calls: 20,
+  }
+  it('weights after 5 steps equal the base constants (1e-9) and Math.random is called 20 times', () => {
+    seedRandom(42)
+    const vae = new VAE(3, [4], 2, [4], { optimizer: () => new SGD() }, 0.05)
+    const original = Math.random
+    let calls = 0
+    Math.random = () => {
+      calls++
+      return original()
+    }
+    try {
+      for (const x of XS) vae.train(x, 0.5)
+    } finally {
+      Math.random = original
+    }
+    for (const [name, got, want] of [
+      ['encoder', digest(vae.encoder.getWeights()), GOLDEN.enc],
+      ['decoder', digest(vae.decoder.getWeights()), GOLDEN.dec],
+    ] as const) {
+      expect(got.n, name).toBe(want.n)
+      expect(got.sum, name).toBeCloseTo(want.sum, 9)
+      expect(got.wsum, name).toBeCloseTo(want.wsum, 9)
+      expect(got.sq, name).toBeCloseTo(want.sq, 9)
+    }
+    expect(calls).toBe(GOLDEN.calls)
+  })
+})
+
+// VAE(3,[4],2,[4]) with dropoutRate 0.3 in both sub-networks (shared options). The draws of one
+// training pass are, in order: encoder hidden (4), eps (2 x 2, Box-Muller), decoder hidden (4).
+// The reference loss follows that order with the same reseed, so loss() and step() see the same
+// encoder mask, the same eps and the same decoder mask. Before T015 train() ran its forward
+// without dropout and the decoder's inputGradient / trainWithDeltas drew their own masks.
+describe('VAE with dropout: one mask per step (T015, Q9)', () => {
+  const MASK_SEEDS = [21, 22]
+  const BETA = 0.5
+  const maskedLoss = (vae: VAE): number => {
+    const out = vae.encoder.predict(INPUT, true)
+    const mu = out.slice(0, 2)
+    const logVar = out.slice(2)
+    const z = vae.reparametrize(mu, logVar)
+    const xHat = vae.decoder.predict(z, true)
+    return mseOf(INPUT, xHat) + BETA * klOf(mu, logVar)
+  }
+  const mkDropout = (seed: number): VAE => {
+    seedRandom(seed)
+    return new VAE(3, [4], 2, [4], { optimizer: () => new SGD(), dropoutRate: 0.3 }, BETA)
+  }
+
+  for (const block of ['both', 'decoder', 'encoder'] as const) {
+    it(`${block}: cosine > 0.999 and ratio in [0.9, 1.1] against the loss with the step's masks and eps`, () => {
+      const slice = block === 'both' ? both : block === 'decoder' ? decAll : encAll
+      for (const seed of SEEDS) {
+        for (const maskSeed of MASK_SEEDS) {
+          for (const f of [0.97, 1.03]) {
+            const vae = mkDropout(seed)
+            const r = gradientOracle({
+              getParams: () => slice.get(vae),
+              setParams: (p) => slice.set(vae, p),
+              loss: () => maskedLoss(vae),
+              step: (lr) => {
+                vae.train(INPUT, lr)
+              },
+              lr: LR * f,
+              resetRng: () => seedRandom(maskSeed),
+            })
+            const tag = `${block} init ${seed} mask ${maskSeed} x${f}: cosine ${r.cosine}, ratio ${r.ratio}`
+            expect(r.cosine, tag).toBeGreaterThan(0.999)
+            expect(r.ratio, tag).toBeGreaterThan(0.9)
+            expect(r.ratio, tag).toBeLessThan(1.1)
+          }
+        }
+      }
+    })
+  }
+
+  it('train() draws one mask per sub-network plus eps: 4 + 4 + 4 values', () => {
+    const vae = mkDropout(3)
+    const original = Math.random
+    let calls = 0
+    Math.random = () => {
+      calls++
+      return original()
+    }
+    try {
+      vae.train(INPUT, 0.01)
+    } finally {
+      Math.random = original
+    }
+    expect(calls).toBe(12)
+  })
+
+  it('forward() / decode() (inference) stay deterministic: dropout is applied in training only', () => {
+    const vae = mkDropout(3)
+    const a = vae.forward(INPUT)
+    const b = vae.forward(INPUT)
+    expect(a.mu).toEqual(b.mu)
+    expect(a.logVar).toEqual(b.logVar)
+    expect(vae.decode(a.z)).toEqual(vae.decode(a.z))
+  })
 })
