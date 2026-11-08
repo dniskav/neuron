@@ -37,6 +37,14 @@ Empezar la **feature 002 `gradient-oracle`** con `spec-author`. Con `master` pro
 
 Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T009 Sonnet (aprobada sin bloqueantes). Formato: tarea, modelo inicial, modelo final y motivo.
 
+## Hallazgos nuevos (no estaban en la auditoría)
+
+- **N1 `AttentionHead.backward`:** `dX` se calcula tras actualizar `Wq/Wk/Wv` (error hasta 85 % con lr 0.05). Probablemente hereda `MultiHeadAttention`/`TransformerBlock`. Cubierto por T040 (`it.fails`); la corrección va en la feature 003 o 004.
+- **N2 `BatchNorm` con `momentum` 0.1:** `backward` trata las estadísticas como constantes (coseno 0.933). Cubierto por T041 como excepción documentada; decidir en 004 si se corrige.
+- **N3 `LayerNorm.backwardOne`:** devuelve −dL/dx (convención de `TransformerBlock`) pero el comentario dice dL/dx. Corregir el comentario en 003.
+- **N4 `Network` (I5):** `train` solo acepta un objetivo escalar y solo actualiza la primera salida; `it.todo` en `Network.oracle.test.ts`.
+- **N5 `Conv1D`/`Conv2D`:** el oráculo cubre pesos, no `dInput`. Candidato para la feature 006.
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.

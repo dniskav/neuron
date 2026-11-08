@@ -69,6 +69,14 @@
 - [ ] T018 [P] [H] [files: tests/oracle/Autoencoder.oracle.test.ts] `Autoencoder` (encoder y decoder `NetworkN` públicos; pesos con `encoder.getWeights()` + `decoder.getWeights()` concatenados; `train(x, lr)`). Pérdida de reconstrucción del propio `train` como cruce. Humo, oráculo (esperado: pasa, 0.998 a 1.000 en la auditoría; si queda por debajo de 0.999 informar el valor) y `expectLearns`.
       Gate: `npx vitest run tests/oracle/Autoencoder.oracle.test.ts && git diff --quiet -- src`
 
+## Lote 4b (hallazgos nuevos del lote 4; Sonnet; no estaban en la auditoría)
+
+- [ ] T040 [P] [S] [files: tests/oracle/AttentionHead.dx.oracle.test.ts] Hallazgo N1: en `AttentionHead.backward` se llama a `Wq/Wk/Wv.update(...)` ANTES de calcular `dX`, así que `dX` usa pesos ya actualizados (error relativo hasta 85 % con lr 0.05; exacto con lr = 0). Test de control sin `it.fails`: con `lr = 0`, `dX` coincide con −dL/dX por diferencias finitas (coseno > 0.999). Test `it.fails` (`// AUDIT N1`): con `lr > 0`, dos cabezas idénticas (misma semilla) deben devolver el mismo `dX` que con `lr = 0`. Comprobar también `MultiHeadAttention` y `TransformerBlock` y reportar si heredan el defecto (con `it.fails` propio si sí). Mutante inverso: mover `update` después de `dX` en `src` y comprobar que el `it.fails` se pone en rojo; revertir.
+      Gate: `npx vitest run tests/oracle/AttentionHead.dx.oracle.test.ts && git diff --quiet -- src`
+
+- [ ] T041 [P] [S] [files: tests/oracle/BatchNorm.momentum.oracle.test.ts] Hallazgo N2: con `momentum` 0.1 (por defecto) `forward` actualiza las estadísticas con `x` y `backward` las trata como constantes: coseno 0.933 frente a −dL/dx. Con `momentum = 1` es exacto (1.0, ya cubierto en T012). Documentar como excepción justificada (Constitución II) con umbral: test que fija 0.9 < coseno < 0.999 con comentario `// AUDIT N2`, y que explique que la corrección (si se quiere) va a la feature 004. No tocar `src/`.
+      Gate: `npx vitest run tests/oracle/BatchNorm.momentum.oracle.test.ts && git diff --quiet -- src`
+
 ## Lote 5 (defectos conocidos con `it.fails`: C1 y C2; Sonnet por la pérdida y los supuestos de cada modelo)
 
 - [ ] T019 [P] [S] [files: tests/oracle/NetworkTransformer.oracle.test.ts] `NetworkTransformer` (`getWeights/setWeights`, `train(tokens, targets, lr)`: cross-entropy con softmax por token). Pérdida del test = la que implementa `train` (cruce con el valor devuelto por `train`, ver el comentario incorrecto "Returns: MSE loss" de 003). Humo (sin `it.fails`), oráculo con `withPlainSGD` en `it.fails` (`// AUDIT C1`, cos −1.0000) y `expectLearns` en `it.fails`. Además, verificar con una prueba de control (no `it.fails`) que el oráculo, aplicado a un `NetworkTransformer` cuyo `Δw` se niega manualmente, daría coseno ≈ +1: sirve de prueba de que el defecto es solo de signo.
