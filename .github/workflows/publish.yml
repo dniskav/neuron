@@ -27,11 +27,27 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
       - name: Check if version is already published
         id: version_check
         run: |
           LOCAL=$(node -p "require('./package.json').version")
-          REMOTE=$(npm view @dniskav/neuron version 2>/dev/null || echo "0.0.0")
+          ERR_FILE=$(mktemp)
+          if OUT=$(npm view @dniskav/neuron version 2>"$ERR_FILE"); then
+            REMOTE="$OUT"
+          elif grep -Eq 'E404|404 Not Found' "$ERR_FILE"; then
+            # Package not published yet: the first publish is always allowed.
+            REMOTE="0.0.0"
+          else
+            echo "::error::npm view @dniskav/neuron failed (not a 404). Aborting." >&2
+            cat "$ERR_FILE" >&2
+            exit 1
+          fi
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
           echo "remote=$REMOTE" >> $GITHUB_OUTPUT
           if [ "$LOCAL" = "$REMOTE" ]; then
