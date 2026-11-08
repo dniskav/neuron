@@ -16,11 +16,28 @@
 //
 // Weights are the concatenation encoder + projection head. Only the cosine is asserted (Q9).
 // expectLearns uses the NT-Xent loss (computeLoss) on a fixed batch.
+//
+// Learns test (rewritten after it failed on GitHub CI ubuntu/Node 20 while passing on macOS: final/initial
+// 0.558 vs the required 0.5). The old setup (temperature 0.5, seed 9 x3, lr 1e-3, 400 steps) was a
+// chaotic trajectory: 0.31 at step 400 but 0.54 at 500, and a relative perturbation of 1e-9 of the
+// initial weights was enough to end at 0.59..1.0 after 600 steps (ReLU units dying mid-run). With temperature 0.5 the
+// attainable floor is ~0.27 of the initial loss, so the 0.5 criterion sat close to the floor.
+// Now: temperature 0.1 (floor ~0 of the initial loss, much more headroom; the sharper softmax gives
+// a smooth, monotone descent), the seed-9 x3 init (no dead ReLU), lr 1e-3, 400 steps. Measured
+// final/initial (worst .. best): 0.1482 .. 0.1513 for lr x0.97/0.99/1/1.01/1.03; 0.1494 .. 0.1498 for 5
+// relative perturbations of 1e-9; 0.1453 .. 0.1537 for 20 seeded 3 % perturbations of the init; all
+// well under 0.35 (checked below). The descent is also asserted strictly decreasing at 100/200/300 steps.
+// Not hidden (N9a/N9c, specs/HANDOFF.md): this does NOT hold for arbitrary Xavier inits. With the raw
+// seeds 1..20 (x3, temperature 0.1) only 6 reach < 0.35 (0.018 .. 0.341); the rest stay at 1.0 (dead
+// ReLU head, loss = log(2N-1), zero gradient), or end at 0.44..1.98. That is a defect of the model
+// (init + ReLU head), not of this test, and it is why the init here is fixed and healthy. The oracle
+// test is stable: cosine 0.99997 for lr x0.97..1.03 and for 1e-9 perturbations of the weights; it is
+// not robust across raw Xavier seeds (seeds 2, 4, 6, 7, 14, 15, 19 give cosine < 0.6; 5, 10, 17, 18 have no gradient), see INIT_SEED.
 import { describe, it, expect } from 'vitest'
 import { ContrastiveLearning } from '../../src/ContrastiveLearning'
 import { gradientOracle } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
-import { seedRandom, restoreRandom } from '../helpers/seed'
+import { seedRandom, restoreRandom, mulberry32 } from '../helpers/seed'
 
 const LR = 1e-3
 
@@ -49,6 +66,25 @@ function build(seed = INIT_SEED, scale = 1): ContrastiveLearning {
   if (scale !== 1) {
     c.encoder.setWeights(c.encoder.getWeights().map((w) => w * scale))
     c.projectionHead.setWeights(c.projectionHead.getWeights().map((w) => w * scale))
+  }
+  return c
+}
+
+// Learning-test configuration (see the header, "learns test"): healthy init = seed 9 x3 (no dead
+// ReLU), low temperature 0.1, lr 1e-3, 400 steps.
+const LEARN_LR = 1e-3
+const LEARN_STEPS = 400
+const LEARN_TEMPERATURE = 0.1
+
+/** Seed-9 x3 init with optional seeded relative noise (uniform, +-noise) on every weight. */
+function buildHealthy(noise: number, noiseSeed: number): ContrastiveLearning {
+  const c = build(9, 3)
+  c.temperature = LEARN_TEMPERATURE
+  if (noise > 0) {
+    const rnd = mulberry32(noiseSeed + 1000)
+    const jitter = (w: number): number => w * (1 + noise * (2 * rnd() - 1))
+    c.encoder.setWeights(c.encoder.getWeights().map(jitter))
+    c.projectionHead.setWeights(c.projectionHead.getWeights().map(jitter))
   }
   return c
 }
@@ -100,19 +136,65 @@ describe('ContrastiveLearning oracle', () => {
     expect(r.cosine).toBeGreaterThan(0.999)
   })
 
-  it('learns: NT-Xent loss on a fixed batch drops below half', () => {
-    // NT-Xent on 3 pairs with a ReLU head is non-monotone and sensitive to the init and lr: a
-    // plain simultaneous finite-difference descent shows the same curve as trainStep (so it is
-    // the loss landscape, not a trainStep defect). Measured final/initial for this fixed init
-    // (seed 9, weights x3), lr 1e-3: 0.69 @100, 0.56 @200, 0.49 @300, 0.31 @400, 0.54 @500.
-    // 400 steps is the checkpoint that learns; it is deterministic (seeded init, fixed pairs).
-    const c = build(9, 3)
-    expectLearns({
+  it('learns: NT-Xent loss on a fixed batch drops below half (robust, smooth descent)', () => {
+    const c = buildHealthy(0, 0)
+    // Check the descent is smooth, not a lucky checkpoint: the loss at 100, 200, 300 and 400
+    // steps must be strictly decreasing (measured ratios 0.21, 0.19, 0.17, 0.15).
+    const checkpoints: number[] = []
+    let n = 0
+    const { ratio } = expectLearns({
       loss: () => c.computeLoss(PAIRS),
       step: () => {
-        c.trainStep(PAIRS, 1e-3)
+        c.trainStep(PAIRS, LEARN_LR)
+        if (++n % 100 === 0 && n < LEARN_STEPS) checkpoints.push(c.computeLoss(PAIRS))
       },
-      steps: 400,
+      steps: LEARN_STEPS,
     })
+    for (let i = 1; i < checkpoints.length; i++)
+      expect(checkpoints[i]).toBeLessThan(checkpoints[i - 1])
+    expect(ratio).toBeLessThan(0.35)
   })
+
+  // Platform robustness (CI ubuntu vs local macOS failed on the old test): tiny floating-point
+  // differences must not change the outcome. Each variant must stay clearly under 0.35 (the
+  // test threshold is 0.5, so the margin is >= 30 %). Measured worst/best final/initial over
+  // 20 init noise seeds (3 %), lr x0.97/0.99/1.01/1.03 and 1e-9 relative noise: see the header.
+  const VARIANTS: {
+    name: string
+    lrMul: number
+    noise: number
+    noiseSeed: number
+  }[] = [
+    ...[0.97, 0.99, 1.01, 1.03].map((m) => ({
+      name: `lr x${m}`,
+      lrMul: m,
+      noise: 0,
+      noiseSeed: 0,
+    })),
+    ...[1, 2, 3, 4, 5].map((k) => ({
+      name: `init noise 1e-9 (#${k})`,
+      lrMul: 1,
+      noise: 1e-9,
+      noiseSeed: k,
+    })),
+    ...Array.from({ length: 20 }, (_, i) => i + 1).map((k) => ({
+      name: `init noise 3% (seed ${k})`,
+      lrMul: 1,
+      noise: 0.03,
+      noiseSeed: k,
+    })),
+  ]
+  for (const v of VARIANTS) {
+    it(`learns robustly: ${v.name} keeps final/initial < 0.35`, () => {
+      const c = buildHealthy(v.noise, v.noiseSeed)
+      expectLearns({
+        loss: () => c.computeLoss(PAIRS),
+        step: () => {
+          c.trainStep(PAIRS, LEARN_LR * v.lrMul)
+        },
+        steps: LEARN_STEPS,
+        ratio: 0.35,
+      })
+    })
+  }
 })
