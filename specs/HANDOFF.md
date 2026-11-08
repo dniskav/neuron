@@ -51,6 +51,13 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 - **Controles de signo (T019, T020):** el test de control que niega Δw solo vale mientras el defecto C1 existe. Al corregir cada modelo en 003 hay que quitar los `it.fails` Y borrar el control.
 - **`NetworkTransformer.train`:** ratio ≈ 3 entre el paso y la pérdida (gradiente de la suma sobre posiciones, pérdida media por posición): decidir la escala al corregir C1. El comentario 'Returns: MSE loss' es incorrecto (es cross-entropy).
 
+- **Notas para 003 por modelo (medidas en 002):**
+  - `RNN`: solo signo (`dOutputs` en `backward()`; coseno −1).
+  - `TCN`: DOS defectos: signo (`dOut = 2*diff/outputSize`) y escala (la proyección de salida usa `lr/T`, las capas conv usan `lr` con `dOut` sumado sobre T). Con solo el signo el coseno queda en +0.77. `CausalConv1D` solo está correcto.
+  - `Seq2Seq`: signo en `dProjOut` (decoder y W_out/b_out dan −1) MÁS gradiente del encoder aproximado (solo `dhSeq[0]`, ignora `dc`): con signo corregido el global queda en 0.996. Hace falta BPTT completo o excepción documentada con umbral.
+  - `GAN` (C2): generador −0.948; discriminador correcto (0.99999996). Trampa: con salida de dimensión 1 el coseno sale +1 por casualidad; usar dimensión ≥ 3.
+  - Al corregir cada modelo: quitar `it.fails` Y borrar los controles de signo (se ponen en rojo).
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.
