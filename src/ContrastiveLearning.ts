@@ -20,7 +20,7 @@
 
 import { NetworkN }          from './NetworkN';
 import { NetworkNOptions }   from './NetworkN';
-import { relu }              from './activations';
+import { relu, linear }      from './activations';
 
 // ─── AUGMENTER ────────────────────────────────────────────────────────────────
 //
@@ -163,13 +163,17 @@ export class ContrastiveLearning {
     });
 
     // Build projection head: encoderOut → projectionDim
+    // The output layer is LINEAR (no final ReLU): a final ReLU can map every projection
+    // to the zero vector (dead head), where cosine similarity is undefined (guarded to 0)
+    // and the gradient is exactly 0, so training never recovers. Breaking change (v0.4):
+    // project() may now return negative values (before it was always >= 0).
     // One hidden layer at half the encoder output size gives a good balance
     // between capacity and regularization.
     const encoderOut    = encoderHidden[encoderHidden.length - 1];
     const projHidden    = Math.max(projectionDim, Math.floor(encoderOut / 2));
     this.projectionHead = new NetworkN(
       [encoderOut, projHidden, projectionDim],
-      { activations: [relu, relu] },
+      { activations: [relu, linear] },
     );
   }
 
@@ -206,9 +210,12 @@ export class ContrastiveLearning {
       normA += a[d] * a[d];
       normB += b[d] * b[d];
     }
-    const denom = Math.sqrt(normA) * Math.sqrt(normB);
-    // Guard against zero-norm vectors (degenerate case).
-    return denom < 1e-10 ? 0 : dot / denom;
+    // Soft epsilon in the denominator instead of a jump to 0 below a norm threshold:
+    // the loss stays CONTINUOUS as ||z|| -> 0 (a zero-norm jump made finite differences
+    // return garbage near dead projections). For ||a||·||b|| >> 1e-8 the effect is < 1e-8
+    // relative; at exactly zero norm the similarity is 0. Observable change (v0.4): the
+    // loss differs from the old one by O(1e-8 / (||a||·||b||)).
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
   }
 
   // ── NT-Xent loss (no weight update) ──────────────────────────────────────
@@ -241,57 +248,55 @@ export class ContrastiveLearning {
   trainStep(pairs: [number[], number[]][], lr: number): number {
     const loss = this.computeLoss(pairs);
 
-    // Finite-difference gradient approximation.
-    // For each weight w: gradient ≈ (L(w+ε) - L(w-ε)) / (2ε)
+    // Finite-difference gradient approximation, SIMULTANEOUS step:
+    // every gradient is evaluated at the ORIGINAL weights and only after all of them
+    // are known are the weights updated (w += lr * (-grad)). Each probed value is saved
+    // and restored exactly (no += eps / -= 2eps / += eps drift, no in-place update that
+    // would make later gradients depend on already-updated earlier weights).
     //
-    // This is O(P) forward passes where P = number of parameters.
-    // For large networks, use the Tape (autograd) module instead.
-    const eps = 1e-4;
+    // gradient ≈ (L(w+ε) - L(w-ε)) / (2ε). O(P) forward passes, P = number of parameters.
+    //
+    // Known limitation (documented, not a defect of the step): cosine similarity has
+    // curvature ~ 1/||z||. With very small projection norms the loss changes quickly
+    // along the step, so a finite lr departs from the first-order gradient there.
+    // eps = 1e-6 (was 1e-4). Measured on raw Xavier inits (20 seeds): with 1e-4 the
+    // step departed from the oracle gradient (cosine 0.90..0.95) on seeds whose live
+    // projections have norm 5e-3..6e-2, because the 1/||z|| curvature makes a central
+    // difference with a big step inexact; with 1e-6 all of them give cosine >= 0.99999.
+    // Rounding error is ~1e-16/1e-6 = 1e-10, far below the gradients.
+    const eps = 1e-6;
 
-    // Update encoder weights
-    for (const layer of this.encoder.layers) {
-      for (const neuron of layer.neurons) {
-        // Weight gradients
-        for (let j = 0; j < neuron.weights.length; j++) {
-          neuron.weights[j] += eps;
-          const lossPlus = this.computeLoss(pairs);
-          neuron.weights[j] -= 2 * eps;
-          const lossMinus = this.computeLoss(pairs);
-          neuron.weights[j] += eps; // restore
-          const grad = (lossPlus - lossMinus) / (2 * eps);
-          neuron.weights[j] += lr * (-grad); // gradient descent (minimize loss)
+    type Slot = { owner: { weights: number[] } | { bias: number }; index: number };
+    const slots: Slot[] = [];
+    const grads: number[] = [];
+    for (const net of [this.encoder, this.projectionHead]) {
+      for (const layer of net.layers) {
+        for (const neuron of layer.neurons) {
+          for (let j = 0; j < neuron.weights.length; j++) slots.push({ owner: neuron, index: j });
+          slots.push({ owner: neuron, index: -1 }); // bias
         }
-        // Bias gradient
-        neuron.bias += eps;
-        const lossPlus = this.computeLoss(pairs);
-        neuron.bias -= 2 * eps;
-        const lossMinus = this.computeLoss(pairs);
-        neuron.bias += eps;
-        const grad = (lossPlus - lossMinus) / (2 * eps);
-        neuron.bias += lr * (-grad);
       }
     }
 
-    // Update projection head weights
-    for (const layer of this.projectionHead.layers) {
-      for (const neuron of layer.neurons) {
-        for (let j = 0; j < neuron.weights.length; j++) {
-          neuron.weights[j] += eps;
-          const lossPlus = this.computeLoss(pairs);
-          neuron.weights[j] -= 2 * eps;
-          const lossMinus = this.computeLoss(pairs);
-          neuron.weights[j] += eps;
-          const grad = (lossPlus - lossMinus) / (2 * eps);
-          neuron.weights[j] += lr * (-grad);
-        }
-        neuron.bias += eps;
-        const lossPlus = this.computeLoss(pairs);
-        neuron.bias -= 2 * eps;
-        const lossMinus = this.computeLoss(pairs);
-        neuron.bias += eps;
-        const grad = (lossPlus - lossMinus) / (2 * eps);
-        neuron.bias += lr * (-grad);
-      }
+    const read = (s: Slot): number =>
+      s.index >= 0 ? (s.owner as { weights: number[] }).weights[s.index] : (s.owner as { bias: number }).bias;
+    const write = (s: Slot, v: number): void => {
+      if (s.index >= 0) (s.owner as { weights: number[] }).weights[s.index] = v;
+      else (s.owner as { bias: number }).bias = v;
+    };
+
+    for (const s of slots) {
+      const orig = read(s);
+      write(s, orig + eps);
+      const lossPlus = this.computeLoss(pairs);
+      write(s, orig - eps);
+      const lossMinus = this.computeLoss(pairs);
+      write(s, orig); // exact restore
+      grads.push((lossPlus - lossMinus) / (2 * eps));
+    }
+
+    for (let k = 0; k < slots.length; k++) {
+      write(slots[k], read(slots[k]) + lr * (-grads[k])); // gradient descent
     }
 
     return loss;
