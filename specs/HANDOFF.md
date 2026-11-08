@@ -18,13 +18,13 @@
 
 ## Siguiente acción
 
-Empezar la **feature 001 `release-safety`**: lanzar `spec-author` y seguir el flujo de `specs/ORCHESTRATION.md`.
+Esperar el check `ci` en verde en el PR de `fix/v0.4`, que el usuario fusione, y entonces activar la protección de `master` (T011, requiere aprobación). Después, feature 002 `gradient-oracle`.
 
 ## Avance
 
 | Feature | Estado |
 |---|---|
-| 001 `release-safety` | Pendiente |
+| 001 `release-safety` | T001–T010 hechas y verificadas; PR abierto. Falta T011 (protección de `master`) tras el merge |
 | 002 `gradient-oracle` | Pendiente |
 | 003 `sign-fix` | Pendiente |
 | 004 `models-fix` | Pendiente |
@@ -35,10 +35,11 @@ Empezar la **feature 001 `release-safety`**: lanzar `spec-author` y seguir el fl
 
 ## Escalados de modelo
 
-Ninguno por ahora. Formato: tarea, modelo inicial, modelo final y motivo.
+Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T009 Sonnet (aprobada sin bloqueantes). Formato: tarea, modelo inicial, modelo final y motivo.
 
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.
-- **`isolation: "worktree"` no está probado en este repo:** puede partir de otra base o sin `node_modules`. Comprobarlo en la primera tarea, como indica ORCHESTRATION.
-- **Rendimiento de Haiku sin medir:** el reparto 60/40 es una estimación. Medirlo en el primer lote y ajustar.
+- **`isolation: "worktree"` probado:** los worktrees parten de `master` (723fa58) y sin `node_modules`. Cada prompt debe exigir `git rebase fix/v0.4` y `npm ci`; con eso funciona. Los archivos sin commit (p. ej. specs) no llegan al worktree: hacer commit antes de lanzar. Los agentes tropiezan con comandos git compuestos (`cd && git`, `for`): pedirles comandos simples.
+- **Menores de T009 sin tratar (publish.yml):** `NODE_AUTH_TOKEN` de relleno puede dar 401 en `npm view` y bloquear el publish (falla cerrado; confirmar en la primera ejecución real); la comparación de versión es `=`, no `>`; sin `concurrency`.
+- **Rendimiento de Haiku:** primer lote (tareas de configuración) 8/8 sin escalar. Aún no medido en tareas con tests o código.
