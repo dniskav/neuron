@@ -123,8 +123,9 @@ export class NetworkTransformerRL {
     }
     loss /= n
 
-    // Backward: dL/dpred[c] = 2 * (pred[c] - target[c]) / n
-    const dPred = pred.map((p, c) => 2 * (p - target[c]) / n)
+    // Backward: optimizers do `w + lr*g`, so the chain carries -dL/dpred[c]
+    // = -2 * (pred[c] - target[c]) / n.
+    const dPred = pred.map((p, c) => -2 * (p - target[c]) / n)
 
     // Output projection backward
     //   dPooled[m] = Σ_c dPred[c] * outputProj.W[c][m]
@@ -152,14 +153,15 @@ export class NetworkTransformerRL {
     // Backprop into input projection
     // dH[i] es el gradiente w.r.t. projected[i]
     // inputProj: projected[i] = inputProj @ sequence[i]
-    for (let i = 0; i < this.seqLen; i++) {
-      const dInputProj: number[][] = Array.from({ length: this.d_model }, (_, k) =>
-        Array.from({ length: this.inputDim }, (_, m) =>
-          dH[i][k] * sequence[i][m]
-        )
-      )
-      this.inputProj.update(dInputProj, lr)
-    }
+    // Accumulate over positions, then update once (a single Adam step per call).
+    const dInputProj: number[][] = Array.from({ length: this.d_model }, () =>
+      new Array(this.inputDim).fill(0)
+    )
+    for (let i = 0; i < this.seqLen; i++)
+      for (let k = 0; k < this.d_model; k++)
+        for (let m = 0; m < this.inputDim; m++)
+          dInputProj[k][m] += dH[i][k] * sequence[i][m]
+    this.inputProj.update(dInputProj, lr)
 
     return loss
   }
