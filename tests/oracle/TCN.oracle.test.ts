@@ -1,23 +1,19 @@
 // Gradient-oracle test for CausalConv1D and TCN (feature 002, T022).
 //
-//   1. smoke   - forward/backward finitos, formas, causalidad. Sin it.fails.
+//   1. smoke   - forward/backward finitos, formas, causalidad. 
 //   2. oracle  - CausalConv1D aislada: backward(dOut, lr) sigue -dL/dw (coseno > 0.999).
-//                TCN: ver AUDIT C1 abajo.
+//                TCN: train() sigue -dL/dw, coseno > 0.999 y ratio ~ 1.
 //   3. learns  - TCN: la perdida sobre datos fijos baja a menos de la mitad.
-//   4. control - TCN con el delta negado a mano.
 // Solo se asierta el coseno (Q9). Los campos private de TCN (_outputW/_outputB) se leen
 // con `as any` (Q5). El optimizador por defecto es SGD (`w + lr*g`), sin withPlainSGD.
 // Perdida de TCN = MSE medio sobre T*outputSize, la que devuelve train().
 //
-// AUDIT C1 (src/TCN.ts train): dOut = 2*diff/outputSize es +dL/dy y se entrega a
-// optimizadores `w + lr*g` => los pesos suben por la perdida. Ademas la proyeccion de
-// salida se actualiza con lr/T (correcto para una perdida media) pero las capas conv
-// reciben lr y un dOut sumado sobre T sin dividir (T veces mayor): los dos grupos de
-// parametros se mueven con escalas relativas distintas. Por eso el coseno global no es
-// -1 exacto (auditoria -0.8945). Pista para 003.
+// C1 corregido en 003/T004: TCN.train entrega dOut = -2*diff/(T*outputSize) (= -dL/dy de la
+// perdida media) y usa lr sin dividir en proyeccion y capas conv. Antes: signo invertido y
+// las capas conv se movian T veces mas que la proyeccion (ratio 6 con T=6).
 import { describe, it, expect } from 'vitest'
 import { CausalConv1D, TCN } from '../../src/TCN'
-import { bindParams, expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
+import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
 
 const LR = 1e-3
@@ -91,14 +87,6 @@ function tcnStep(net: TCN, lr: number): void {
   net.train(SEQ, TARGET_TCN, lr)
 }
 
-function negatedStep(net: TCN, lr: number): void {
-  const p = tcnParams(net)
-  const before = p.getParams()
-  tcnStep(net, lr)
-  const after = p.getParams()
-  p.setParams(before.map((b, i) => b - (after[i] - b)))
-}
-
 describe('CausalConv1D oraculo', () => {
   it('humo: forma [T][outputChannels], backward finito y causal', () => {
     const m = setupConv()
@@ -151,8 +139,7 @@ describe('TCN oraculo', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: signo invertido (ver cabecera).
-  it.fails('oraculo: train() sigue -dL/dw (coseno > 0.999)', () => {
+  it('oraculo: train() sigue -dL/dw (coseno > 0.999)', () => {
     const net = buildTcn()
     const r = expectGradientMatches({
       ...tcnParams(net),
@@ -161,23 +148,13 @@ describe('TCN oraculo', () => {
       lr: LR,
     })
     expect(r.cosine).toBeGreaterThan(0.999)
+    // Escala coherente: sin el 1/T desparejado entre proyeccion y capas conv.
+    expect(r.ratio).toBeGreaterThan(0.9)
+    expect(r.ratio).toBeLessThan(1.1)
   })
 
-  // AUDIT C1: la perdida sube en lugar de bajar.
-  it.fails('learns: la perdida baja a la mitad', () => {
+  it('learns: la perdida baja a la mitad', () => {
     const net = buildTcn()
     expectLearns({ loss: () => tcnLoss(net), step: () => tcnStep(net, 0.01), steps: 200 })
-  })
-
-  // Con el delta negado queda solo el desajuste de escala (lr/T vs lr).
-  it('control: con el delta negado a mano el coseno es positivo', () => {
-    const net = buildTcn()
-    const r = gradientOracle({
-      ...tcnParams(net),
-      loss: () => tcnLoss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-    })
-    expect(r.cosine).toBeGreaterThan(0.5)
   })
 })
