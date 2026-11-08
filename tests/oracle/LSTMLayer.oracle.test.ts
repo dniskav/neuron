@@ -105,4 +105,46 @@ describe('LSTMLayer oracle', () => {
     const m = setup()
     expectLearns({ loss: m.loss, step: () => m.step(LR), steps: 600 })
   })
+
+  it('backprop returns dh0/dc0: the gradient w.r.t. the initial state (finite differences)', () => {
+    const layer = new LSTMLayer(INPUT_SIZE, HIDDEN, () => new SGD())
+    const h0 = [0.2, -0.1, 0.3]
+    const c0 = [-0.2, 0.4, 0.1]
+    const run = (h: number[], c: number[]): number[][] => {
+      layer.reset()
+      layer.h = [...h]
+      layer.c = [...c]
+      return SEQ.map((x) => layer.predict(x))
+    }
+    const lossFrom = (h: number[], c: number[]): number =>
+      run(h, c).reduce(
+        (s, o, t) => s + o.reduce((a, v, k) => a + 0.5 * (v - TARGET[t][k]) ** 2, 0),
+        0,
+      )
+    const hs = run(h0, c0)
+    const dh = hs.map((h, t) => h.map((v, k) => -(v - TARGET[t][k])))
+    // lr = 0 leaves the weights untouched; the returned gradient is unscaled.
+    const { dh0, dc0 } = layer.backprop(dh, 0)
+    const eps = 1e-6
+    const num: number[] = []
+    for (let k = 0; k < HIDDEN; k++) {
+      const hp = [...h0]
+      hp[k] += eps
+      const hm = [...h0]
+      hm[k] -= eps
+      num.push(-(lossFrom(hp, c0) - lossFrom(hm, c0)) / (2 * eps))
+    }
+    for (let k = 0; k < HIDDEN; k++) {
+      const cp = [...c0]
+      cp[k] += eps
+      const cm = [...c0]
+      cm[k] -= eps
+      num.push(-(lossFrom(h0, cp) - lossFrom(h0, cm)) / (2 * eps))
+    }
+    const got = [...dh0, ...dc0]
+    const dot = got.reduce((s, v, i) => s + v * num[i], 0)
+    const n = (v: number[]) => Math.sqrt(v.reduce((s, x) => s + x * x, 0))
+    expect(dot / (n(got) * n(num))).toBeGreaterThan(0.999)
+    expect(n(got) / n(num)).toBeCloseTo(1, 4)
+  })
 })
