@@ -7,11 +7,8 @@
 //                returns, L = (1/(T*out)) sum (o - y)^2, measured with forward() only.
 //                Default SGD optimizer (no withPlainSGD). Only the cosine is asserted (Q9).
 //   3. learns  - expectLearns: the same loss on fixed data drops below half.
-//   4. control - the same update with its delta negated by hand follows -dL/dw
-//                (cosine ~ +1): the oracle is sound and the only defect is the sign.
-// AUDIT C1: backward() builds dOutputs = 2*(o - y)/out (= +dL/do) and hands it to
-// optimizers that do `w + lr*g`, so every weight moves UP the loss (cosine -1).
-// Remove `.fails` from oracle/learns when the defect is fixed (feature 003).
+// backward() passes dOutputs = -dL/do (= -2*(o - y)/out), so the optimizers' `w + lr*g`
+// step follows -dL/dw.
 import { describe, it, expect } from 'vitest'
 import { RNN } from '../../src/RNN'
 import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
