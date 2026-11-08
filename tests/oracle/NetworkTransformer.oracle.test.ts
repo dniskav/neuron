@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest'
 import { NetworkTransformer } from '../../src/NetworkTransformer'
 import { softmax } from '../../src/MatMul'
 import { gradientOracle, withPlainSGD } from '../helpers/gradientOracle'
+import { withSeed } from '../helpers/seed'
 import { expectLearns } from '../helpers/learns'
 
 const SEQ = 3
@@ -96,6 +97,45 @@ describe('NetworkTransformer oracle', () => {
       expect(r.ratio).toBeLessThan(1.1)
     },
   )
+
+  // Partial mask (count = 2 < seqLen = 3): the gradient must be that of the mean CE over the
+  // masked positions (divide by count, not seqLen). Closes mutant M11.
+  it('oracle with a partial mask: follows -dL/dw of the masked mean CE, ratio ~ 1', () => {
+    const MASK = [true, false, true]
+    const maskedLoss = (net: NetworkTransformer): number => {
+      const logits = net.predict(TOKENS)
+      let s = 0
+      let count = 0
+      for (let i = 0; i < SEQ; i++) {
+        if (!MASK[i]) continue
+        count++
+        const p = softmax(logits.slice(i * N_CLASSES, (i + 1) * N_CLASSES))
+        for (let c = 0; c < N_CLASSES; c++) {
+          if (TARGETS[i * N_CLASSES + c] > 0) s -= Math.log(Math.max(p[c], 1e-7))
+        }
+      }
+      return s / count
+    }
+    for (const seed of [1, 2, 3, 4, 5]) {
+      for (const f of [0.97, 1.03]) {
+        withSeed(seed, () => {
+          const net = build()
+          const r = gradientOracle({
+            getParams: () => net.getWeights(),
+            setParams: (p) => net.setWeights(p),
+            loss: () => maskedLoss(net),
+            step: (l) => {
+              withPlainSGD(() => net.train(TOKENS, TARGETS, l, MASK))
+            },
+            lr: 10 * LR * f,
+          })
+          expect(r.cosine).toBeGreaterThan(0.999)
+          expect(r.ratio).toBeGreaterThan(0.9)
+          expect(r.ratio).toBeLessThan(1.1)
+        })
+      }
+    }
+  })
 
   it('learns: the cross-entropy drops below half after a few hundred steps', () => {
     const net = build()
