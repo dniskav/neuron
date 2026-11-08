@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validate2DArray, validateArray } from "./Validation";
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -55,6 +56,11 @@ class Gate {
       row.reduce((s, w, j) => s + w * combined[j], this.b[i])
     );
   }
+}
+
+// Copia profunda de una puerta (matrices y sesgos nuevos).
+function copyGate(g: Gate): { W: number[][]; b: number[] } {
+  return { W: g.W.map(row => [...row]), b: [...g.b] };
 }
 
 // ─── Step record (stored for BPTT) ────────────────────────────────────────────
@@ -278,24 +284,40 @@ export class LSTMLayer {
   }
 
   // ── Serialization ─────────────────────────────────────────────────────────
+  // Returns DEEP COPIES: mutating the result never moves the layer's weights.
   getWeights() {
     return {
-      forgetGate: { W: this.forgetGate.W, b: this.forgetGate.b },
-      inputGate:  { W: this.inputGate.W,  b: this.inputGate.b  },
-      cellGate:   { W: this.cellGate.W,   b: this.cellGate.b   },
-      outputGate: { W: this.outputGate.W, b: this.outputGate.b },
+      forgetGate: copyGate(this.forgetGate),
+      inputGate:  copyGate(this.inputGate),
+      cellGate:   copyGate(this.cellGate),
+      outputGate: copyGate(this.outputGate),
     };
   }
 
+  // Validates every gate's shape (W: hSize × (inputSize + hSize), b: hSize)
+  // BEFORE writing, then copies element by element into the existing arrays.
   setWeights(data: ReturnType<LSTMLayer["getWeights"]>): void {
-    this.forgetGate.W = data.forgetGate.W;
-    this.forgetGate.b = data.forgetGate.b;
-    this.inputGate.W  = data.inputGate.W;
-    this.inputGate.b  = data.inputGate.b;
-    this.cellGate.W   = data.cellGate.W;
-    this.cellGate.b   = data.cellGate.b;
-    this.outputGate.W = data.outputGate.W;
-    this.outputGate.b = data.outputGate.b;
+    const combSize = this.inputSize + this.hSize;
+    const gateNames = ["forgetGate", "inputGate", "cellGate", "outputGate"] as const;
+    if (data === null || typeof data !== "object") {
+      throw new Error("LSTMLayer.setWeights: expected object with forgetGate, inputGate, cellGate and outputGate");
+    }
+    for (const name of gateNames) {
+      const g = data[name];
+      if (g === null || typeof g !== "object") {
+        throw new Error(`LSTMLayer.setWeights: missing gate ${name}`);
+      }
+      validate2DArray(g.W, this.hSize, combSize, `LSTMLayer.setWeights(${name}.W)`);
+      validateArray(g.b, this.hSize, `LSTMLayer.setWeights(${name}.b)`);
+    }
+    for (const name of gateNames) {
+      const dst = this[name];
+      const src = data[name];
+      for (let i = 0; i < this.hSize; i++) {
+        for (let j = 0; j < combSize; j++) dst.W[i][j] = src.W[i][j];
+        dst.b[i] = src.b[i];
+      }
+    }
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
@@ -314,6 +336,8 @@ export class LSTMLayer {
   }
 
   setWeightsFlat(weights: number[]): void {
+    const total = 4 * (this.hSize * (this.inputSize + this.hSize) + this.hSize);
+    validateArray(weights, total, "LSTMLayer.setWeightsFlat");
     let idx = 0;
     for (let i = 0; i < this.forgetGate.W.length; i++)
       for (let j = 0; j < this.forgetGate.W[i].length; j++) this.forgetGate.W[i][j] = weights[idx++];

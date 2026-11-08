@@ -2,7 +2,7 @@ import { LSTMLayer }                         from "./LSTMLayer";
 import { Layer }                             from "./Layer";
 import { Activation, sigmoid }               from "./activations";
 import { OptimizerFactory, defaultOptimizer } from "./optimizers";
-import { validateArray }                     from "./Validation";
+import { validateArray, validateNumber }     from "./Validation";
 
 export interface NetworkLSTMOptions {
   // Activation for the dense layers that follow the LSTM.
@@ -173,12 +173,47 @@ export class NetworkLSTM {
     };
   }
 
+  // Validates the dense structure BEFORE writing; LSTMLayer.setWeights validates
+  // its own gates before writing, so a bad input leaves the whole network intact.
+  // Values are copied element by element into the existing arrays (no aliasing).
   setWeights(data: ReturnType<NetworkLSTM["getWeights"]>): void {
+    const M = "NetworkLSTM.setWeights";
+    if (data === null || typeof data !== "object") {
+      throw new Error(`${M}: expected object with lstm and dense`);
+    }
+    if (data.lstm === null || typeof data.lstm !== "object") {
+      throw new Error(`${M}: missing lstm`);
+    }
+    if (!Array.isArray(data.dense)) {
+      throw new Error(`${M}: expected dense array, got ${typeof data.dense}`);
+    }
+    if (data.dense.length !== this.denseLayers.length) {
+      throw new Error(`${M}: expected ${this.denseLayers.length} dense layers, got ${data.dense.length}`);
+    }
+    this.denseLayers.forEach((layer, l) => {
+      const layerData = data.dense[l];
+      if (!Array.isArray(layerData)) {
+        throw new Error(`${M}: dense layer ${l} is not an array`);
+      }
+      if (layerData.length !== layer.neurons.length) {
+        throw new Error(`${M}: dense layer ${l}: expected ${layer.neurons.length} neurons, got ${layerData.length}`);
+      }
+      layer.neurons.forEach((n, k) => {
+        const nd = layerData[k];
+        if (nd === null || typeof nd !== "object") {
+          throw new Error(`${M}: dense[${l}][${k}] is not an object`);
+        }
+        validateArray(nd.weights, n.weights.length, `${M}(dense[${l}][${k}].weights)`);
+        validateNumber(nd.bias, `${M}(dense[${l}][${k}].bias)`);
+      });
+    });
+
     this.lstm.setWeights(data.lstm);
-    data.dense.forEach((layerData, l) => {
-      layerData.forEach((neuronData, k) => {
-        this.denseLayers[l].neurons[k].weights = [...neuronData.weights];
-        this.denseLayers[l].neurons[k].bias    = neuronData.bias;
+    this.denseLayers.forEach((layer, l) => {
+      layer.neurons.forEach((n, k) => {
+        const nd = data.dense[l][k];
+        for (let j = 0; j < n.weights.length; j++) n.weights[j] = nd.weights[j];
+        n.bias = nd.bias;
       });
     });
   }
@@ -199,6 +234,11 @@ export class NetworkLSTM {
   setWeightsFlat(weights: number[]): void {
     let idx = 0;
     const lstmLen = this.lstm.getWeightsFlat().length;
+    const denseLen = this.denseLayers.reduce(
+      (s, layer) => s + layer.neurons.reduce((t, n) => t + n.weights.length + 1, 0),
+      0,
+    );
+    validateArray(weights, lstmLen + denseLen, "NetworkLSTM.setWeightsFlat");
     this.lstm.setWeightsFlat(weights.slice(idx, idx + lstmLen));
     idx += lstmLen;
     for (const layer of this.denseLayers) {
