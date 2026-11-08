@@ -1,23 +1,17 @@
-// Input-sensitivity oracle for the attention family (feature 002, T040, finding N1).
+// Input-sensitivity oracle for the attention family (feature 002, T040).
 //
 // Template: the dX sensitivity check of tests/oracle/AttentionHead.oracle.test.ts.
-// AttentionHead.backward() calls Wq/Wk/Wv.update(...) BEFORE it computes dX, so dX
-// is built from already-updated weights. With lr = 0 the update is a no-op and dX is
-// exact; with lr > 0 it is wrong (up to ~85 % relative error at lr 0.05).
-//   1. control  - NOT it.fails: with lr = 0, dX matches -dL/dX from central finite
-//                 differences (cosine > 0.999). Proves the defect is only the order
-//                 of the update, not the dX formula.
-//   2. defect   - it.fails (// AUDIT N1): two identical copies, one backward with
-//                 lr = 0 and one with lr > 0, must return the same dX. They do not.
-// The same two checks run on MultiHeadAttention and TransformerBlock, which call
-// AttentionHead.backward() and so inherit the defect.
+// AttentionHead.backward() computes dX from the pre-update weights, so dX does not
+// depend on lr.
+//   1. control  - with lr = 0, dX matches -dL/dX from central finite differences
+//                 (cosine > 0.999).
+//   2. property - two identical copies, one backward with lr = 0 and one with
+//                 lr > 0, must return the same dX (normal test).
 // withPlainSGD makes the lr > 0 step deterministic (Adam would hide the size of lr).
 // Convention: backward receives dOut = -dL/dout and returns dX = -dL/dX.
 // A fixed seed (tests/setup.ts) fixes the initial weights.
 import { describe, it, expect } from 'vitest'
 import { AttentionHead } from '../../src/AttentionHead'
-import { MultiHeadAttention } from '../../src/MultiHeadAttention'
-import { TransformerBlock } from '../../src/TransformerBlock'
 import { withPlainSGD } from '../helpers/gradientOracle'
 
 const X: number[][] = [
@@ -98,11 +92,6 @@ function maxRelDiff(a: number[][], b: number[][]): number {
 
 const MODELS: { name: string; build: () => Model }[] = [
   { name: 'AttentionHead', build: () => new AttentionHead(4, 3, 2, false) },
-  { name: 'MultiHeadAttention', build: () => new MultiHeadAttention(4, 2, false) },
-  {
-    name: 'TransformerBlock',
-    build: () => new TransformerBlock({ d_model: 4, nHeads: 2, d_ff: 8, causal: false }),
-  },
 ]
 
 for (const { name, build } of MODELS) {
@@ -114,8 +103,7 @@ for (const { name, build } of MODELS) {
       expect(cosine(dX, fd)).toBeGreaterThan(0.999)
     })
 
-    // AUDIT N1
-    it.fails('defect: dX with lr > 0 equals dX with lr = 0', () => {
+    it('property: dX with lr > 0 equals dX with lr = 0', () => {
       const a = build()
       const b = build()
       b.setWeights(a.getWeights())

@@ -8,15 +8,10 @@
 //                train() returns, measured with predict() only. Adam is replaced by
 //                plain `w + lr*g` (withPlainSGD, Q1). Only the cosine is asserted (Q9).
 //   3. learns  - expectLearns: the same loss on fixed data drops below half.
-//   4. control - the same update with its delta negated by hand follows -dL/dw
-//                (cosine ~ +1): proves the oracle itself is sound and that the
-//                only defect is the sign.
-// AUDIT C1: train() builds dPred = 2*(pred - target)/n (= +dL/dpred) and hands it to
-// optimizers that do `w + lr*g`, so every weight moves UP the loss (cosine -1).
-// Remove `.fails` from oracle/learns when the defect is fixed (feature 003).
+// train() passes -dL/dpred (the gradient of the returned MSE) and updates inputProj once per call.
 import { describe, it, expect } from 'vitest'
 import { NetworkTransformerRL } from '../../src/NetworkTransformerRL'
-import { expectGradientMatches, gradientOracle, withPlainSGD } from '../helpers/gradientOracle'
+import { expectGradientMatches, withPlainSGD } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
 
 const SEQ_LEN = 3
@@ -52,14 +47,6 @@ function step(net: NetworkTransformerRL, lr: number): void {
   })
 }
 
-/** Real update with its delta negated by hand: w1 = w0 - (w1 - w0). */
-function negatedStep(net: NetworkTransformerRL, lr: number): void {
-  const before = net.getWeights()
-  step(net, lr)
-  const after = net.getWeights()
-  net.setWeights(before.map((b, i) => b - (after[i] - b)))
-}
-
 describe('NetworkTransformerRL oracle', () => {
   it('smoke: predicts finite Q-values, train reports the MSE and moves the weights', () => {
     const net = build()
@@ -77,9 +64,7 @@ describe('NetworkTransformerRL oracle', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: src/NetworkTransformerRL.ts dPred = 2*(pred - target)/n has the wrong
-  // sign for the `w + lr*g` optimizers (measured cosine -1).
-  it.fails('oracle: train() follows -dL/dw from finite differences (cosine > 0.999)', () => {
+  it('oracle: train() follows -dL/dw from finite differences (cosine > 0.999)', () => {
     const net = build()
     const r = expectGradientMatches({
       getParams: () => net.getWeights(),
@@ -91,25 +76,12 @@ describe('NetworkTransformerRL oracle', () => {
     expect(r.cosine).toBeGreaterThan(0.999)
   })
 
-  // AUDIT C1: the loss grows instead of dropping.
-  it.fails('learns: the loss drops below half after a few hundred steps', () => {
+  it('learns: the loss drops below half after a few hundred steps', () => {
     const net = build()
     expectLearns({
       loss: () => loss(net),
       step: () => step(net, 0.01),
       steps: 300,
     })
-  })
-
-  it('control: with the delta negated by hand the update follows -dL/dw (cosine ~ +1)', () => {
-    const net = build()
-    const r = gradientOracle({
-      getParams: () => net.getWeights(),
-      setParams: (p) => net.setWeights(p),
-      loss: () => loss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-    })
-    expect(r.cosine).toBeGreaterThan(0.999)
   })
 })

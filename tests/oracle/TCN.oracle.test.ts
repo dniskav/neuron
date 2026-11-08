@@ -1,23 +1,19 @@
 // Gradient-oracle test for CausalConv1D and TCN (feature 002, T022).
 //
-//   1. smoke   - forward/backward finitos, formas, causalidad. Sin it.fails.
+//   1. smoke   - forward/backward finitos, formas, causalidad. 
 //   2. oracle  - CausalConv1D aislada: backward(dOut, lr) sigue -dL/dw (coseno > 0.999).
-//                TCN: ver AUDIT C1 abajo.
+//                TCN: train() sigue -dL/dw, coseno > 0.999 y ratio ~ 1.
 //   3. learns  - TCN: la perdida sobre datos fijos baja a menos de la mitad.
-//   4. control - TCN con el delta negado a mano.
 // Solo se asierta el coseno (Q9). Los campos private de TCN (_outputW/_outputB) se leen
 // con `as any` (Q5). El optimizador por defecto es SGD (`w + lr*g`), sin withPlainSGD.
 // Perdida de TCN = MSE medio sobre T*outputSize, la que devuelve train().
 //
-// AUDIT C1 (src/TCN.ts train): dOut = 2*diff/outputSize es +dL/dy y se entrega a
-// optimizadores `w + lr*g` => los pesos suben por la perdida. Ademas la proyeccion de
-// salida se actualiza con lr/T (correcto para una perdida media) pero las capas conv
-// reciben lr y un dOut sumado sobre T sin dividir (T veces mayor): los dos grupos de
-// parametros se mueven con escalas relativas distintas. Por eso el coseno global no es
-// -1 exacto (auditoria -0.8945). Pista para 003.
+// TCN.train entrega dOut = -2*diff/(T*outputSize) (= -dL/dy de la perdida media) y usa lr
+// sin dividir en proyeccion y capas conv, de modo que el paso tiene la escala de la perdida.
 import { describe, it, expect } from 'vitest'
 import { CausalConv1D, TCN } from '../../src/TCN'
-import { bindParams, expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
+import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
+import { withSeed } from '../helpers/seed'
 import { expectLearns } from '../helpers/learns'
 
 const LR = 1e-3
@@ -91,14 +87,6 @@ function tcnStep(net: TCN, lr: number): void {
   net.train(SEQ, TARGET_TCN, lr)
 }
 
-function negatedStep(net: TCN, lr: number): void {
-  const p = tcnParams(net)
-  const before = p.getParams()
-  tcnStep(net, lr)
-  const after = p.getParams()
-  p.setParams(before.map((b, i) => b - (after[i] - b)))
-}
-
 describe('CausalConv1D oraculo', () => {
   it('humo: forma [T][outputChannels], backward finito y causal', () => {
     const m = setupConv()
@@ -151,8 +139,7 @@ describe('TCN oraculo', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: signo invertido (ver cabecera).
-  it.fails('oraculo: train() sigue -dL/dw (coseno > 0.999)', () => {
+  it('oraculo: train() sigue -dL/dw (coseno > 0.999)', () => {
     const net = buildTcn()
     const r = expectGradientMatches({
       ...tcnParams(net),
@@ -161,23 +148,48 @@ describe('TCN oraculo', () => {
       lr: LR,
     })
     expect(r.cosine).toBeGreaterThan(0.999)
+    // Escala: el paso tiene la escala de la perdida media (ratio en (0.9, 1.1)).
+    expect(r.ratio).toBeGreaterThan(0.9)
+    expect(r.ratio).toBeLessThan(1.1)
   })
 
-  // AUDIT C1: la perdida sube en lugar de bajar.
-  it.fails('learns: la perdida baja a la mitad', () => {
+  // outputSize 2 y 3 (cierra el mutante M14: sin /outputSize en dOut). Coseno y ratio,
+  // con lr x0.97/x1.03 y 5 semillas.
+  const MULTI_TARGETS: Record<number, number[][]> = {
+    2: TARGET_TCN.map((r, t) => [r[0], [0.2, -0.3, 0.4, -0.1, 0.3, 0.5][t]]),
+    3: TARGET_TCN.map((r, t) => [r[0], [0.2, -0.3, 0.4, -0.1, 0.3, 0.5][t], [-0.5, 0.1, 0.3, 0.6, -0.2, 0.2][t]]),
+  }
+  for (const n of [2, 3]) {
+    it(`oraculo con outputSize ${n}: coseno > 0.999 y ratio en (0.9, 1.1)`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const f of [0.97, 1.03]) {
+          withSeed(seed, () => {
+            const net = new TCN(2, 2, 2, 2, n)
+            const targets = MULTI_TARGETS[n]
+            const r = expectGradientMatches({
+              ...tcnParams(net),
+              loss: () => {
+                const y = net.forward(SEQ)
+                let s = 0
+                y.forEach((row, t) => row.forEach((v, k) => (s += (v - targets[t][k]) ** 2)))
+                return s / (y.length * n)
+              },
+              step: (lr) => {
+                net.train(SEQ, targets, lr)
+              },
+              lr: LR * f,
+            })
+            expect(r.cosine).toBeGreaterThan(0.999)
+            expect(r.ratio).toBeGreaterThan(0.9)
+            expect(r.ratio).toBeLessThan(1.1)
+          })
+        }
+      }
+    })
+  }
+
+  it('learns: la perdida baja a la mitad', () => {
     const net = buildTcn()
     expectLearns({ loss: () => tcnLoss(net), step: () => tcnStep(net, 0.01), steps: 200 })
-  })
-
-  // Con el delta negado queda solo el desajuste de escala (lr/T vs lr).
-  it('control: con el delta negado a mano el coseno es positivo', () => {
-    const net = buildTcn()
-    const r = gradientOracle({
-      ...tcnParams(net),
-      loss: () => tcnLoss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-    })
-    expect(r.cosine).toBeGreaterThan(0.5)
   })
 })

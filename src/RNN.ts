@@ -186,7 +186,7 @@ export class RNN {
       return o.map((v, k) => {
         const diff = v - targets[t][k];
         loss += diff * diff;
-        return 2 * diff / this.outputSize;  // dL/do_t
+        return -2 * diff / this.outputSize;  // -dL/do_t (optimizers do w + lr·g)
       });
     });
     loss /= (T * this.outputSize);

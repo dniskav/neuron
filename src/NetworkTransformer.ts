@@ -98,7 +98,9 @@ export class NetworkTransformer {
   // targets: seqLen * nClasses values (e.g. one-hot per cell)
   // mask:    optional boolean[seqLen] — only compute loss/gradients for
   //          positions where mask[i] = true (e.g. empty cells in Sudoku)
-  // Returns: MSE loss over the masked positions.
+  // Returns: cross-entropy loss (softmax + CE), mean over the masked positions.
+  // Gradient convention: the optimizers do `w + lr*g`, so the backward pass
+  // carries g = -dL/dz with L the returned mean CE (dLogits = -(prob - target)/count).
 
   train(tokens: number[], targets: number[], lr: number, mask?: boolean[]): number {
     // ── Forward ──────────────────────────────────────────────────────────────
@@ -133,10 +135,15 @@ export class NetworkTransformer {
         const t = targets[i * this.nClasses + c]
         if (t > 0) loss -= Math.log(Math.max(probs[c], 1e-7))
       }
-      // CE+softmax combined gradient: prob_c − target_c
-      return probs.map((p, c) => p - targets[i * this.nClasses + c])
+      // CE+softmax combined gradient is prob_c − target_c = +dL/dz; the
+      // optimizers add (w + lr*g), so negate here (scaled by 1/count below).
+      return probs.map((p, c) => targets[i * this.nClasses + c] - p)
     })
-    if (count > 0) loss /= count
+    if (count > 0) {
+      loss /= count
+      // Mean over masked positions: the gradient is that of the returned loss.
+      for (const row of dLogits) for (let c = 0; c < row.length; c++) row[c] /= count
+    }
 
     // ── Backward ─────────────────────────────────────────────────────────────
 

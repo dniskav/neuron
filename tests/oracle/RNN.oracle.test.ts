@@ -7,14 +7,12 @@
 //                returns, L = (1/(T*out)) sum (o - y)^2, measured with forward() only.
 //                Default SGD optimizer (no withPlainSGD). Only the cosine is asserted (Q9).
 //   3. learns  - expectLearns: the same loss on fixed data drops below half.
-//   4. control - the same update with its delta negated by hand follows -dL/dw
-//                (cosine ~ +1): the oracle is sound and the only defect is the sign.
-// AUDIT C1: backward() builds dOutputs = 2*(o - y)/out (= +dL/do) and hands it to
-// optimizers that do `w + lr*g`, so every weight moves UP the loss (cosine -1).
-// Remove `.fails` from oracle/learns when the defect is fixed (feature 003).
+// backward() passes dOutputs = -dL/do (= -2*(o - y)/out), so the optimizers' `w + lr*g`
+// step follows -dL/dw.
 import { describe, it, expect } from 'vitest'
 import { RNN } from '../../src/RNN'
-import { bindParams, expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
+import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
+import { withSeed } from '../helpers/seed'
 import { expectLearns } from '../helpers/learns'
 
 const SEQ: number[][] = [
@@ -26,8 +24,8 @@ const SEQ: number[][] = [
 const TARGETS: number[][] = [[0.4], [-0.3], [0.5], [-0.2]]
 const LR = 1e-3
 
-function build(): RNN {
-  return new RNN(2, 3, 1)
+function build(outSize = 1): RNN {
+  return new RNN(2, 3, outSize)
 }
 
 function params(net: RNN) {
@@ -41,15 +39,6 @@ function loss(net: RNN): number {
   let s = 0
   outputs.forEach((o, t) => o.forEach((v, k) => (s += (v - TARGETS[t][k]) ** 2)))
   return s / (SEQ.length * outputs[0].length)
-}
-
-/** Real update with its delta negated by hand: w1 = w0 - (w1 - w0). */
-function negatedStep(net: RNN, lr: number): void {
-  const p = params(net)
-  const before = p.getParams()
-  net.backward(SEQ, TARGETS, lr)
-  const after = p.getParams()
-  p.setParams(before.map((b, i) => b - (after[i] - b)))
 }
 
 describe('RNN oracle', () => {
@@ -72,9 +61,7 @@ describe('RNN oracle', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: src/RNN.ts dOutputs = 2*diff/out has the wrong sign for the
-  // `w + lr*g` optimizers (measured cosine -1).
-  it.fails('oracle: backward() follows -dL/dw from finite differences (cosine > 0.999)', () => {
+  it('oracle: backward() follows -dL/dw from finite differences (cosine > 0.999)', () => {
     const net = build()
     const r = expectGradientMatches({
       ...params(net),
@@ -88,8 +75,44 @@ describe('RNN oracle', () => {
     expect(r.cosine).toBeGreaterThan(0.999)
   })
 
-  // AUDIT C1: the loss grows instead of dropping.
-  it.fails('learns: the loss drops below half after a few hundred steps', () => {
+  // outputSize 2 and 3 (closes mutant M14: no /outputSize in dOutputs). The step has the
+  // scale of the mean loss, so the ratio is checked too (lr x0.97/x1.03, 5 seeds).
+  const MULTI_TARGETS: Record<number, number[][]> = {
+    2: [[0.4, -0.5], [-0.3, 0.2], [0.5, 0.6], [-0.2, -0.4]],
+    3: [[0.4, -0.5, 0.1], [-0.3, 0.2, -0.6], [0.5, 0.6, 0.3], [-0.2, -0.4, 0.7]],
+  }
+  for (const n of [2, 3]) {
+    it(`oracle with outputSize ${n}: cosine > 0.999 and ratio in (0.9, 1.1)`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const f of [0.97, 1.03]) {
+          withSeed(seed, () => {
+            const net = build(n)
+            const targets = MULTI_TARGETS[n]
+            const r = expectGradientMatches({
+              ...params(net),
+              loss: () => {
+                net.reset()
+                const { outputs } = net.forward(SEQ)
+                let s = 0
+                outputs.forEach((o, t) => o.forEach((v, k) => (s += (v - targets[t][k]) ** 2)))
+                return s / (SEQ.length * n)
+              },
+              step: (lr) => {
+                net.backward(SEQ, targets, lr)
+              },
+              lr: LR * f,
+              resetRng: () => net.reset(),
+            })
+            expect(r.cosine).toBeGreaterThan(0.999)
+            expect(r.ratio).toBeGreaterThan(0.9)
+            expect(r.ratio).toBeLessThan(1.1)
+          })
+        }
+      }
+    })
+  }
+
+  it('learns: the loss drops below half after a few hundred steps', () => {
     const net = build()
     expectLearns({
       loss: () => loss(net),
@@ -98,17 +121,5 @@ describe('RNN oracle', () => {
       },
       steps: 300,
     })
-  })
-
-  it('control: with the delta negated by hand the update follows -dL/dw (cosine ~ +1)', () => {
-    const net = build()
-    const r = gradientOracle({
-      ...params(net),
-      loss: () => loss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-      resetRng: () => net.reset(),
-    })
-    expect(r.cosine).toBeGreaterThan(0.999)
   })
 })
