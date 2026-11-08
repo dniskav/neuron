@@ -87,7 +87,7 @@ describe('NetworkN oraculo (residual)', () => {
 })
 
 describe('NetworkN dropout', () => {
-  // Antes en GradientCheck.test.ts (Q6): entrenamiento estable.
+  // Migrado desde GradientCheck.test.ts (Q6): entrenamiento estable.
   it('entrenamiento estable: perdida finita y sin crecer mas de 20x en 20 pasos', () => {
     const net = new NetworkN([3, 4, 4, 1], { optimizer: () => new SGD(), dropoutRate: 0.5 })
     const losses: number[] = []

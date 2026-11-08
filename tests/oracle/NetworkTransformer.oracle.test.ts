@@ -124,4 +124,16 @@ describe('NetworkTransformer oracle', () => {
     })
     expect(r.cosine).toBeGreaterThan(0.999)
   })
+
+  // Guard migrated from GradientCheck.test.ts (T035): not a learning test (C1
+  // makes the model train backwards), only that a short run at a small lr does
+  // not blow up. Keep it as a plain `it` after C1 is fixed.
+  it('stability: 15 steps at lr 1e-3 keep the loss finite and below 1.5x the initial', () => {
+    const net = build()
+    const initial = loss(net)
+    for (let i = 0; i < 15; i++) step(net, LR)
+    const final = loss(net)
+    expect(Number.isFinite(final)).toBe(true)
+    expect(final).toBeLessThan(1.5 * initial)
+  })
 })
