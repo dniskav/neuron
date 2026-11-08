@@ -28,7 +28,7 @@ const X: number[][] = [
   [-1.2, 1.8, 0.3, -2.1],
   [2.7, 0.6, -1.5, 0.9],
 ]
-const LR = 1e-3
+const LR = 0.05
 
 /** L = 0.5 * sum_t sum_i out[t][i]^2, measured with predict() only. */
 function loss(head: AttentionHead): number {
