@@ -107,20 +107,25 @@ export class NetworkN {
     validateArray(inputs, this.structure[0], 'NetworkN.train');
     validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
 
-    const act  = this._forwardAll(inputs, true);
+    const { act, pre } = this._forwardAll(inputs, true);
     const pred = act[act.length - 1];
-    const outAct = this.layers[this.layers.length - 1].neurons[0].activation;
-    const deltas = pred.map((p, i) => (targets[i] - p) * outAct.dfn(p));
-    this._backpropLayers(act, deltas, lr);
+    // g_L = -dL/d(output) for L = 0.5 * sum (t - p)^2. The output derivative
+    // is applied inside _backward, on the output of f (before any residual).
+    const g = pred.map((p, i) => targets[i] - p);
+    this._backward(act, pre, g, null, lr);
 
     return pred.reduce((s, p, i) => s + (targets[i] - p) ** 2, 0) / pred.length;
   }
 
   // Backprop with externally provided output-layer deltas.
   // Useful for custom loss functions (e.g. physics-based gradients).
+  // Deltas are already multiplied by the output activation derivative, so a
+  // residual skip on the LAST layer (which needs dL/d(output)) cannot be
+  // propagated: that case throws instead of training with a wrong gradient.
   trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number): void {
-    const act = this._forwardAll(inputs, true);
-    this._backpropLayers(act, outputDeltas, lr);
+    this._assertDeltasSupported('trainWithDeltas');
+    const { act, pre } = this._forwardAll(inputs, true);
+    this._backward(act, pre, null, outputDeltas, lr);
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
@@ -156,13 +161,32 @@ export class NetworkN {
     return this._residual;
   }
 
+  private _lastHasResidual(): boolean {
+    const last = this.layers.length - 1;
+    return this._shouldResidual(last) && this.structure[last] === this.structure[last + 1];
+  }
+
+  private _assertDeltasSupported(method: string): void {
+    if (this._lastHasResidual()) {
+      throw new Error(
+        `NetworkN.${method}: residual on the last layer needs dL/d(output), but only ` +
+        `deltas (already multiplied by the activation derivative) are given. ` +
+        `Use train(), or disable residual on the last layer.`
+      );
+    }
+  }
+
   // Forward pass storing activations at every layer boundary.
-  // Used by train(), trainWithDeltas(), and predict() shares the same logic.
-  private _forwardAll(inputs: number[], training: boolean): number[][] {
+  //   act[l]  = input of layer l (after residual and dropout of layer l-1)
+  //   pre[l]  = output of f in layer l, BEFORE residual and dropout
+  // The activation derivative must be evaluated on pre[l], not on act[l+1].
+  private _forwardAll(inputs: number[], training: boolean): { act: number[][]; pre: number[][] } {
     const act: number[][] = [inputs];
+    const pre: number[][] = [];
     for (let i = 0; i < this.layers.length; i++) {
       const layerInput  = act[act.length - 1];
       const layerOutput = this.layers[i].predict(layerInput);
+      pre.push([...layerOutput]);
       let current: number[];
       if (this._shouldResidual(i) && this.structure[i] === this.structure[i + 1]) {
         current = layerOutput.map((v, j) => v + layerInput[j]);
@@ -174,31 +198,42 @@ export class NetworkN {
       }
       act.push(current);
     }
-    return act;
+    return { act, pre };
   }
 
-  // Backward pass: updates all layer weights given the pre-computed activations
-  // and the initial output-layer deltas.
-  private _backpropLayers(act: number[][], outputDeltas: number[], lr: number): void {
-    let deltas = outputDeltas;
-    for (let l = this.layers.length - 1; l >= 0; l--) {
+  // Backward pass carrying g_l = -dL/d(output of layer l) (after dropout/residual).
+  //   dropout:   g' = mask * g                      (gradient of the sum f + x)
+  //   delta_l  = g' * dfn(pre[l])                   (unless given externally)
+  //   g_{l-1}  = W^T delta_l  (+ g' if residual)    (the skip carries g, not delta)
+  // Exactly one of `g` (dL/d(output) of the last layer) or `deltas` (last-layer
+  // deltas already multiplied by dfn) is given. Weights are updated only when
+  // lr != null. Weights are read before their layer is updated. Returns
+  // -dL/d(inputs).
+  private _backward(
+    act: number[][], pre: number[][],
+    g: number[] | null, deltas: number[] | null, lr: number | null,
+  ): number[] {
+    const last = this.layers.length - 1;
+    let grad = g ?? [];
+    for (let l = last; l >= 0; l--) {
       const layer = this.layers[l];
-      if (l < this._dropouts.length) {
-        deltas = this._dropouts[l].backward(deltas);
-      }
+      const gm = l < this._dropouts.length ? this._dropouts[l].backward(grad) : grad;
+      const delta = (l === last && deltas)
+        ? deltas
+        : gm.map((v, k) => v * layer.neurons[k].activation.dfn(pre[l][k]));
       const layerIn = act[l];
-      const prevAct = l > 0 ? this.layers[l - 1].neurons[0].activation : null;
-      const prevDeltas = layerIn.map((out, j) => {
-        const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-        return prevAct ? errProp * prevAct.dfn(out) : errProp;
+      const residual = this._shouldResidual(l) && this.structure[l] === this.structure[l + 1];
+      const gPrev = layerIn.map((_, j) => {
+        const errProp = layer.neurons.reduce((s, n, k) => s + delta[k] * n.weights[j], 0);
+        return residual ? errProp + gm[j] : errProp;
       });
-      if (this._shouldResidual(l) && this.structure[l] === this.structure[l + 1]) {
-        for (let j = 0; j < prevDeltas.length; j++) prevDeltas[j] += deltas[j];
+      if (lr !== null) {
+        layer.neurons.forEach((n, k) => {
+          n._update(layerIn.map(inp => delta[k] * inp), delta[k], lr);
+        });
       }
-      layer.neurons.forEach((n, k) => {
-        n._update(layerIn.map(inp => deltas[k] * inp), deltas[k], lr);
-      });
-      deltas = prevDeltas;
+      grad = gPrev;
     }
+    return grad;
   }
 }
