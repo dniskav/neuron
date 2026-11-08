@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { WeightMatrix, softmax, softmaxBackward } from './MatMul'
+import { validateArray } from './Validation'
 
 interface Cache {
   X:      number[][]   // seqLen × d_model  (input)
@@ -193,6 +194,12 @@ export class AttentionHead {
   }
 
   setWeights(weights: number[]): void {
+    // Longitud total de la estructura (Wq + Wk + Wv), comprobada ANTES de escribir.
+    const expected =
+      this.Wq.W.reduce((s, row) => s + row.length, 0) +
+      this.Wk.W.reduce((s, row) => s + row.length, 0) +
+      this.Wv.W.reduce((s, row) => s + row.length, 0);
+    validateArray(weights, expected, 'AttentionHead.setWeights');
     let idx = 0;
     for (let i = 0; i < this.Wq.W.length; i++)
       for (let j = 0; j < this.Wq.W[i].length; j++) this.Wq.W[i][j] = weights[idx++];
