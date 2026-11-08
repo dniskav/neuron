@@ -13,7 +13,6 @@ describe('Trainer', () => {
     expect(trainer.lrInitial).toBe(0.1);
     expect(trainer.lrDecay).toBe(1.0);
     expect(trainer.weightDecay).toBe(0);
-    expect(trainer.clipValue).toBe(0);
   });
 
   it('creates with custom options', () => {
@@ -23,13 +22,11 @@ describe('Trainer', () => {
       lr: 0.5,
       lrDecay: 0.99,
       weightDecay: 0.001,
-      clipValue: 1.0,
     });
     expect(trainer.epochs).toBe(100);
     expect(trainer.lrInitial).toBe(0.5);
     expect(trainer.lrDecay).toBe(0.99);
     expect(trainer.weightDecay).toBe(0.001);
-    expect(trainer.clipValue).toBe(1.0);
   });
 
   it('train returns history', () => {
@@ -239,25 +236,25 @@ describe('Trainer', () => {
     expect(trainer.getBestLoss()).toBe(-1);
   });
 
-  it('earlyStopping configured but no validation data does not break', () => {
+  it('earlyStopping configured but no validation data throws (T011, Q2)', () => {
     const net = new NetworkN([2, 4, 1]);
     const trainer = new Trainer(net, {
       epochs: 20,
       earlyStopping: { patience: 5, minDelta: 0.001 },
     });
 
-    // No setValidationData() called — should still train all epochs
-    const history = trainer.train({
-      inputs: [
-        [0, 0],
-        [0, 1],
-        [1, 0],
-        [1, 1],
-      ],
-      targets: [[0], [1], [1], [0]],
-    });
-    expect(history.length).toBe(20);
-    expect(trainer.getStopReason()).toBe('maxEpochs');
+    // No setValidationData() called — the option would be silently ignored
+    expect(() =>
+      trainer.train({
+        inputs: [
+          [0, 0],
+          [0, 1],
+          [1, 0],
+          [1, 1],
+        ],
+        targets: [[0], [1], [1], [0]],
+      })
+    ).toThrow(/earlyStopping/);
   });
 
   it('setValidationData validates input lengths', () => {
@@ -412,19 +409,7 @@ describe('Trainer', () => {
     expect(trainer.getMetrics().length).toBe(5); // Original unchanged
   });
 
-  // ── P2.4: Gradient Clipping (clipValue stored) ─────────────────────────
-
-  it('clipValue is stored in trainer options', () => {
-    const net = new NetworkN([2, 4, 1]);
-    const trainer = new Trainer(net, { clipValue: 0.5 });
-    expect(trainer.clipValue).toBe(0.5);
-  });
-
-  it('clipValue defaults to 0', () => {
-    const net = new NetworkN([2, 4, 1]);
-    const trainer = new Trainer(net);
-    expect(trainer.clipValue).toBe(0);
-  });
+  // ── P2.4: clipValue removed (T011, Q1) — see tests/api/Trainer.hardening.test.ts
 
   // ── Integration: All features together ──────────────────────────────────
 
@@ -492,10 +477,8 @@ describe('Trainer', () => {
   it('empty dataset throws', () => {
     const net = new NetworkN([2, 4, 1]);
     const trainer = new Trainer(net, { epochs: 5 });
-    // Empty arrays should still pass validation (length match = 0 === 0)
-    // but the loop should run 0 samples per epoch
-    const history = trainer.train({ inputs: [], targets: [] });
-    expect(history.length).toBe(5);
+    // T011 (Q2): an empty dataset used to give NaN losses; now it throws
+    expect(() => trainer.train({ inputs: [], targets: [] })).toThrow(/empty/);
   });
 
   it('verbose option can be set', () => {
