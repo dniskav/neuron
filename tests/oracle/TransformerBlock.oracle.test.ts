@@ -43,7 +43,7 @@ const T: number[][] = [
   [-0.9, 0.5, -0.3, 1.0],
   [0.2, 1.2, -0.8, -0.5],
 ]
-const LR = 1e-3
+const LR = 0.05
 
 /** L = 0.5 * sum_t sum_i (out[t][i] - T[t][i])^2, measured with predict() only. */
 function loss(block: TransformerBlock): number {

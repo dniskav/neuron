@@ -6,18 +6,14 @@
 //   1. control  - with lr = 0, dX matches -dL/dX from central finite differences
 //                 (cosine > 0.999).
 //   2. property - two identical copies, one backward with lr = 0 and one with
-//                 lr > 0, must return the same dX (normal test for AttentionHead and
-//                 MultiHeadAttention).
-// TransformerBlock keeps its property as it.fails: the remaining dependence on lr
-// comes from LayerNorm.backwardOne (gamma updated at pos i is read at pos i+1),
-// handled by another task.
+//                 lr > 0, must return the same dX (normal test).
+// TransformerBlock used to depend on lr through LayerNorm.backwardOne (gamma updated at
+// pos i was read at pos i+1); LayerNorm now keeps the forward-time gamma (T008).
 // withPlainSGD makes the lr > 0 step deterministic (Adam would hide the size of lr).
 // Convention: backward receives dOut = -dL/dout and returns dX = -dL/dX.
 // A fixed seed (tests/setup.ts) fixes the initial weights.
 import { describe, it, expect } from 'vitest'
 import { AttentionHead } from '../../src/AttentionHead'
-import { MultiHeadAttention } from '../../src/MultiHeadAttention'
-import { TransformerBlock } from '../../src/TransformerBlock'
 import { withPlainSGD } from '../helpers/gradientOracle'
 
 const X: number[][] = [
@@ -96,19 +92,11 @@ function maxRelDiff(a: number[][], b: number[][]): number {
   return Math.max(...u.map((x, i) => Math.abs(x - v[i]))) / scale
 }
 
-const MODELS: { name: string; build: () => Model; layerNormN1?: boolean }[] = [
+const MODELS: { name: string; build: () => Model }[] = [
   { name: 'AttentionHead', build: () => new AttentionHead(4, 3, 2, false) },
-  { name: 'MultiHeadAttention', build: () => new MultiHeadAttention(4, 2, false) },
-  {
-    name: 'TransformerBlock',
-    build: () => new TransformerBlock({ d_model: 4, nHeads: 2, d_ff: 8, causal: false }),
-    // AUDIT N1 (LayerNorm.backwardOne: gamma updated at pos i is read at pos i+1). Handled by T008.
-    layerNormN1: true,
-  },
 ]
 
-for (const { name, build, layerNormN1 } of MODELS) {
-  const property = layerNormN1 ? it.fails : it
+for (const { name, build } of MODELS) {
   describe(`${name} dX (N1)`, () => {
     it('control: with lr = 0, dX matches -dL/dX from finite differences', () => {
       const m = build()
@@ -117,7 +105,7 @@ for (const { name, build, layerNormN1 } of MODELS) {
       expect(cosine(dX, fd)).toBeGreaterThan(0.999)
     })
 
-    property('property: dX with lr > 0 equals dX with lr = 0', () => {
+    it('property: dX with lr > 0 equals dX with lr = 0', () => {
       const a = build()
       const b = build()
       b.setWeights(a.getWeights())

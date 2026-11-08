@@ -27,7 +27,7 @@ export class LayerNorm {
 
   // Per-position cache populated during the forward pass.
   // resetCache() must be called before each sequence forward pass.
-  private _cache: Array<{ x_norm: number[]; std: number }> = []
+  private _cache: Array<{ x_norm: number[]; std: number; gamma: number[] }> = []
 
   constructor(dim: number) {
     this.gamma = new Array(dim).fill(1)
@@ -48,7 +48,9 @@ export class LayerNorm {
     const std  = Math.sqrt(vari + this.eps)
 
     const x_norm = x.map(v => (v - mean) / std)
-    this._cache[pos] = { x_norm, std }
+    // gamma at forward time: backward must differentiate the function that was
+    // actually evaluated, even if earlier positions already updated gamma.
+    this._cache[pos] = { x_norm, std, gamma: this.gamma.slice() }
 
     return x_norm.map((xn, i) => this.gamma[i] * xn + this.beta[i])
   }
@@ -66,11 +68,8 @@ export class LayerNorm {
   // SGD (not Adam) for γ/β: they are aggregated across all positions in the
   // sequence (de-facto mini-batch update), so the gradient is already smoothed.
   backwardOne(dOut: number[], pos: number, lr: number): number[] {
-    const { x_norm, std } = this._cache[pos]
+    const { x_norm, std, gamma: gammaFwd } = this._cache[pos]
     const N = dOut.length
-
-    // Capture gamma before update — D must use pre-update values
-    const gammaOld = this.gamma.slice()
 
     // Update γ and β
     for (let i = 0; i < N; i++) {
@@ -78,8 +77,10 @@ export class LayerNorm {
       this.beta[i]  += lr * dOut[i]
     }
 
-    // D = dOut ⊙ gamma  (element-wise; use pre-update gamma)
-    const D    = dOut.map((d, i) => d * gammaOld[i])
+    // D = dOut ⊙ gamma  (element-wise; use the gamma seen in the forward pass,
+    // not the current one: earlier positions of the same sequence have already
+    // updated this.gamma)
+    const D    = dOut.map((d, i) => d * gammaFwd[i])
     const mD   = D.reduce((s, v) => s + v, 0) / N
     const mDxn = D.reduce((s, d, i) => s + d * x_norm[i], 0) / N
 
