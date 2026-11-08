@@ -40,12 +40,16 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 ## Hallazgos nuevos (no estaban en la auditoría)
 
 - **N1 `AttentionHead.backward`:** `dX` se calcula tras actualizar `Wq/Wk/Wv` (error hasta 85 % con lr 0.05). Probablemente hereda `MultiHeadAttention`/`TransformerBlock`. Cubierto por T040 (`it.fails`); la corrección va en la feature 003 o 004.
-- **N2 `BatchNorm` con `momentum` 0.1:** `backward` trata las estadísticas como constantes (coseno 0.933). Cubierto por T041 como excepción documentada; decidir en 004 si se corrige.
+- **N2 `BatchNorm` con `momentum` 0.1:** aproximación de stop-gradient, no error de signo. `forward` normaliza con estadísticas ya actualizadas con `x`, así que la pendiente real es ≈ m·γ/std, y `backward` devuelve γ/std (las trata como constantes): dirección correcta, magnitud ≈ 1/m (~10x con m=0.1). Con m=1 es exacto. Test T041 fija coseno > 0.9 y razón de normas 8–13 (`// AUDIT N2`). (El 'coseno 0.933' inicial no se reproduce.) Decidir en 004 si se corrige.
 - **N3 `LayerNorm.backwardOne`:** devuelve −dL/dx (convención de `TransformerBlock`) pero el comentario dice dL/dx. Corregir el comentario en 003.
 - **N4 `Network` (I5):** `train` solo acepta un objetivo escalar y solo actualiza la primera salida; `it.todo` en `Network.oracle.test.ts`.
 - **N5 `Conv1D`/`Conv2D`:** el oráculo cubre pesos, no `dInput`. Candidato para la feature 006.
 
 - **N6 `Autoencoder.train`:** `dL/dz` se calcula sin la derivada de la activación de salida del encoder; el paso del encoder es ~4x el correcto (coseno global 0.998 con [4]/[4], 0.835 sin ocultas). Marcado `it.fails // AUDIT N6` en `Autoencoder.oracle.test.ts`; corregir en la feature 003.
+
+- **N1 es más ancho de lo previsto:** no basta mover `update` en `AttentionHead`; `MultiHeadAttention` (Wo), el FFN y `LayerNorm.backwardOne` también actualizan antes de calcular `dX`. Arreglo en 003/004: calcular todos los gradientes y actualizar al final, en cada clase.
+- **Controles de signo (T019, T020):** el test de control que niega Δw solo vale mientras el defecto C1 existe. Al corregir cada modelo en 003 hay que quitar los `it.fails` Y borrar el control.
+- **`NetworkTransformer.train`:** ratio ≈ 3 entre el paso y la pérdida (gradiente de la suma sobre posiciones, pérdida media por posición): decidir la escala al corregir C1. El comentario 'Returns: MSE loss' es incorrecto (es cross-entropy).
 
 ## Avisos
 
