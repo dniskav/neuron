@@ -270,13 +270,17 @@ export class Word2Vec {
 
     // ∂L/∂W2[d,j] = h[d] · err[j]
     // ∂L/∂h[d]    = Σ_j W2[d,j] · err[j]
+    // dh is computed with the PRE-update W2 (first loop); W2 is updated in the
+    // second loop. All gradients are taken at the same point, then applied.
     const dh = new Array(this.embeddingDim).fill(0);
     for (let d = 0; d < this.embeddingDim; d++) {
       for (let j = 0; j < this.vocabSize; j++) {
-        // Update W2 in place
+        dh[d] += this._W2[d][j] * err[j];
+      }
+    }
+    for (let d = 0; d < this.embeddingDim; d++) {
+      for (let j = 0; j < this.vocabSize; j++) {
         this._W2[d][j] -= lr * h[d] * err[j];
-        // Accumulate gradient for the embedding
-        dh[d] += this._W2[d][j] * err[j];   // note: after W2 update — minor approx, ok for SGD
       }
     }
 
@@ -314,11 +318,16 @@ export class Word2Vec {
     const err = probs.map((p, j) => (j === centerIdx ? p - 1 : p));
 
     // ∂L/∂h = Σ_j W2[d,j] · err[j]
+    // dh uses the PRE-update W2 (first loop); W2 is updated in the second loop.
     const dh = new Array(this.embeddingDim).fill(0);
     for (let d = 0; d < this.embeddingDim; d++) {
       for (let j = 0; j < this.vocabSize; j++) {
-        this._W2[d][j] -= lr * h[d] * err[j];
         dh[d] += this._W2[d][j] * err[j];
+      }
+    }
+    for (let d = 0; d < this.embeddingDim; d++) {
+      for (let j = 0; j < this.vocabSize; j++) {
+        this._W2[d][j] -= lr * h[d] * err[j];
       }
     }
 
