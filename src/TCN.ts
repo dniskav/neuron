@@ -317,7 +317,9 @@ export class TCN {
       o.map((v, k) => {
         const diff = v - targets[t][k];
         loss += diff * diff;
-        return 2 * diff / this.outputSize;
+        // dOut = -dL/dy for L = mean((y - t)^2) over T*outputSize. Optimizers
+        // do `w + lr*g`, so they must receive -dL/dw (sign and 1/T folded here).
+        return -2 * diff / (T * this.outputSize);
       })
     );
     loss /= (T * this.outputSize);
@@ -339,7 +341,8 @@ export class TCN {
     }
 
     // Apply output projection updates
-    const scale = lr / T;
+    // dOut already carries 1/T: projection and conv layers both use plain lr.
+    const scale = lr;
     for (let i = 0; i < this.outputSize; i++) {
       for (let j = 0; j < this.channels; j++) {
         this._outputW[i][j] = this._outOpts[i][j].step(this._outputW[i][j], dWout[i][j], scale);
