@@ -139,3 +139,63 @@ describe('Conv2D oraculo', () => {
     expectLearns({ loss: m.loss, step: () => m.step(0.05), steps: 200 })
   })
 })
+
+// ── Oraculo de dInput por componente (feature 005, T009) ──────────────────────
+// L = sum_{h,w,f} c[h][w][f] * y[h][w][f]  (lineal en la entrada), asi dL/dx es
+// exactamente dInput de backward(c, 0). Se compara con diferencias finitas
+// centrales sobre CADA componente de la entrada, tolerancia 1e-6.
+describe('Conv2D oraculo de dInput (por componente)', () => {
+  type Case = [string, number, number, number | [number, number], 'valid' | 'same', number]
+  const cases: Case[] = [
+    ['valid', 5, 6, 3, 'valid', 1],
+    ['same impar', 5, 6, 3, 'same', 1],
+    ['same par', 4, 4, 4, 'same', 1],
+    ['same rectangular par/impar [4,3]', 5, 6, [4, 3], 'same', 1],
+    ['same rectangular impar/par [2,5]', 6, 5, [2, 5], 'same', 1],
+    ['valid rectangular [2,3]', 5, 6, [2, 3], 'valid', 1],
+    ['same stride 2 impar', 7, 6, 3, 'same', 2],
+    ['same stride 2 par [4,2]', 7, 6, [4, 2], 'same', 2],
+    ['valid stride 2', 7, 8, [3, 2], 'valid', 2],
+  ]
+  for (const [name, h, w, k, padding, stride] of cases) {
+    it(`dInput == dL/dx por diferencias finitas: ${name}`, () => {
+      const C = 2
+      const F = 2
+      const conv = new Conv2D(h, w, C, k, F, { padding, stride, optimizerFactory: () => new SGD() })
+      const x: number[][][] = Array.from({ length: h }, (_, i) =>
+        Array.from({ length: w }, (_, j) =>
+          Array.from({ length: C }, (_, c) => Math.sin(1 + i * 1.7 + j * 0.9 + c * 2.3)),
+        ),
+      )
+      const [oh, ow] = conv.outputShape()
+      const coef: number[][][] = Array.from({ length: oh }, (_, i) =>
+        Array.from({ length: ow }, (_, j) =>
+          Array.from({ length: F }, (_, f) => Math.cos(0.5 + i * 1.3 + j * 0.7 + f * 1.9)),
+        ),
+      )
+      const loss = () => {
+        const y = conv.forward(x)
+        let s = 0
+        for (let i = 0; i < oh; i++)
+          for (let j = 0; j < ow; j++)
+            for (let f = 0; f < F; f++) s += coef[i][j][f] * y[i][j][f]
+        return s
+      }
+      loss()
+      const dIn = conv.backward(coef, 0)
+      expect(dIn).toHaveLength(h)
+      const eps = 1e-5
+      for (let i = 0; i < h; i++)
+        for (let j = 0; j < w; j++)
+          for (let c = 0; c < C; c++) {
+            const orig = x[i][j][c]
+            x[i][j][c] = orig + eps
+            const lp = loss()
+            x[i][j][c] = orig - eps
+            const lm = loss()
+            x[i][j][c] = orig
+            expect(dIn[i][j][c]).toBeCloseTo((lp - lm) / (2 * eps), 6)
+          }
+    })
+  }
+})
