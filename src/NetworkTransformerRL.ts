@@ -21,6 +21,7 @@
 
 import { TransformerBlock } from './TransformerBlock'
 import { WeightMatrix, BiasVector } from './MatMul'
+import { validateArray } from './Validation'
 
 export interface NetworkTransformerRLOptions {
   d_model?:  number    // dimensión del modelo (default: 32)
@@ -183,7 +184,17 @@ export class NetworkTransformerRL {
     return w;
   }
 
+  // Longitud total de la estructura, en el orden de getWeightsFlat.
+  private _expectedFlatLength(): number {
+    return this.inputProj.getWeights().length
+      + this.blocks.reduce((n, block) => n + block.getWeights().length, 0)
+      + this.outputProj.getWeights().length
+      + this.outputBias.values.length;
+  }
+
   setWeightsFlat(weights: number[]): void {
+    // Validar antes de escribir: un error no deja el modelo a medias.
+    validateArray(weights, this._expectedFlatLength(), 'NetworkTransformerRL.setWeightsFlat');
     let idx = 0;
     const inputProjLen = this.inputProj.getWeights().length;
     this.inputProj.setWeights(weights.slice(idx, idx + inputProjLen));
@@ -223,7 +234,32 @@ export class NetworkTransformerRL {
     }
   }
 
+  // Aplana los datos estructurados en el mismo orden que getWeightsFlat, solo para
+  // validar su longitud total antes de escribir.
+  private _flattenStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): number[] {
+    const out: number[] = [];
+    for (const row of data.inputProj) out.push(...row);
+    for (const bd of data.blocks) {
+      for (const hd of bd.attn.heads) {
+        for (const row of hd.Wq) out.push(...row);
+        for (const row of hd.Wk) out.push(...row);
+        for (const row of hd.Wv) out.push(...row);
+      }
+      for (const row of bd.attn.Wo) out.push(...row);
+      out.push(...bd.norm1.gamma, ...bd.norm1.beta);
+      for (const row of bd.ff1) out.push(...row);
+      out.push(...bd.b1);
+      for (const row of bd.ff2) out.push(...row);
+      out.push(...bd.b2);
+      out.push(...bd.norm2.gamma, ...bd.norm2.beta);
+    }
+    for (const row of data.outputProj) out.push(...row);
+    out.push(...data.outputBias);
+    return out;
+  }
+
   setWeightsStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): void {
+    validateArray(this._flattenStructured(data), this._expectedFlatLength(), 'NetworkTransformerRL.setWeightsStructured');
     this.inputProj.setWeights(data.inputProj.flat())
     data.blocks.forEach((bd, b) => {
       const blk = this.blocks[b]
@@ -255,6 +291,8 @@ export class NetworkTransformerRL {
   }
 
   setWeights(weights: number[]): void {
+    // Valida con el nombre del método que llama el usuario; setWeightsFlat valida de nuevo.
+    validateArray(weights, this._expectedFlatLength(), 'NetworkTransformerRL.setWeights')
     this.setWeightsFlat(weights)
   }
 

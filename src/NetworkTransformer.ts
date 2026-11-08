@@ -27,6 +27,7 @@
 
 import { TransformerBlock }  from './TransformerBlock'
 import { EmbeddingMatrix, WeightMatrix, BiasVector, softmax } from './MatMul'
+import { validateArray } from './Validation'
 
 export interface NetworkTransformerOptions {
   vocabSize?: number    // default: 10 (0–9)
@@ -201,6 +202,15 @@ export class NetworkTransformer {
   }
 
   setWeights(weights: number[]): void {
+    // Validar la longitud total ANTES de escribir: un error no deja el modelo a medias.
+    const expectedLen =
+      this.tokenEmb.getWeights().length +
+      this.posEmb.getWeights().length +
+      this.blocks.reduce((n, block) => n + block.getWeights().length, 0) +
+      this.outputProj.getWeights().length +
+      this.outputBias.values.length;
+    validateArray(weights, expectedLen, 'NetworkTransformer.setWeights');
+
     let idx = 0;
     const tokenEmbLen = this.tokenEmb.getWeights().length;
     this.tokenEmb.setWeights(weights.slice(idx, idx + tokenEmbLen));
