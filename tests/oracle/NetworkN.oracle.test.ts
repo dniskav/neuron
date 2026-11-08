@@ -1,4 +1,4 @@
-// PLANTILLA de archivo de oraculo de gradiente (feature 002, T005).
+// PLANTILLA de archivo de oráculo de gradiente.
 //
 // Cada modelo entrenable tiene un archivo `tests/oracle/<Modelo>.oracle.test.ts`
 // con este patron (copiar y cambiar modelo, perdida y datos):
@@ -8,9 +8,9 @@
 //      `w + lr*g`, asi que un modelo correcto da coseno ~ 1 con -dL/dw.
 //   3. expectLearns: la perdida (medida fuera de `train`, sobre datos fijos)
 //      baja a menos de la mitad tras N pasos.
-//   4. Un bug conocido de la auditoria se marca con un test de fallo esperado
-//      (ver specs/000-audit/AUDIT.md) hasta que se corrige. NetworkN ya no tiene
-//      ninguno: I1 se corrigio en 004 (T001) y todos sus oraculos son normales.
+//   4. Un defecto abierto se marca con un test de fallo esperado (ver
+//      specs/000-audit/AUDIT.md) hasta que se corrige. En este archivo todos los
+//      oráculos son normales.
 // Para adaptar: `getParams/setParams` (getWeights/setWeights o `bindParams`);
 // `loss` debe ser determinista (usar `predict`, sin dropout); `step` llama a
 // `train` UNA vez. Si el modelo usa `WeightMatrix`/Adam, envolver con
@@ -58,9 +58,9 @@ describe('NetworkN oraculo (sin residual)', () => {
 
   it('oraculo: el paso sigue -dL/dw', () => {
     const r = expectGradientMatches(setup(S))
-    // With plain SGD and one output the step is exactly lr * g. The scale is
-    // checked here because a missing output-activation derivative is a global
-    // scalar for a single output and leaves the cosine untouched (T038 review).
+    // Con SGD plano y una sola salida, el paso es exactamente lr * g. La escala se
+    // comprueba aquí porque un error en la derivada de salida es un escalar global
+    // que no altera el coseno.
     expect(r.ratio).toBeCloseTo(1, 6)
   })
 
@@ -79,7 +79,7 @@ describe('NetworkN oraculo (residual)', () => {
     expect(Number.isFinite(m.net.train(INPUT, TARGET, 0.1))).toBe(true)
   })
 
-  // I1 corregido: dfn se evalua sobre la salida de f antes del salto y el salto
+  // Con residual, dfn se evalúa sobre la salida de f antes del salto y el salto
   // propaga g = dL/d(salida), no el delta. Se comprueba coseno > 0.999 y ratio
   // en [0.99, 1.01] con lr x0.97/x1.03 y semillas 1..5.
   const CASES: [string, number[], boolean | ((i: number) => boolean), number[]][] = [
@@ -148,7 +148,7 @@ describe('NetworkN dropout (derivada sobre el valor correcto)', () => {
 })
 
 describe('NetworkN dropout (estabilidad)', () => {
-  // Migrado desde GradientCheck.test.ts (Q6): entrenamiento estable.
+  // Pérdida finita con dropout durante 20 pasos.
   it('entrenamiento estable: perdida finita y sin crecer mas de 20x en 20 pasos', () => {
     const net = new NetworkN([3, 4, 4, 1], { optimizer: () => new SGD(), dropoutRate: 0.5 })
     const losses: number[] = []
@@ -158,7 +158,7 @@ describe('NetworkN dropout (estabilidad)', () => {
   })
 })
 
-// ─── inputGradient (T005, Q1/Q2) ─────────────────────────────────────────────
+// ─── inputGradient ───────────────────────────────────────────────────────────
 // inputGradient(x, deltas) devuelve -dL/dx con deltas = (t - p) * dfn(p) (el
 // contrato de trainWithDeltas) y no modifica pesos. Se compara con diferencias
 // finitas centrales de L = 0.5 * sum (t - p)^2 respecto a CADA componente de

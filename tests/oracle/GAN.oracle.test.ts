@@ -1,18 +1,18 @@
-// Gradient-oracle test for GAN (feature 002, T024).
+// Test de oráculo de gradiente para GAN.
 //
 //   1. smoke   - generate/discriminate have the right sizes and ranges, and trainStep
 //                returns finite losses that match an independent computation.
-//   2. oracle  - generator (fixed C2): the generator update follows -dL/dw of
-//                L_G = -log D(G(z)) with D frozen; gradient goes through D.inputGradient.
-//                Normal tests (dims 3/2/5, 5 seeds, lr x0.97/x1/x1.03; cosine and ratio).
-//                Plus: the G step leaves D's weights identical to a replica of D's own step.
-//   3. oracle  - discriminator: trainStep's D update (real label 1, fake label 0) follows
-//                -dL/dw of the binary cross-entropy. Passes (delta = target - pred is exactly
-//                the sigmoid+BCE gradient). Normal test.
-//   4. learns  - changed criterion vs the original plan. The joint adversarial run does not
-//                converge robustly to 0.20 (see 'learns (b)'), so (a) the approach to the target is
-//                verified against a FIXED hand-written D and (b) the joint behaviour is documented
-//                with a bounded/finite property. No known-failing test remains.
+//   2. oracle  - generator: la actualización de G sigue -dL/dw de L_G = -log D(G(z)) con D
+//                congelado; el gradiente pasa por D.inputGradient. Pruebas normales (dims 3/2/5,
+//                5 semillas, lr x0.97/x1/x1.03; coseno y ratio). Además, el paso de G deja los
+//                pesos de D idénticos a una réplica del propio paso de D.
+//   3. oracle  - discriminador: la actualización de D en trainStep (etiqueta real 1, falsa 0)
+//                sigue -dL/dw de la entropía cruzada binaria. delta = objetivo - predicción es
+//                exactamente el gradiente sigmoide + BCE. Prueba normal.
+//   4. learns  - (a) el acercamiento al objetivo se verifica contra un D FIJO escrito a mano,
+//                porque el entrenamiento conjunto no converge de forma robusta a 0.20 (ver
+//                'learns (b)'); (b) el comportamiento conjunto se documenta con una propiedad
+//                acotada y finita.
 //
 // Randomness: trainStep draws z (for D) and then z2 (for G) from Math.random, nothing else.
 // resetRng reseeds Math.random before every loss() and step(); each loss draws the same

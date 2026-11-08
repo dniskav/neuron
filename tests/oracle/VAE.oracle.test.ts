@@ -1,4 +1,4 @@
-// Gradient-oracle test for VAE (feature 002 T025; fixed in feature 004 T008, C2 + N8).
+// Test de oráculo de gradiente para VAE.
 //
 //   1. smoke   - encode/forward/generate have the right sizes, forward returns eps, train returns
 //                finite losses that match an independent computation.
@@ -14,9 +14,9 @@
 //                MSE(x, decode(mu(x))) < 0.5 * MSE of predicting the mean. The spread of mu is
 //                only informative. Robust over 5 seeds x lr {0.7, 1, 1.3} (base lr 1.0).
 //
-// Defects fixed (HANDOFF N8): the encoder now receives -dMSE/dz through z = mu + sigma * eps,
-// the decoder/encoder deltas carry the output derivative, and the decoder delta carries the
-// factor 2 of dMSE/dx_hat. The encoder output is linear (Q3).
+// Lo que se verifica: el encoder recibe -dMSE/dz a través de z = mu + sigma * eps; los deltas del
+// decoder y del encoder llevan la derivada de su salida; el delta del decoder lleva el factor 2 de
+// dMSE/dx_hat. La salida del encoder es lineal (Q3).
 //
 // Q4 (measured): with klWeight = 1 (MSE averaged over n, KL summed over the latent) the
 // posterior collapses: mu is constant (spread ~3e-3) and the loss stays at the mean predictor
@@ -184,9 +184,9 @@ describe('VAE oracle', () => {
     expectFollowsGradient(both, total)
   })
 
-  // A single SGD step is exactly lr * (-grad) when every delta is computed at the initial point,
-  // so a LARGE lr is a valid oracle and exposes O(lr) errors that lr = 1e-3 hides: here, gz
-  // computed with the decoder already updated (N1-style ordering bug).
+  // Un paso SGD es exactamente lr * (-grad) si todos los deltas se calculan en el punto inicial, así
+  // que un lr grande es un oráculo válido y expone errores O(lr) que lr = 1e-3 oculta: aquí, gz debe
+  // calcularse con el decoder todavía sin actualizar.
   it('oracle: encoder, pure reconstruction (klWeight = 0) at a large lr (5) still equals lr * (-grad): gz uses the decoder BEFORE its update', () => {
     expectFollowsGradient(encAll, total, 0, undefined, 5)
   })
@@ -236,10 +236,9 @@ describe('VAE oracle (building blocks)', () => {
     expectFollowsGradient(decAll, (v) => reconOnly(v))
   })
 
-  // Replaces the 002 test 'KL term alone: encoder step follows -dKL/dw', which is no longer true
-  // in general (the encoder also receives the reconstruction gradient). With the decoder weights
-  // set to zero, dMSE/dz = 0 exactly, so the encoder step is purely the KL gradient and the
-  // test still isolates the KL block.
+  // En general el paso del encoder incluye también el gradiente de reconstrucción. Con los pesos
+  // del decoder a cero, dMSE/dz = 0 exactamente, así que el paso del encoder es solo el gradiente
+  // de KL y el test aísla ese bloque.
   it('KL term alone (decoder weights zeroed so dMSE/dz = 0): encoder step follows -dKL/dw', () => {
     const zeroDecoder = (v: VAE) => v.decoder.setWeights(v.decoder.getWeights().map(() => 0))
     expectFollowsGradient(encAll, (v) => klOnly(v), 1, zeroDecoder)

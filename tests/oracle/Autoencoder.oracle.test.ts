@@ -1,4 +1,4 @@
-// Gradient-oracle test for Autoencoder (feature 002, T018; N10 fixed in feature 004, T003).
+// Test de oráculo de gradiente para Autoencoder.
 //
 // Same structure as NetworkN.oracle.test.ts (composition of NetworkN):
 //   1. smoke   - encode/decode/reconstruct have the right sizes, train returns the
@@ -24,10 +24,11 @@ import { expectLearns } from '../helpers/learns'
 
 const INPUT = [0.2, 0.7, 0.5]
 const LR = 1e-3
-// lr 0.75 = the old lr 0.5 x d/2 (d = 3): train() now steps the gradient of the MEAN MSE, d/2
-// times smaller, so the old lr 0.5 became 0.75. Measured final/initial (budget 10000 sweeps; the
-// net first sits on a plateau at the mean reconstruction ~0.83 and escapes at a seed-dependent
-// time, 3000 sweeps is NOT enough for every seed: 0.34 at the default seed, 0.78-0.95 at others):
+// lr 0.75 = 0.5 x d/2 (d = 3): train() sigue el gradiente de la MSE MEDIA (factor 2/d), d/2
+// veces menor que el de la suma. Medido final/inicial (presupuesto 10000 pasadas; la red se
+// queda al principio en una meseta hacia la reconstrucción media ~0.83 y sale en un instante que
+// depende de la semilla; 3000 pasadas NO bastan para todas las semillas: 0.34 con la semilla por
+// defecto, 0.78-0.95 con otras):
 //   default seed, lr x0.7 / x1 / x1.3: 1e-4 / 0 / 0   (threshold 0.5, 30 % margin = 0.35)
 //   seeds 1..7:   worst 0.10 at lr x0.7 and x1; at x1.3 worst 0.75 (seed 7 stays on the plateau).
 const LEARN_LR = 0.75
@@ -78,7 +79,7 @@ function oracle(ae: Autoencoder, x: number[], block: Block) {
 function expectFollowsGradient(ae: Autoencoder, x: number[], block: Block) {
   const r = oracle(ae, x, block)
   expect(r.cosine).toBeGreaterThan(0.999)
-  // The step is the gradient of the MEAN MSE that train() returns (2/d factor, N10).
+  // El paso es el gradiente de la MSE media que devuelve train() (factor 2/d).
   expect(r.ratio).toBeGreaterThan(0.9)
   expect(r.ratio).toBeLessThan(1.1)
 }

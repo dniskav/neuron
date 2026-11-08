@@ -1,4 +1,4 @@
-// Gradient-oracle test for BatchNorm (feature 002, T012).
+// Test de oráculo de gradiente para BatchNorm.
 //
 // BatchNorm normaliza con estadisticas de ejecucion (runningMean / runningVar),
 // y forward() las ACTUALIZA en cada llamada. Para que loss() sea determinista,

@@ -1,4 +1,4 @@
-// Gradient-oracle test for BatchNorm.backward with any momentum (feature 004, T002).
+// Test de oráculo de gradiente para BatchNorm.backward con cualquier momentum.
 //
 // forward() actualiza runningMean / runningVar con la propia x y NORMALIZA con
 // esas estadisticas ya actualizadas. backward() devuelve la derivada EXACTA de
@@ -6,7 +6,6 @@
 //   dy/dx = gamma * (m/s - (1-m) * m^3 * u^2 / s^3),  u = x - media_vieja.
 // Se compara por componente con -dL/dx por diferencias finitas sobre forward,
 // partiendo siempre de las mismas estadisticas, para m en {0, 0.1, 0.5, 0.9, 1}.
-// Sustituye al test de excepcion de 002 (excepcion N2: coseno > 0.9, razon 8-13).
 import { describe, it, expect } from 'vitest'
 import { BatchNorm } from '../../src/BatchNorm'
 import { mulberry32 } from '../helpers/seed'

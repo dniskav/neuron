@@ -1,4 +1,4 @@
-// Gradient-oracle test for Word2Vec (feature 002, T029).
+// Test de oráculo de gradiente para Word2Vec.
 //
 // Perdida derivada del codigo: softmax COMPLETO sobre el vocabulario (no hay muestreo
 // negativo ni nada aleatorio en train()). Skip-gram: L = -log softmax(h . W2)[ctx] con
@@ -16,21 +16,17 @@
 // pares de la frase (train() hace un paso por par, secuencialmente, sin promediar). Con lr
 // pequeno la secuencia coincide con el gradiente de la suma a primer orden.
 //
-// T004 (feature 004): _skipgramStep/_cbowStep calculaban dh con W2 ya actualizado (error
-// O(lr), mismo patron que N1). Ahora dh usa la W2 PREVIA y despues se actualiza W2. Dos
-// consecuencias medidas (5 semillas de init, 300 epocas, corpus de prueba):
-//   - Divergencia de skip-gram con lr=0.1: ANTES la perdida iba de ~1.35 a 18.4 (todas las
-//     semillas); DESPUES baja a 0.52. La divergencia era el defecto, no inestabilidad del SGD.
-//     Con lr=0.03: 0.505 antes, 0.502 despues. CBOW (lr 0.1): 0.006-0.007 antes y despues.
-//   - Los oraculos de TODA la frase (varios pares, un paso SGD secuencial por par) NO pueden
-//     alcanzar coseno > 0.999 a lr alto aunque el codigo sea correcto: la secuencia de pasos
+// dh de _skipgramStep/_cbowStep usa la W2 PREVIA: todos los gradientes se evalúan en el mismo
+// punto y solo después se actualiza W2. Medido (5 semillas de init, 300 épocas, corpus de prueba):
+//   - skip-gram con lr=0.1 no diverge: la pérdida final queda en ~0.52 (test de abajo).
+//   - Los oráculos de TODA la frase (varios pares, un paso SGD secuencial por par) NO pueden
+//     alcanzar coseno > 0.999 a lr alto aunque el código sea correcto: la secuencia de pasos
 //     difiere del gradiente de la suma en O(lr) por el orden de los pares. Cosenos medidos
-//     (peor de 5 semillas, antes -> despues): skip-gram lr 0.05: 0.9973 -> 0.9982; lr 0.1:
-//     0.9895 -> 0.9925; CBOW lr 0.05: 0.9984 -> 0.9994; lr 0.1: 0.9937 -> 0.9975. Por eso el
-//     oraculo de frase se mantiene a lr=1e-3 (coseno ~1), y la deteccion a lr alto se hace con
-//     pruebas de UN SOLO paso de UN par (lr=0.5, 1e-9 por componente contra diferencias
-//     finitas), exactas, donde el defecto antiguo da errores de orden 1e-3..1e-1; y con la
-//     prueba de no divergencia de skip-gram a lr=0.1.
+//     (peor de 5 semillas): skip-gram lr 0.05: 0.9982; lr 0.1: 0.9925; CBOW lr 0.05: 0.9994;
+//     lr 0.1: 0.9975. Por eso el oráculo de frase se mantiene a lr=1e-3 (coseno ~1), y la
+//     detección a lr alto se hace con pruebas de UN SOLO paso de UN par (lr=0.5, error máximo
+//     1e-9 por componente contra diferencias finitas), que son exactas, y con la prueba de no
+//     divergencia de skip-gram a lr=0.1.
 //
 // Helpers usados sin modificar: gradientOracle (bindParams, expectGradientMatches) y expectLearns.
 import { describe, it, expect } from 'vitest'
