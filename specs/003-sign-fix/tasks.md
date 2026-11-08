@@ -49,7 +49,7 @@
 - [x] T011 [S] [files: ninguno (solo informa)] Revisión con `math-reviewer` de T001 a T009 (diff de `fix/v0.4` desde el commit previo a 003): que cada gradiente sigue `−dL/dw`; que `dX` de `AttentionHead` no depende de `lr`; escala de `NetworkTransformer.train` y `TCN.train` coherente con su pérdida; BPTT de `Seq2Seq` con `T_in/T_out`; `dfn` del encoder en `Autoencoder`; que los mutantes se probaron y no quedó ningún `it.fails` de 003. Hallazgos bloqueantes ⇒ se reabre la tarea del modelo.
       Gate: informe sin bloqueantes; `npx vitest run tests/oracle && npm run typecheck && npm run build`
 
-- [ ] T012 [H] [files: ninguno (solo informa)] Verificación de estabilidad (`verifier`, depende de T011): 20 ejecuciones seguidas de `npx vitest run` más 5 con `--sequence.shuffle`; si una falla, informar el test, el mensaje y el número de ejecución sin arreglar nada.
+- [x] T012 [H] [files: ninguno (solo informa)] Verificación de estabilidad (`verifier`, depende de T011): 20 ejecuciones seguidas de `npx vitest run` más 5 con `--sequence.shuffle`; si una falla, informar el test, el mensaje y el número de ejecución sin arreglar nada.
       Gate: `for i in $(seq 1 20); do npx vitest run || exit 1; done && for i in $(seq 1 5); do npx vitest run --sequence.shuffle || exit 1; done && npx tsc --noEmit -p . && npm run typecheck && npm run build`
 
 ## Lote 5 (huecos de sensibilidad hallados por T011)

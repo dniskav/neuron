@@ -18,7 +18,7 @@
 
 ## Siguiente acción
 
-Abrir el PR de la 002 (con aprobación del usuario) y empezar la **feature 003 `sign-fix`** con `spec-author`. Antes de planificarla, leer las 'Notas para 003 por modelo' y los hallazgos N1–N9 de abajo. Con `master` protegida, todo llega por PR desde `fix/v0.4` (o ramas por feature).
+Abrir el PR de la 003 (con aprobación del usuario, y esperar al CI de GitHub en verde antes de darla por cerrada) y empezar la **feature 004 `models-fix`** con `spec-author`: C2 (GAN, VAE + N8), I1 (`NetworkN` residual), N2 (BatchNorm), N9 (ContrastiveLearning), observación de Word2Vec y N10 (Autoencoder `d/2`).
 
 ## Avance
 
@@ -26,7 +26,7 @@ Abrir el PR de la 002 (con aprobación del usuario) y empezar la **feature 003 `
 |---|---|
 | 001 `release-safety` | **Hecha.** PR #4 fusionado, `publish.yml` saltó la publicación (0.3.2 ya publicada) y `master` protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos) |
 | 002 `gradient-oracle` | **Hecha** (41/41 tareas; 496 tests + 26 `it.fails` + 1 `it.todo`; 20 ejecuciones seguidas y 5 con orden aleatorio sin fallos). Commits locales, sin PR todavía |
-| 003 `sign-fix` | Pendiente |
+| 003 `sign-fix` | **Hecha** (13/13 tareas; 552 tests + 8 `it.fails` (solo C2, I1, N7) + 1 `it.todo`; 20+5 ejecuciones seguidas, y 3 con Node 20.19 sin fallos). Commits locales, sin PR todavía |
 | 004 `models-fix` | Pendiente |
 | 005 `api-hardening` | Pendiente |
 | 006 `coverage` | Pendiente |
@@ -70,6 +70,9 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 - **N1 en LayerNorm (confirmado en 003/T001):** `TransformerBlock` llama a `LayerNorm.backwardOne` por posición y el `gamma/beta` actualizado en la posición `i` se lee en la `i+1` (`gammaOld` solo protege dentro de una llamada). La spec de 003 lo daba por inexistente; corregido en T008 (ahora [S] con cambio en `src/LayerNorm.ts`).
 - **N10 `Autoencoder`:** el paso es `d/2` veces el de la pérdida MSE media que `train` devuelve (los `outputDeltas` no llevan `2/d`; ratio 1.50 con d=3). No afecta al coseno; normalizar cambiaría el lr efectivo de los usuarios. Decidir en 004/005 con el usuario.
 - **Lección CI (002):** pasar N veces en mi máquina no demuestra estabilidad entre plataformas (Node 26/macOS aquí, Node 20/Linux en CI); validar tests de entrenamiento con perturbaciones de lr/semilla y esperar al CI antes de cerrar una feature.
+
+- **Cambios observables de 003 para el changelog (007/008):** (1) `RNN`, `TCN`, `Seq2Seq`, `NetworkTransformer` y `NetworkTransformerRL` pasan de SUBIR la pérdida a bajarla: los `lr` de las apps y los pesos guardados con el entrenamiento roto no son comparables. (2) `NetworkTransformer.train` usa gradiente de CE media (dLogits/count): el paso de SGD directo (embeddings, LayerNorm, sesgos) baja por el factor `count`; con máscara (Sudoku) puede exigir reajustar el lr. (3) `TCN`: las capas conv ya no se mueven T veces más rápido que la proyección. (4) `Seq2Seq`: el encoder recibe el gradiente exacto (BPTT completo, escala `lr·T_in/T_out`); `LSTMLayer.backprop(dh_seq, lr, dcFinal?)` ahora devuelve `{dh0, dc0}` en vez de `void` (aditivo). (5) `AttentionHead`/`MultiHeadAttention`/`TransformerBlock`/`LayerNorm`: el `dX` que se propaga hacia atrás ya no depende de `lr` (error de hasta ~85 % antes con lr 0.05). (6) `Autoencoder`: el paso del encoder deja de ser ~4x el correcto con sigmoide. (7) `NetworkTransformerRL`: un solo paso de Adam por llamada sobre `inputProj` con el gradiente sumado.
+- **Hueco conocido tras 003 (T011):** el oráculo de coseno de `Autoencoder` no detecta una `dfn` duplicada (solo lo detecta el test 'aprende'); `LSTMLayer.backprop` devuelve ceros en silencio ante entradas de longitud distinta.
 
 ## Avisos
 
