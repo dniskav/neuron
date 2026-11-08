@@ -21,6 +21,7 @@ import { tanh, sigmoid } from '../../src/activations'
 import { mse } from '../../src/losses'
 import { gradientOracle } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
+import { seedRandom, restoreRandom } from '../helpers/seed'
 
 const INPUT = [0.2, 0.7, 0.5]
 const LR = 1e-3
@@ -53,7 +54,7 @@ function setParams(ae: Autoencoder, p: number[]): void {
 type Block = 'all' | 'encoder' | 'decoder'
 
 // Oracle over all weights, or only the encoder / decoder block.
-function oracle(ae: Autoencoder, x: number[], block: Block) {
+function oracle(ae: Autoencoder, x: number[], block: Block, lr = LR) {
   const nEnc = ae.encoder.getWeights().length
   const slice = (p: number[]) =>
     block === 'encoder' ? p.slice(0, nEnc) : block === 'decoder' ? p.slice(nEnc) : p
@@ -72,12 +73,12 @@ function oracle(ae: Autoencoder, x: number[], block: Block) {
     step: (lr) => {
       ae.train(x, lr)
     },
-    lr: LR,
+    lr,
   })
 }
 
-function expectFollowsGradient(ae: Autoencoder, x: number[], block: Block) {
-  const r = oracle(ae, x, block)
+function expectFollowsGradient(ae: Autoencoder, x: number[], block: Block, lr = LR) {
+  const r = oracle(ae, x, block, lr)
   expect(r.cosine).toBeGreaterThan(0.999)
   // El paso es el gradiente de la MSE media que devuelve train() (factor 2/d).
   expect(r.ratio).toBeGreaterThan(0.9)
@@ -154,4 +155,143 @@ describe('Autoencoder oracle (building blocks)', () => {
       expectFollowsGradient(c.make(), c.x, 'decoder')
     })
   }
+})
+
+// T013 gap 1: dfn(z[k]) of the encoder, a different unit each time.
+// Latent of 3 units with large weights and very different biases in the latent layer, so z
+// (tanh) is saturated in some units and not in others and act'(z[k]) differs a lot per unit.
+// A `dfn(z[0])` mutant (the same factor for every unit) breaks the encoder block.
+describe("Autoencoder oracle (latent act' per unit, T013)", () => {
+  const mk = () => {
+    seedRandom(0x5eed)
+    const ae = new Autoencoder(4, [4], 3, [4], {
+      ...sgd,
+      activations: [tanh, tanh, tanh, sigmoid],
+    })
+    restoreRandom()
+    // Latent layer = encoder layer 1: 3 neurons x (4 weights + bias), after the 4x(4+1) hidden.
+    const w = ae.encoder.getWeights()
+    const base = 4 * (4 + 1)
+    const biases = [0.1, 1.2, -2.5]
+    for (let k = 0; k < 3; k++) {
+      for (let j = 0; j < 4; j++) w[base + k * 5 + j] *= 3
+      w[base + k * 5 + 4] = biases[k]
+    }
+    ae.encoder.setWeights(w)
+    return ae
+  }
+
+  it("the latent units have very different act' (the case is sensitive)", () => {
+    const z = mk().encode(X4)
+    const d = z.map((v) => 1 - v * v) // tanh' on the post-activation value
+    expect(Math.max(...d) / Math.min(...d)).toBeGreaterThan(5)
+  })
+
+  for (const block of ['encoder', 'decoder', 'all'] as const) {
+    it(`oracle ${block} with per-unit latent act' (cosine > 0.999, ratio in [0.9, 1.1])`, () => {
+      expectFollowsGradient(mk(), X4, block)
+    })
+  }
+})
+
+// T013 gap 4: residual / dropout in the decoder (train() used to walk the decoder by hand
+// and ignored both; now it uses decoder.inputGradient like VAE).
+describe('Autoencoder oracle (decoder with residual / dropout, T013)', () => {
+  const SEEDS = [1, 2, 3, 4, 5]
+  const LR_FACTORS = [0.97, 1.03]
+
+  const mkResidual = (seed: number) => {
+    seedRandom(seed)
+    const ae = new Autoencoder(4, [3], 2, [2], { ...sgd, residual: true })
+    restoreRandom()
+    return ae
+  }
+
+  for (const block of ['all', 'decoder', 'encoder'] as const) {
+    it(`residual in the decoder, ${block}: cosine > 0.999, ratio ~ 1 (5 seeds, lr x0.97 / x1.03)`, () => {
+      for (const seed of SEEDS) {
+        for (const f of LR_FACTORS) {
+          expectFollowsGradient(mkResidual(seed), X4, block, LR * f)
+        }
+      }
+    })
+  }
+
+  // Decoder [2,2,2,4]: two hidden layers (2 -> 2) with residual and a dropout after each,
+  // 4 Math.random draws per forward. The encoder has no hidden layer, so it has no dropout
+  // and the decoder's draws are the only ones. Math.random is replaced by a cycle of period
+  // 4: predict(z, true), inputGradient and trainWithDeltas then draw the SAME mask, and the
+  // cycle restarts before every loss()/step() (fixed mask).
+  const PATTERNS = [
+    [0.1, 0.9, 0.8, 0.2],
+    [0.7, 0.3, 0.95, 0.6],
+  ]
+  const cycle = (pattern: number[]) => {
+    let i = 0
+    Math.random = () => pattern[i++ % 4]
+  }
+  for (const [name, residual] of [
+    ['dropout', false],
+    ['dropout + residual', true],
+  ] as const) {
+    PATTERNS.forEach((pattern, pi) => {
+      it(`${name} in the decoder with a fixed mask (pattern ${pi + 1}): cosine > 0.999, ratio ~ 1`, () => {
+        try {
+          for (const seed of SEEDS) {
+            for (const f of LR_FACTORS) {
+              seedRandom(seed)
+              const ae = new Autoencoder(4, [], 2, [2, 2], { ...sgd, residual, dropoutRate: 0.4 })
+              const x = X4
+              const nEnc = ae.encoder.getWeights().length
+              // 'all' = encoder + decoder; 'encoder' isolates the gradient that flows back
+              // through the decoder (the decoder block dominates the full cosine).
+              for (const block of ['all', 'encoder'] as const) {
+                const r = gradientOracle({
+                  getParams: () => (block === 'all' ? getParams(ae) : ae.encoder.getWeights()),
+                  setParams: (p) => {
+                    if (block === 'all') {
+                      ae.encoder.setWeights(p.slice(0, nEnc))
+                      ae.decoder.setWeights(p.slice(nEnc))
+                    } else {
+                      ae.encoder.setWeights(p)
+                    }
+                  },
+                  loss: () => {
+                    cycle(pattern)
+                    return mse(ae.decoder.predict(ae.encoder.predict(x), true), x)
+                  },
+                  step: (lr) => {
+                    cycle(pattern)
+                    ae.train(x, lr)
+                  },
+                  lr: LR * f,
+                })
+                expect(r.cosine, `${block} seed ${seed} x${f}`).toBeGreaterThan(0.999)
+                expect(r.ratio, `${block} seed ${seed} x${f}`).toBeGreaterThan(0.9)
+                expect(r.ratio, `${block} seed ${seed} x${f}`).toBeLessThan(1.1)
+              }
+            }
+          }
+        } finally {
+          restoreRandom()
+        }
+      })
+    })
+  }
+
+  it('residual on the LAST decoder layer throws a clear error and leaves every weight untouched (Q2, like VAE/GAN)', () => {
+    // decoder [2,4,4]: the last layer is 4 -> 4, so the residual applies to it
+    const ae = new Autoencoder(4, [3], 2, [4], { ...sgd, residual: true })
+    const before = getParams(ae)
+    expect(() => ae.train(X4, 0.1)).toThrow(/residual on the last layer/)
+    expect(getParams(ae)).toEqual(before)
+  })
+
+  it('residual on the LAST encoder layer also throws before any weight changes', () => {
+    // encoder [4,2,2]: the latent layer is 2 -> 2, so the residual applies; decoder [2,2,4] is fine
+    const ae = new Autoencoder(4, [2], 2, [2], { ...sgd, residual: true })
+    const before = getParams(ae)
+    expect(() => ae.train(X4, 0.1)).toThrow(/residual on the last layer/)
+    expect(getParams(ae)).toEqual(before)
+  })
 })

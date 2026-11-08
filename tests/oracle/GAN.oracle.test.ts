@@ -218,3 +218,54 @@ describe('GAN oracle', () => {
     }
   })
 })
+
+// T013 gap 2: the gLoss value that trainStep returns is -log D(G(z2)) (non-saturating), not
+// -log(1 - D). z is drawn for the discriminator's fake sample, z2 for the generator, in this
+// order, per sample.
+describe('GAN trainStep gLoss / dLoss values (T013)', () => {
+  const mkTwin = () => {
+    seedRandom(0x5eed)
+    return build()
+  }
+
+  it('batch of 1: gLoss = -log D(G(z2)) with D after its own update (hand-replicated step)', () => {
+    const gan = mkTwin()
+    const twin = mkTwin()
+
+    // Hand replica of the D phase on the twin (same weights, same Math.random order).
+    resetRng()
+    const dRealPre = twin.discriminate(X_REAL)
+    twin.discriminator.trainWithDeltas(X_REAL, [1 - dRealPre], LR)
+    const xFake = twin.generate(twin.sampleLatent())
+    const dFakePre = twin.discriminate(xFake)
+    twin.discriminator.trainWithDeltas(xFake, [0 - dFakePre], LR)
+    const xFake2 = twin.generate(twin.sampleLatent())
+    const dScore = twin.discriminate(xFake2)
+    const expectedG = -Math.log(dScore)
+    const wrongG = -Math.log(1 - dScore)
+    expect(Math.abs(expectedG - wrongG)).toBeGreaterThan(0.05) // the case discriminates
+
+    resetRng()
+    const { gLoss, dLoss } = gan.trainStep([X_REAL], LR)
+    expect(gLoss).toBeCloseTo(expectedG, 12)
+    expect(dLoss).toBeCloseTo(-Math.log(dRealPre) - Math.log(1 - dFakePre), 12)
+  })
+
+  it('batch of 3 with lr = 0 (nothing moves): gLoss and dLoss are the means of the per-sample values', () => {
+    const gan = mkTwin()
+    const batch = [X_REAL, [0.4, 0.1, 0.6], [0.9, 0.8, 0.2]]
+    resetRng()
+    let g = 0
+    let d = 0
+    for (const xr of batch) {
+      const z = gan.sampleLatent()
+      const z2 = gan.sampleLatent()
+      g += -Math.log(gan.discriminate(gan.generate(z2)))
+      d += -Math.log(gan.discriminate(xr)) - Math.log(1 - gan.discriminate(gan.generate(z)))
+    }
+    resetRng()
+    const r = gan.trainStep(batch, 0)
+    expect(r.gLoss).toBeCloseTo(g / batch.length, 10)
+    expect(r.dLoss).toBeCloseTo(d / batch.length, 10)
+  })
+})
