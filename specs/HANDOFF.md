@@ -45,6 +45,8 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 - **N4 `Network` (I5):** `train` solo acepta un objetivo escalar y solo actualiza la primera salida; `it.todo` en `Network.oracle.test.ts`.
 - **N5 `Conv1D`/`Conv2D`:** el oráculo cubre pesos, no `dInput`. Candidato para la feature 006.
 
+- **N6 `Autoencoder.train`:** `dL/dz` se calcula sin la derivada de la activación de salida del encoder; el paso del encoder es ~4x el correcto (coseno global 0.998 con [4]/[4], 0.835 sin ocultas). Marcado `it.fails // AUDIT N6` en `Autoencoder.oracle.test.ts`; corregir en la feature 003.
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.

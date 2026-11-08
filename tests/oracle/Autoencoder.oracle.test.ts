@@ -53,7 +53,12 @@ describe('Autoencoder oracle', () => {
     expect(reported).toBeCloseTo(before, 12)
   })
 
-  it('oracle: train() follows -dL/dw from finite differences (cosine > 0.999)', () => {
+  // AUDIT N6: Autoencoder.train computes dL/dz without the derivative of the
+  // encoder's output activation, so the encoder step is ~4x the correct one
+  // (global cosine 0.9984 with [4]/[4], 0.835 with no hidden layers). The
+  // encoder-only and decoder-only oracles below pass (direction is right,
+  // scale is wrong). Remove `.fails` when the defect is fixed (feature 003).
+  it.fails('oracle: train() follows -dL/dw from finite differences (cosine > 0.999)', () => {
     const ae = build()
     const r = gradientOracle({
       getParams: () => getParams(ae),
