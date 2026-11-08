@@ -8,9 +8,9 @@
 //      `w + lr*g`, asi que un modelo correcto da coseno ~ 1 con -dL/dw.
 //   3. expectLearns: la perdida (medida fuera de `train`, sobre datos fijos)
 //      baja a menos de la mitad tras N pasos.
-//   4. `it.fails` SOLO para un bug conocido de la auditoria, con comentario
-//      `// AUDIT <id>` (ver specs/000-audit/AUDIT.md). Cuando se corrija el
-//      bug, el `it.fails` se pone en rojo y hay que convertirlo en `it` normal.
+//   4. Un bug conocido de la auditoria se marca con un test de fallo esperado
+//      (ver specs/000-audit/AUDIT.md) hasta que se corrige. NetworkN ya no tiene
+//      ninguno: I1 se corrigio en 004 (T001) y todos sus oraculos son normales.
 // Para adaptar: `getParams/setParams` (getWeights/setWeights o `bindParams`);
 // `loss` debe ser determinista (usar `predict`, sin dropout); `step` llama a
 // `train` UNA vez. Si el modelo usa `WeightMatrix`/Adam, envolver con
@@ -20,21 +20,27 @@ import { NetworkN } from '../../src/NetworkN'
 import { SGD } from '../../src/optimizers'
 import { expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
+import { seedRandom } from '../helpers/seed'
 
 const INPUT = [0.5, -0.3, 0.8]
 const TARGET = [0.7]
 
-// L = 0.5 * sum (t - p)^2 ; train() usa delta = (t - p) * f'(p) = -dL/dz.
-function setup(structure: number[], opts: { residual?: boolean } = {}) {
+// L = 0.5 * sum (t - p)^2 ; train() usa g = t - p = -dL/d(salida) y delta = g * f'(f(z)).
+function setup(
+  structure: number[],
+  opts: { residual?: boolean | ((i: number) => boolean); dropoutRate?: number } = {},
+  target: number[] = TARGET,
+  training = false,
+) {
   const net = new NetworkN(structure, { optimizer: () => new SGD(), ...opts })
   const loss = () => {
-    const p = net.predict(INPUT)
-    return p.reduce((s, v, i) => s + 0.5 * (TARGET[i] - v) ** 2, 0)
+    const p = net.predict(INPUT, training)
+    return p.reduce((s, v, i) => s + 0.5 * (target[i] - v) ** 2, 0)
   }
   return {
     net,
     loss,
-    step: (lr: number) => void net.train(INPUT, TARGET, lr),
+    step: (lr: number) => void net.train(INPUT, target, lr),
     getParams: () => net.getWeights(),
     setParams: (p: number[]) => net.setWeights(p),
   }
@@ -72,25 +78,75 @@ describe('NetworkN oraculo (residual)', () => {
     expect(Number.isFinite(m.net.train(INPUT, TARGET, 0.1))).toBe(true)
   })
 
-  // AUDIT I1: dfn se evalua sobre el valor ya sumado y el salto mezcla deltas
-  // previos a la activacion; coseno 0.86 en la auditoria, 0.887 con estos datos.
-  it.fails('oraculo: el paso sigue -dL/dw', () => {
-    expectGradientMatches(setup(S, { residual: true }))
-  })
+  // I1 corregido: dfn se evalua sobre la salida de f antes del salto y el salto
+  // propaga g = dL/d(salida), no el delta. Se comprueba coseno > 0.999 y ratio
+  // en [0.99, 1.01] con lr x0.97/x1.03 y semillas 1..5.
+  const CASES: [string, number[], boolean | ((i: number) => boolean), number[]][] = [
+    ['[3,3,3,1] residual: true', S, true, TARGET],
+    ['[3,3,3,3] residual en la salida', [3, 3, 3, 3], true, [0.7, 0.2, -0.4]],
+    ['[3,3,3,1] residual: i === 1', S, (i: number) => i === 1, TARGET],
+    ['[3,3,3,3] solo la capa de salida', [3, 3, 3, 3], (i: number) => i === 2, [0.7, 0.2, -0.4]],
+    ['[3,4,4,4,2] residual: true', [3, 4, 4, 4, 2], true, [0.7, 0.2]],
+  ]
+  for (const [name, st, residual, target] of CASES) {
+    it(`oraculo: el paso sigue -dL/dw (${name})`, () => {
+      const r = expectGradientMatches(setup(st, { residual }, target))
+      expect(r.ratio).toBeGreaterThan(0.99)
+      expect(r.ratio).toBeLessThan(1.01)
+    })
 
-  it('el coseno del residual es parcial, como en la auditoria (0.8-0.95)', () => {
-    const r = gradientOracle(setup(S, { residual: true }))
-    expect(r.cosine).toBeGreaterThan(0.8)
-    expect(r.cosine).toBeLessThan(0.95)
-  })
+    it(`oraculo robusto a lr x0.97/x1.03 y semillas 1..5 (${name})`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        for (const k of [0.97, 1, 1.03]) {
+          seedRandom(seed)
+          const m = setup(st, { residual }, target)
+          const r = gradientOracle({ ...m, lr: 1e-3 * k })
+          expect(r.cosine).toBeGreaterThan(0.999)
+          expect(r.ratio).toBeGreaterThan(0.99)
+          expect(r.ratio).toBeLessThan(1.01)
+        }
+      }
+    })
+  }
 
   it('expectLearns con residual', () => {
     const m = setup(S, { residual: true })
     expectLearns({ loss: m.loss, step: () => m.step(0.5), steps: 200 })
   })
+
+  it('trainWithDeltas lanza con residual en la ultima capa (Q2)', () => {
+    const net = new NetworkN([3, 3, 3, 3], { residual: true })
+    const before = net.getWeights()
+    expect(() => net.trainWithDeltas(INPUT, [0.1, 0.1, 0.1], 0.1)).toThrow(/residual/)
+    expect(net.getWeights()).toEqual(before)
+  })
+
+  it('trainWithDeltas sigue valido con residual en capas ocultas', () => {
+    const net = new NetworkN([3, 3, 3, 1], { residual: true })
+    expect(() => net.trainWithDeltas(INPUT, [0.1], 0.1)).not.toThrow()
+  })
 })
 
-describe('NetworkN dropout', () => {
+describe('NetworkN dropout (derivada sobre el valor correcto)', () => {
+  // Con Math.random reiniciada antes de cada loss()/step(), la mascara es la
+  // misma y determinista: el oraculo compara con diferencias finitas del
+  // forward en modo entrenamiento.
+  for (const [name, residual] of [['sin residual', false], ['con residual', true]] as const) {
+    it(`oraculo con mascara fija (${name})`, () => {
+      const m = setup([3, 3, 3, 1], { dropoutRate: 0.5, residual }, TARGET, true)
+      const r = expectGradientMatches({ ...m, resetRng: () => seedRandom(7) })
+      expect(r.ratio).toBeGreaterThan(0.99)
+      expect(r.ratio).toBeLessThan(1.01)
+    })
+  }
+
+  it('oraculo con mascara fija, residual y dropout, salida con residual', () => {
+    const m = setup([3, 3, 3, 3], { dropoutRate: 0.5, residual: true }, [0.7, 0.2, -0.4], true)
+    expectGradientMatches({ ...m, resetRng: () => seedRandom(11) })
+  })
+})
+
+describe('NetworkN dropout (estabilidad)', () => {
   // Migrado desde GradientCheck.test.ts (Q6): entrenamiento estable.
   it('entrenamiento estable: perdida finita y sin crecer mas de 20x en 20 pasos', () => {
     const net = new NetworkN([3, 4, 4, 1], { optimizer: () => new SGD(), dropoutRate: 0.5 })
