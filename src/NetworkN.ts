@@ -128,6 +128,30 @@ export class NetworkN {
     this._backward(act, pre, null, outputDeltas, lr);
   }
 
+  // Gradient with respect to the INPUT, without touching any weight.
+  //
+  //   inputGradient(inputs, outputDeltas) -> -dL/d(inputs)
+  //
+  // Same contract and sign convention as trainWithDeltas: `outputDeltas` are
+  // -dL/d(pre-activation of the output layer), i.e. -dL/d(output) already
+  // multiplied by the output activation derivative. The result is -dL/dx (the
+  // library convention: optimizers do `w + lr * g`, so "ascent direction of
+  // -L"). To MINIMIZE L w.r.t. x, step x += lr * result. Typical use (GAN):
+  // pass [dfn(D)/D] for the discriminator and chain the result through the
+  // generator's own dfn, then call trainWithDeltas on the generator.
+  //
+  // Throws if the last layer has a residual skip (it would need dL/d(output),
+  // not deltas; Q2). With dropoutRate > 0 a fresh mask is drawn (training
+  // mode, consuming Math.random exactly like trainWithDeltas) and applied in
+  // the backward pass; reseed Math.random for a fixed mask.
+  inputGradient(inputs: number[], outputDeltas: number[]): number[] {
+    this._assertDeltasSupported('inputGradient');
+    validateArray(inputs, this.structure[0], 'NetworkN.inputGradient');
+    validateArray(outputDeltas, this.structure[this.structure.length - 1], 'NetworkN.inputGradient');
+    const { act, pre } = this._forwardAll(inputs, true);
+    return this._backward(act, pre, null, outputDeltas, null);
+  }
+
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: layer 0 (all neurons), layer 1, ..., layer N.
   getWeights(): number[] {
