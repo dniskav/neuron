@@ -159,7 +159,12 @@ export class Value {
   // the entire computational graph.
   //
   // Steps:
-  //   1. Build a topological ordering of all ancestor nodes.
+  //   1. Build a topological ordering of all ancestor nodes (post-order DFS)
+  //      ITERATIVELY with an explicit stack of [node, iterator over _prev], so
+  //      graphs of any depth (e.g. 100 000-node chains) cannot overflow the
+  //      call stack. A node is emitted when its children are exhausted, which
+  //      yields the same post-order (and Set iteration order) as the former
+  //      recursive version, hence bit-identical gradients.
   //   2. Set this.grad = 1  (∂L/∂L = 1).
   //   3. Visit nodes in reverse topological order, calling each _backward.
   //
@@ -167,15 +172,20 @@ export class Value {
     const topo: Value[]   = [];
     const visited = new Set<Value>();
 
-    const buildTopo = (v: Value): void => {
-      if (!visited.has(v)) {
-        visited.add(v);
-        for (const child of v._prev) buildTopo(child);
-        topo.push(v);
+    visited.add(this);
+    const stack: Array<[Value, Iterator<Value>]> = [[this, this._prev.values()]];
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const next = frame[1].next();
+      if (next.done) {
+        topo.push(frame[0]);
+        stack.pop();
+      } else if (!visited.has(next.value)) {
+        visited.add(next.value);
+        stack.push([next.value, next.value._prev.values()]);
       }
-    };
+    }
 
-    buildTopo(this);
     this.grad = 1;  // seed: ∂L/∂L = 1
 
     for (let i = topo.length - 1; i >= 0; i--) {
