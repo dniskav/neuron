@@ -62,6 +62,9 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 - **N8 `VAE` (3 causas, 003/004):** (1) el encoder no recibe dMSE/dz por la reparametrización (C2; `mu` no varía con la entrada), (2) los deltas del decoder/encoder no llevan la derivada de la sigmoide de salida, (3) al delta del decoder le falta el factor 2 del MSE. Los bloques sueltos pasan; solo el coseno global detecta la escala relativa. El umbral de dispersión de `mu` (0.05) lo puso el agente, no la spec.
 - **Limitación de 002 (Q9):** el coseno es invariante a la escala, así que un factor constante equivocado en el gradiente no lo detecta el oráculo. Se cubre con pruebas de solución exacta donde existe (p. ej. `LinearRegression`), no en general.
 
+- **N9 `ContrastiveLearning`:** (a) la cabecera de proyección termina en ReLU con Xavier: con algunas semillas las proyecciones quedan todas a cero (pérdida = log(2N−1), gradiente 0, no se recupera); (b) `trainStep` actualiza en sitio mientras calcula las diferencias finitas (estilo Gauss-Seidel), así que el gradiente por parámetro se evalúa con pesos ya movidos; (c) con normas de z pequeñas la similitud coseno tiene curvatura ~1/|z| y el oráculo solo da >0.999 con ciertas semillas o lr muy pequeño. El test de 002 fija semilla 9 y 400 pasos y es frágil por diseño: revisar en 004/006.
+- **`Word2Vec` (observación):** `_skipgramStep`/`_cbowStep` calculan `dh` con `W2` ya actualizado (mismo patrón que N1, error O(lr), comentario 'minor approx' en src). Skip-gram diverge con lr 0.1 en el corpus de prueba (0.6 → 18.4) y converge con 0.03; causa no medida. El mutante de T029 solo cubrió skip-gram, no CBOW.
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.
