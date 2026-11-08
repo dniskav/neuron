@@ -127,16 +127,17 @@ export class LogisticRegression {
   }
 
   // ─── Predict (probability) ────────────────────────────────────────────────
-  // Returns P(y=1|x) ∈ [0, 1].
+  // Returns P(y=1|x) ∈ [0, 1]. The number of features is read from `weights`
+  // (the public field), so weights assigned by hand without train() work.
 
   predict(x: number[]): number {
     if (this.weights.length === 0) {
       throw new Error("LogisticRegression.predict: model has not been trained yet");
     }
-    validateArray(x, this._nFeatures, "LogisticRegression.predict");
+    validateArray(x, this.weights.length, "LogisticRegression.predict");
 
     let z = this.bias;
-    for (let j = 0; j < this._nFeatures; j++) z += this.weights[j] * x[j];
+    for (let j = 0; j < this.weights.length; j++) z += this.weights[j] * x[j];
     return sigmoid(z);
   }
 
@@ -253,15 +254,30 @@ export class SoftmaxRegression {
   }
 
   // ─── Predict (class probabilities) ───────────────────────────────────────
+  // The shape is read from the public `weights` / `biases` (K rows of nFeatures,
+  // K biases), so weights assigned by hand without train() work.
   predictProba(x: number[]): number[] {
     if (this.weights.length === 0) {
       throw new Error("SoftmaxRegression.predictProba: model has not been trained yet");
     }
-    validateArray(x, this._nFeatures, "SoftmaxRegression.predictProba");
+    const nFeatures = this.weights[0].length;
+    if (this.biases.length !== this.weights.length) {
+      throw new Error(
+        `SoftmaxRegression.predictProba: expected ${this.weights.length} biases, got ${this.biases.length}`
+      );
+    }
+    this.weights.forEach((wk, k) => {
+      if (wk.length !== nFeatures) {
+        throw new Error(
+          `SoftmaxRegression.predictProba: weights row ${k} has length ${wk.length}, expected ${nFeatures}`
+        );
+      }
+    });
+    validateArray(x, nFeatures, "SoftmaxRegression.predictProba");
 
     const scores = this.weights.map((wk, k) => {
       let s = this.biases[k];
-      for (let j = 0; j < this._nFeatures; j++) s += wk[j] * x[j];
+      for (let j = 0; j < nFeatures; j++) s += wk[j] * x[j];
       return s;
     });
     return this._softmax(scores);
