@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Adam } from './optimizers'
+import { validateArray } from './Validation'
 
 // ── Matrix multiply ───────────────────────────────────────────────────────────
 // C = A @ B   |  A: rows × inner,  B: inner × cols  →  C: rows × cols
@@ -107,6 +108,8 @@ export class WeightMatrix {
   }
 
   setWeights(weights: number[]): void {
+    const n = this.W.reduce((s, row) => s + row.length, 0);
+    validateArray(weights, n, 'WeightMatrix.setWeights');
     let idx = 0;
     for (let i = 0; i < this.W.length; i++)
       for (let j = 0; j < this.W[i].length; j++) this.W[i][j] = weights[idx++];
@@ -135,6 +138,7 @@ export class BiasVector {
   getWeights(): number[] { return [...this.values] }
 
   setWeights(weights: number[]): void {
+    validateArray(weights, this.values.length, 'BiasVector.setWeights')
     for (let i = 0; i < this.values.length; i++) this.values[i] = weights[i]
   }
 }
@@ -178,6 +182,8 @@ export class EmbeddingMatrix {
   }
 
   setWeights(weights: number[]): void {
+    const n = this.W.reduce((s, row) => s + row.length, 0)
+    validateArray(weights, n, 'EmbeddingMatrix.setWeights')
     let idx = 0
     for (let i = 0; i < this.W.length; i++)
       for (let j = 0; j < this.W[i].length; j++)

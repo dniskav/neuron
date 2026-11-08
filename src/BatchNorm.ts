@@ -1,3 +1,5 @@
+import { validateArray } from './Validation';
+
 // ─── Batch Normalization (Online) ────────────────────────────────────────────
 //
 // Normalizes using running statistics (not mini-batch), suitable for online
@@ -109,6 +111,7 @@ export class BatchNorm {
   }
 
   setWeights(weights: number[]): void {
+    validateArray(weights, 2 * this.dim, 'BatchNorm.setWeights')
     for (let i = 0; i < this.dim; i++) this.gamma[i] = weights[i]
     for (let i = 0; i < this.dim; i++) this.beta[i] = weights[this.dim + i]
   }
