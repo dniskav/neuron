@@ -14,7 +14,7 @@
 // Remove `.fails` from oracle/learns when the defect is fixed (feature 003).
 import { describe, it, expect } from 'vitest'
 import { RNN } from '../../src/RNN'
-import { bindParams, expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
+import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
 
 const SEQ: number[][] = [
@@ -43,15 +43,6 @@ function loss(net: RNN): number {
   return s / (SEQ.length * outputs[0].length)
 }
 
-/** Real update with its delta negated by hand: w1 = w0 - (w1 - w0). */
-function negatedStep(net: RNN, lr: number): void {
-  const p = params(net)
-  const before = p.getParams()
-  net.backward(SEQ, TARGETS, lr)
-  const after = p.getParams()
-  p.setParams(before.map((b, i) => b - (after[i] - b)))
-}
-
 describe('RNN oracle', () => {
   it('smoke: forward is finite, backward reports the MSE and moves the weights', () => {
     const net = build()
@@ -72,9 +63,7 @@ describe('RNN oracle', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: src/RNN.ts dOutputs = 2*diff/out has the wrong sign for the
-  // `w + lr*g` optimizers (measured cosine -1).
-  it.fails('oracle: backward() follows -dL/dw from finite differences (cosine > 0.999)', () => {
+  it('oracle: backward() follows -dL/dw from finite differences (cosine > 0.999)', () => {
     const net = build()
     const r = expectGradientMatches({
       ...params(net),
@@ -88,8 +77,7 @@ describe('RNN oracle', () => {
     expect(r.cosine).toBeGreaterThan(0.999)
   })
 
-  // AUDIT C1: the loss grows instead of dropping.
-  it.fails('learns: the loss drops below half after a few hundred steps', () => {
+  it('learns: the loss drops below half after a few hundred steps', () => {
     const net = build()
     expectLearns({
       loss: () => loss(net),
@@ -98,17 +86,5 @@ describe('RNN oracle', () => {
       },
       steps: 300,
     })
-  })
-
-  it('control: with the delta negated by hand the update follows -dL/dw (cosine ~ +1)', () => {
-    const net = build()
-    const r = gradientOracle({
-      ...params(net),
-      loss: () => loss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-      resetRng: () => net.reset(),
-    })
-    expect(r.cosine).toBeGreaterThan(0.999)
   })
 })
