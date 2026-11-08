@@ -23,10 +23,8 @@
 //   - Gradiente: dL/dW_k = (P_k - 1{k=y}) x, dL/db_k = (P_k - 1{k=y}).
 //   - Limitacion: el oraculo mide con sesgos 0 (el estado con que train() arranca).
 //
-// Defecto encontrado al escribir T027 (no corregido aqui, ver informe): predict() y
-// predictProba() lanzan si `weights` se asigna a mano sin un train() previo, porque
-// validan contra `_nFeatures`, campo privado que solo fija train(). Por eso las pruebas
-// de predict parten de un estado obtenido con train().
+// predict() y predictProba() validan contra la forma de `weights` (N7, feature 005), así
+// que también funcionan con pesos asignados a mano (ver el bloque final de este archivo).
 //
 // Helpers usados sin modificar: gradientOracle (bindParams, expectGradientMatches) y
 // expectLearns. La semilla global (tests/setup.ts) fija Math.random en cada test.
@@ -278,19 +276,17 @@ describe('SoftmaxRegression oraculo', () => {
   })
 })
 
-// AUDIT N7 (feature 005): predict/predictProba validate against the private
-// `_nFeatures`, which only train() sets, so a model whose public `weights`
-// were assigned by hand throws instead of predicting. Remove `.fails` when
-// the validation uses weights.length (or the fields stop being public).
-describe('API: pesos asignados sin train() (AUDIT N7)', () => {
-  it.fails('LogisticRegression.predict funciona con weights/bias asignados a mano', () => {
+// N7 (feature 005): predict/predictProba validan contra `weights`, así que un modelo con
+// pesos asignados a mano (sin train) predice.
+describe('API: pesos asignados sin train() (N7)', () => {
+  it('LogisticRegression.predict funciona con weights/bias asignados a mano', () => {
     const m = new LogisticRegression()
     m.weights = [...LR_W0]
     m.bias = LR_B0
     expect(Number.isFinite(m.predict(LR_X))).toBe(true)
   })
 
-  it.fails('SoftmaxRegression.predictProba funciona con weights/biases asignados a mano', () => {
+  it('SoftmaxRegression.predictProba funciona con weights/biases asignados a mano', () => {
     const m = new SoftmaxRegression()
     m.weights = SM_W0.map((r) => [...r])
     m.biases = [...SM_B0]
