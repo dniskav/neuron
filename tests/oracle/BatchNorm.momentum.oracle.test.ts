@@ -1,22 +1,11 @@
-// Gradient-oracle test for BatchNorm with momentum < 1 (feature 002, T041).
+// Test de oráculo de gradiente para BatchNorm.backward con cualquier momentum.
 //
-// AUDIT N2: con momentum m < 1 (0.1 por defecto) forward() actualiza
-// runningMean / runningVar con la propia x y NORMALIZA con esas estadisticas ya
-// actualizadas. Como x - mean_nuevo = m * (x - mean_viejo), la salida depende de
-// x con pendiente ~ m * gamma / std, mientras que backward() devuelve
-// dOut * gamma / std (estadisticas como constantes, sin el factor m).
-//
-// Medido (diferencias finitas sobre forward, partiendo siempre de las mismas
-// estadisticas): con m = 0.1 la DIRECCION es casi correcta (coseno 0.9995-1.0000
-// en las entradas de este test; 0.91 en entradas extremas) pero la MAGNITUD de
-// backward es ~1/m = ~10x la real. El coseno por si solo no la ve, asi que
-// el test fija las dos cosas: coseno > 0.9 y razon de normas en (8, 13).
-//
-// Es una aproximacion del gradiente (stop-gradient sobre las estadisticas), no
-// un error de signo: excepcion justificada (Constitucion II). Con momentum = 1
-// las estadisticas no cambian y backward es exacto (control abajo y en
-// BatchNorm.oracle.test.ts). La correccion exacta (propagar por media/varianza o
-// normalizar con las estadisticas previas) va a la feature 004; no se toca src/.
+// forward() actualiza runningMean / runningVar con la propia x y NORMALIZA con
+// esas estadisticas ya actualizadas. backward() devuelve la derivada EXACTA de
+// esa salida respecto a x (incluida la dependencia de la varianza):
+//   dy/dx = gamma * (m/s - (1-m) * m^3 * u^2 / s^3),  u = x - media_vieja.
+// Se compara por componente con -dL/dx por diferencias finitas sobre forward,
+// partiendo siempre de las mismas estadisticas, para m en {0, 0.1, 0.5, 0.9, 1}.
 import { describe, it, expect } from 'vitest'
 import { BatchNorm } from '../../src/BatchNorm'
 import { mulberry32 } from '../helpers/seed'
@@ -63,8 +52,10 @@ function makeCase(seed: number): Case {
   }
 }
 
+const MOMENTA = [0, 0.1, 0.5, 0.9, 1]
+
 // backward() frente a -dL/dx por diferencias finitas, con L = 0.5*sum (t-y)^2.
-function compareBackwardWithFD(c: Case, momentum: number): { cos: number; ratio: number } {
+function compare(c: Case, momentum: number) {
   const bn = new BatchNorm(DIM, momentum)
   const reset = () => {
     bn.runningMean = [...c.rm]
@@ -91,26 +82,56 @@ function compareBackwardWithFD(c: Case, momentum: number): { cos: number; ratio:
   })
   expect(dX.every(Number.isFinite)).toBe(true)
   expect(negGradFD.every(Number.isFinite)).toBe(true)
-  return { cos: cosine(dX, negGradFD), ratio: norm(dX) / norm(negGradFD) }
+  return { dX, negGradFD, cos: cosine(dX, negGradFD), ratio: norm(dX) / norm(negGradFD) }
+}
+
+function expectExact(c: Case, momentum: number) {
+  const { dX, negGradFD, cos, ratio } = compare(c, momentum)
+  dX.forEach((v, i) => expect(Math.abs(v - negGradFD[i])).toBeLessThan(1e-6))
+  // m = 0: la salida no depende de x (todo es 0), no hay direccion que comparar.
+  if (momentum > 0) {
+    expect(cos).toBeGreaterThan(0.999)
+    expect(Math.abs(ratio - 1)).toBeLessThan(1e-4)
+  }
+}
+
+// Extremos: entradas +-3 y varianzas muy distintas; |u|/s >= 2 en varios canales.
+const EXTREME: Case = {
+  input: [3, -3, 2.5],
+  target: [0.7, 0.2, -0.4],
+  gamma: [0.9, 1.2, 0.6],
+  beta: [0.1, -0.2, 0.05],
+  rm: [-0.5, 0.4, 0],
+  rv: [0.05, 0.3, 5],
 }
 
 const CASES: [string, Case][] = [
   ['constantes de T012', FIXED],
   ...[1, 2, 3, 4, 5].map((s): [string, Case] => [`semilla ${s}`, makeCase(s)]),
+  ['extremo +-3, varianzas distintas', EXTREME],
 ]
 
-describe('BatchNorm momentum < 1 (AUDIT N2)', () => {
-  it.each(CASES)('AUDIT N2: momentum 0.1, %s: direccion correcta, magnitud ~10x', (_name, c) => {
-    const { cos, ratio } = compareBackwardWithFD(c, 0.1)
-    expect(cos).toBeGreaterThan(0.9)
-    // backward no es exacto: la magnitud se desvia ~1/m = ~10x.
-    expect(ratio).toBeGreaterThan(8)
-    expect(ratio).toBeLessThan(13)
+describe('BatchNorm.backward exacto (N2)', () => {
+  describe.each(MOMENTA)('momentum %s', momentum => {
+    it.each(CASES)('%s: coincide con -dL/dx por diferencias finitas', (_n, c) => {
+      expectExact(c, momentum)
+    })
   })
 
-  it.each(CASES)('control: momentum 1, %s: coseno ~ 1 y razon ~ 1', (_name, c) => {
-    const { cos, ratio } = compareBackwardWithFD(c, 1)
-    expect(cos).toBeGreaterThan(0.99999)
-    expect(Math.abs(ratio - 1)).toBeLessThan(1e-4)
+  it('caso |u|/s >= 2 donde el termino de la varianza supera el 5 % del total', () => {
+    const m = 0.5
+    const c = EXTREME
+    const bn = new BatchNorm(DIM, m)
+    bn.runningMean = [...c.rm]
+    bn.runningVar = [...c.rv]
+    // Canal 0: u = 3.5, var_nueva = m*0.05 + (1-m)*m^2*u^2, s^2 ~ 1.55
+    const u = c.input[0] - c.rm[0]
+    const varNew = m * c.rv[0] + (1 - m) * m * m * u * u
+    const s = Math.sqrt(varNew + 1e-5)
+    expect(Math.abs(u) / s).toBeGreaterThanOrEqual(2)
+    const first = m / s
+    const second = ((1 - m) * m ** 3 * u * u) / s ** 3
+    expect(second / first).toBeGreaterThan(0.05)
+    expectExact(c, m)
   })
 })

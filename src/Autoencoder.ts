@@ -142,10 +142,12 @@ export class Autoencoder {
   //
   // Gradient flow:
   //   1. Forward:  z = encoder(x),  x̂ = decoder(z)
-  //   2. Compute MSE output deltas at x̂: δᵢ = (xᵢ − x̂ᵢ) · act'(x̂ᵢ)
-  //   3. Walk backward through decoder layers to get ∂L/∂z (BEFORE updating weights)
-  //   4. Update decoder weights via trainWithDeltas(z, outputDeltas, lr)
-  //   5. Update encoder weights via trainWithDeltas(x, dLdz, lr)
+  //   2. Compute MSE output deltas at x̂: δᵢ = (2/d)(xᵢ − x̂ᵢ) · act'(x̂ᵢ)
+  //   3. ∂L/∂z = decoder.inputGradient(z, outputDeltas) (BEFORE updating weights)
+  //   4. Update encoder weights via trainWithDeltas(x, dLdz, lr)
+  //   5. Update decoder weights via trainWithDeltas(z, outputDeltas, lr)
+  //
+  // A residual skip on the LAST layer of the decoder (or encoder) throws (Q2).
   //
   // Returns the MSE reconstruction loss: (1/d) · Σᵢ (xᵢ − x̂ᵢ)².
   train(x: number[], lr: number): number {
@@ -161,61 +163,37 @@ export class Autoencoder {
 
     const loss = mse(xHat, x);
 
-    // ── Output-layer deltas: δᵢ = (xᵢ − x̂ᵢ) · act'(x̂ᵢ) ─────────────────
+    // ── Output-layer deltas: δᵢ = (2/d) · (xᵢ − x̂ᵢ) · act'(x̂ᵢ) ───────────
+    // L = (1/d)·Σ(xᵢ − x̂ᵢ)² (the MEAN MSE this method returns), so
+    // −∂L/∂x̂ᵢ = (2/d)·(xᵢ − x̂ᵢ). The step is therefore exactly the gradient of the
+    // returned loss (AUDIT N10). Before, the 2/d factor was missing and the step was
+    // d/2 times larger (1.5x with d = 3), so the effective lr is now d/2 times smaller:
+    // to keep the old dynamics, multiply lr by d/2.
+    const d             = x.length;
     const decoderOutAct = this.decoder.layers[this.decoder.layers.length - 1].neurons[0].activation;
-    const outputDeltas  = xHat.map((xh, i) => (x[i] - xh) * decoderOutAct.dfn(xh));
+    const outputDeltas  = xHat.map((xh, i) => (2 / d) * (x[i] - xh) * decoderOutAct.dfn(xh));
 
-    // ── Propagate deltas backward through all decoder layers to reach ∂L/∂z ─
-    // We walk through the decoder layer stack manually (using CURRENT weights,
-    // before any update) to compute the gradient at the decoder's input (= z).
-    //
-    // For each layer l (from output to input):
-    //   ∂L/∂aₗ[j] = Σk δ[k] · W[k][j]    error backpropagated to layer l input
-    //   δₗ₋₁[j]   = ∂L/∂aₗ[j] · act'(aₗ₋₁[j])   (chain rule through activation)
-    //
-    // We need the post-activation values at each decoder layer to apply act'.
-    // We recompute them with a fresh forward pass before mutating anything.
-    const decoderLayers  = this.decoder.layers;
-    const decoderActVals: number[][] = [z];
-    let cur = [...z];
-    for (const layer of decoderLayers) {
-      cur = layer.predict(cur);
-      decoderActVals.push(cur);
-    }
+    // ── ∂L/∂z through the decoder, BEFORE any weight is updated ───────────
+    // decoder.inputGradient(z, outputDeltas) = −dL/dz with the weights of this step. It
+    // reuses NetworkN's own backward pass, so residual connections and dropout masks of
+    // the decoder are honoured (the old hand-written layer walk ignored both: cosine
+    // 0.9949 with residual). Same pattern as VAE. If the decoder's LAST layer has a
+    // residual skip it throws (Q2, same as VAE/GAN) before touching any weight.
+    const gz = this.decoder.inputGradient(z, outputDeltas);
 
-    let deltas = outputDeltas;
-    for (let l = decoderLayers.length - 1; l >= 0; l--) {
-      const layer   = decoderLayers[l];
-      const prevAct = decoderActVals[l];               // input activations to layer l
-      const prevLayerActivation = l > 0
-        ? decoderLayers[l - 1].neurons[0].activation
-        : null;                                         // null = latent input (no act')
-
-      // Compute gradient at layer l's INPUT
-      const prevDeltas = prevAct.map((out, j) => {
-        const errProp = layer.neurons.reduce((s, n, k) => s + deltas[k] * n.weights[j], 0);
-        return prevLayerActivation ? errProp * prevLayerActivation.dfn(out) : errProp;
-      });
-
-      deltas = prevDeltas;
-    }
-
-    // `deltas` now holds ∂L/∂z — the gradient at the encoder's output.
-    // Those values are the gradient w.r.t. the encoder's OUTPUT (post-activation z).
-    // trainWithDeltas expects deltas at the pre-activation of the output layer, so we
-    // apply the chain rule through the encoder's output activation: δz[k] = dLdz[k]·act'(z[k]).
-    // (act' takes the post-activation value, same convention as the decoder above.)
-    // Without this factor the encoder step was off by act'(z) (~4x for sigmoid) (AUDIT N6).
+    // gz is the gradient at the encoder's OUTPUT (post-activation z). trainWithDeltas
+    // expects deltas at the pre-activation of the output layer, so apply the chain rule
+    // through the encoder's output activation: δz[k] = gz[k]·act'(z[k]) (AUDIT N6).
     const encoderOutAct = this.encoder.layers[this.encoder.layers.length - 1].neurons[0].activation;
-    const dLdz = deltas.map((d, k) => d * encoderOutAct.dfn(z[k]));
+    const dLdz = gz.map((g, k) => g * encoderOutAct.dfn(z[k]));
 
-    // ── Update decoder weights (after we have extracted ∂L/∂z) ───────────
-    this.decoder.trainWithDeltas(z, outputDeltas, lr);
-
-    // ── Update encoder weights ────────────────────────────────────────────
-    // dLdz acts as the output-layer delta for the encoder:
-    //   encoder output neuron k receives gradient dLdz[k].
+    // ── Updates ───────────────────────────────────────────────────────────
+    // Encoder first: it only needs dLdz (already computed), and if its last layer has a
+    // residual skip trainWithDeltas throws before the decoder is modified, so a failing
+    // call never leaves a half-updated model. The two sub-networks share no weights, so
+    // the order does not change the result.
     this.encoder.trainWithDeltas(x, dLdz, lr);
+    this.decoder.trainWithDeltas(z, outputDeltas, lr);
 
     return loss;
   }

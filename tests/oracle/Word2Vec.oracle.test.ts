@@ -1,4 +1,4 @@
-// Gradient-oracle test for Word2Vec (feature 002, T029).
+// Test de oráculo de gradiente para Word2Vec.
 //
 // Perdida derivada del codigo: softmax COMPLETO sobre el vocabulario (no hay muestreo
 // negativo ni nada aleatorio en train()). Skip-gram: L = -log softmax(h . W2)[ctx] con
@@ -16,21 +16,30 @@
 // pares de la frase (train() hace un paso por par, secuencialmente, sin promediar). Con lr
 // pequeno la secuencia coincide con el gradiente de la suma a primer orden.
 //
-// Nota (defecto menor, no corregido aqui): _skipgramStep/_cbowStep calculan dh con W2 ya
-// actualizado (comentario "minor approx" en src). Error O(lr); el coseno sigue ~1 con lr
-// pequeno. Ver informe.
-//
-// Observacion medida: skip-gram con lr=0.1 sobre este corpus diverge (perdida 0.6 -> 18.4 tras
-// 300 epocas); con lr=0.03 converge (0.51). CBOW converge con 0.1. Los tests de aprendizaje de
-// skip-gram usan lr=0.03. No se ha demostrado que sea un defecto (puede ser inestabilidad SGD).
+// dh de _skipgramStep/_cbowStep usa la W2 PREVIA: todos los gradientes se evalúan en el mismo
+// punto y solo después se actualiza W2. Medido (5 semillas de init, 300 épocas, corpus de prueba):
+//   - skip-gram con lr=0.1 no diverge: la pérdida final queda en ~0.52 (test de abajo).
+//   - Los oráculos de TODA la frase (varios pares, un paso SGD secuencial por par) NO pueden
+//     alcanzar coseno > 0.999 a lr alto aunque el código sea correcto: la secuencia de pasos
+//     difiere del gradiente de la suma en O(lr) por el orden de los pares. Cosenos medidos
+//     (peor de 5 semillas): skip-gram lr 0.05: 0.9982; lr 0.1: 0.9925; CBOW lr 0.05: 0.9994;
+//     lr 0.1: 0.9975. Por eso el oráculo de frase se mantiene a lr=1e-3 (coseno ~1), y la
+//     detección a lr alto se hace con pruebas de UN SOLO paso de UN par (lr=0.5, error máximo
+//     1e-9 por componente contra diferencias finitas), que son exactas, y con la prueba de no
+//     divergencia de skip-gram a lr=0.1.
 //
 // Helpers usados sin modificar: gradientOracle (bindParams, expectGradientMatches) y expectLearns.
 import { describe, it, expect } from 'vitest'
 import { Word2Vec } from '../../src/Word2Vec'
 import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
+import { seedRandom } from '../helpers/seed'
 
-type Internals = { _W2: number[][] }
+type Internals = {
+  _W2: number[][]
+  _skipgramStep(center: number, target: number, lr: number): number
+  _cbowStep(center: number, context: number[], lr: number): number
+}
 
 const SENTENCES = [['a', 'b', 'c', 'd']]
 const DIM = 3
@@ -140,5 +149,72 @@ describe('Word2Vec oraculo', () => {
       step: () => void m.train(SENTENCES, 0.1, 1),
       steps: 300,
     })
+  })
+  // Un paso de UN par: delta = -lr * grad de la perdida de ese par, exacto (sin efecto de orden).
+  function singleStep(model: 'skipgram' | 'cbow', seed: number, lr: number) {
+    seedRandom(seed)
+    const { m, W2 } = build(model)
+    const it = m as unknown as Internals
+    const pairLoss = () =>
+      model === 'skipgram'
+        ? ce(m.embeddings[1], W2, 2)
+        : ce(
+            Array.from({ length: DIM }, (_, d) => (m.embeddings[0][d] + m.embeddings[3][d]) / 2),
+            W2,
+            2,
+          )
+    const { getParams, setParams } = bindParams(m.embeddings, W2)
+    const p0 = [...getParams()]
+    const eps = 1e-5
+    const grad = p0.map((_, i) => {
+      const plus = [...p0]
+      plus[i] += eps
+      const minus = [...p0]
+      minus[i] -= eps
+      setParams(plus)
+      const lp = pairLoss()
+      setParams(minus)
+      const lm = pairLoss()
+      return (lp - lm) / (2 * eps)
+    })
+    setParams([...p0])
+    if (model === 'skipgram') it._skipgramStep(1, 2, lr)
+    else it._cbowStep(2, [0, 3], lr)
+    const p1 = getParams()
+    let maxErr = 0
+    p0.forEach((v, i) => {
+      maxErr = Math.max(maxErr, Math.abs(p1[i] - v - -lr * grad[i]))
+    })
+    return maxErr
+  }
+
+  for (const model of ['skipgram', 'cbow'] as const) {
+    it(`un paso ${model} (lr=0.5, y x0.97/x1.03, 5 semillas): delta = -lr*grad exacto, 1e-9`, () => {
+      for (const lr of [0.5, 0.5 * 0.97, 0.5 * 1.03]) {
+        for (const seed of [1, 2, 3, 4, 5]) {
+          expect(singleStep(model, seed, lr)).toBeLessThan(1e-9)
+        }
+      }
+    })
+  }
+
+  it('skip-gram lr=0.1 no diverge (antes 1.35 -> 18.4; ahora ~0.52): final < 0.5 * inicial', () => {
+    for (const lr of [0.1, 0.1 * 0.97, 0.1 * 1.03]) {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const m = new Word2Vec(DIM, { windowSize: 1 })
+        const losses = m.train(SENTENCES, lr, 300)
+        expect(losses[losses.length - 1]).toBeLessThan(losses[0] * 0.5)
+      }
+    }
+  })
+
+  it('CBOW converge con lr=0.1 (5 semillas): final < 0.5 * inicial', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      seedRandom(seed)
+      const m = new Word2Vec(DIM, { windowSize: 1, model: 'cbow' })
+      const losses = m.train(SENTENCES, 0.1, 300)
+      expect(losses[losses.length - 1]).toBeLessThan(losses[0] * 0.5)
+    }
   })
 })

@@ -30,8 +30,14 @@
 //   4. Update D: maximise log D(x) + log(1 - D(x̂))
 //      → delta_real = (1 - D(x))·D(x)·(1-D(x))      (label = 1)
 //      → delta_fake = (0 - D(x̂))·D(x̂)·(1-D(x̂))   (label = 0)
-//   5. Update G: maximise log D(G(z))
-//      → provide gradient that pushes D(G(z)) → 1
+//   5. Update G: minimise -log D(G(z2)) with a fresh z2 and the D just updated.
+//      The gradient flows through D (frozen: D.inputGradient does not touch its
+//      weights) and through G's output derivative, then trainWithDeltas.
+//
+// Contract: D must have a SIGMOID output (BCE deltas `1 - D` / `-D` assume it).
+// This is documented, not validated. The generator step is exact w.r.t. D at
+// its post-update weights; an oracle that freezes D at the pre-step weights
+// differs by O(lr).
 //
 
 import { NetworkN, NetworkNOptions } from "./NetworkN";
@@ -115,26 +121,22 @@ export class GAN {
 
       // ── Generator update (wants D to output 1 for fake samples) ────────
       //
-      // We cannot backprop through the discriminator directly, so we use a
-      // proxy: train the generator to produce outputs that the (now-updated)
-      // discriminator rates as real.
-      //
-      // Practical approach: run D on the fake sample, compute the error
-      // signal as if the real label were 1, then use that signal to compute
-      // generator output deltas via the chain rule approximation.
-      //
+      // L_G = -log D(G(z2)). Chain rule, with D FROZEN at its current weights
+      // (the ones it has just after its own update above; the update order is
+      // D first, then G):
+      //   -dL/dD            = 1 / D
+      //   deltaD            = dfn_D(D) / D          (sigmoid output: 1 - D)
+      //   dxHat             = D.inputGradient(xFake2, [deltaD])   = -dL/dx̂
+      //   gDelta[i]         = dxHat[i] · dfn_G(x̂_i)   (delta of G's output layer)
+      // inputGradient does not modify any weight of D, so only G learns here.
+      // Math.random order is unchanged: z, then z2.
       const z2 = this.sampleLatent();
       const xFake2 = this.generate(z2);
       const dScore = Math.max(eps, Math.min(1 - eps, this.discriminate(xFake2)));
-
-      // Error from generator's perspective: it wants D(G(z)) = 1
-      const gError = 1 - dScore;  // how far we are from fooling D
-
-      // Approximate gradient w.r.t. generator output:
-      // ∂L_G/∂x̂ ≈ -D'(x̂) where D' is the discriminator's input sensitivity.
-      // We estimate this by the sign of the discriminator's "wish": push x̂
-      // toward what D considers real, i.e. use dScore's complementary error.
-      const gDelta = xFake2.map(() => gError / xFake2.length);
+      const dOutAct = this.discriminator.layers[this.discriminator.layers.length - 1].neurons[0].activation;
+      const dxHat = this.discriminator.inputGradient(xFake2, [dOutAct.dfn(dScore) / dScore]);
+      const gOutLayer = this.generator.layers[this.generator.layers.length - 1];
+      const gDelta = xFake2.map((xh, i) => dxHat[i] * gOutLayer.neurons[i].activation.dfn(xh));
       this.generator.trainWithDeltas(z2, gDelta, lr);
       gLossSum += -Math.log(dScore);
     }
