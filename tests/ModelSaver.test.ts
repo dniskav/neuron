@@ -13,6 +13,14 @@ describe('ModelSaver', () => {
     expect(data.timestamp).toBeDefined()
   })
 
+  it('toJSON guarda format: 1, length y structure (T006)', () => {
+    const net = new NetworkN([2, 4, 1])
+    const data = JSON.parse(ModelSaver.toJSON(net))
+    expect(data.format).toBe(1)
+    expect(data.length).toBe(net.getWeights().length)
+    expect(data.structure).toEqual([2, 4, 1])
+  })
+
   it('fromJSON restores weights', () => {
     const net = new NetworkN([2, 4, 1])
     const origWeights = net.getWeights()
