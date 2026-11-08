@@ -13,7 +13,7 @@
 //                ([]/[]), and with tanh in hidden+latent layers so act' varies. Per block
 //                (encoder, decoder) too.
 //   3. learns  - expectLearns: reconstruction MSE on a fixed mini-set drops below half.
-// The optimizer is plain SGD, so no Adam patch (Q1) is needed.
+// The optimizer is plain SGD.
 import { describe, it, expect } from 'vitest'
 import { Autoencoder } from '../../src/Autoencoder'
 import { SGD } from '../../src/optimizers'
@@ -157,7 +157,7 @@ describe('Autoencoder oracle (building blocks)', () => {
   }
 })
 
-// T013 gap 1: dfn(z[k]) of the encoder, a different unit each time.
+// act'(z[k]) of the encoder is taken per latent unit (dfn(z[k]), a different unit each time).
 // Latent of 3 units with large weights and very different biases in the latent layer, so z
 // (tanh) is saturated in some units and not in others and act'(z[k]) differs a lot per unit.
 // A `dfn(z[0])` mutant (the same factor for every unit) breaks the encoder block.
@@ -194,8 +194,8 @@ describe("Autoencoder oracle (latent act' per unit, T013)", () => {
   }
 })
 
-// T013 gap 4: residual / dropout in the decoder (train() used to walk the decoder by hand
-// and ignored both; now it uses decoder.inputGradient like VAE).
+// Residual and dropout in the decoder: train() takes dL/dz from decoder.inputGradient, so
+// both are honoured in the gradient, as in VAE.
 describe('Autoencoder oracle (decoder with residual / dropout, T013)', () => {
   const SEEDS = [1, 2, 3, 4, 5]
   const LR_FACTORS = [0.97, 1.03]
@@ -217,8 +217,8 @@ describe('Autoencoder oracle (decoder with residual / dropout, T013)', () => {
     })
   }
 
-  // Decoder [2,2,2,4]: two hidden layers (2 -> 2) with residual and a dropout after each,
-  // 4 Math.random draws per forward. The encoder has no hidden layer, so it has no dropout
+  // Decoder [2,2,2,4]: two hidden layers (2 -> 2) with a dropout after each (and residual in
+  // the 'dropout + residual' case), 4 Math.random draws per forward. The encoder has no hidden layer, so it has no dropout
   // and the decoder's draws are the only ones. Math.random is replaced by a cycle of period
   // 4: predict(z, true), inputGradient and trainWithDeltas then draw the SAME mask, and the
   // cycle restarts before every loss()/step() (fixed mask).
@@ -296,12 +296,12 @@ describe('Autoencoder oracle (decoder with residual / dropout, T013)', () => {
   })
 })
 
-// ─── T015 (Q9): one dropout mask per step ────────────────────────────────────
+// ─── One dropout mask per step ───────────────────────────────────────────────
 // Golden (dropoutRate = 0): 5 train() steps with seedRandom(42) on a [3,[4],2,[4]] SGD model,
-// lr 0.5. Constants captured on the base BEFORE touching src (digest of each block: count, sum,
-// sum of w_i*(i+1) and sum of squares; tolerance 1e-9), together with the number of Math.random
-// calls inside the 5 steps (0: the autoencoder itself draws nothing). With dropoutRate = 0 the
-// change must not alter either the trajectory or the generator use.
+// lr 0.5. The constants are a digest of each block (count, sum, sum of w_i*(i+1) and sum of
+// squares; tolerance 1e-9), plus the number of Math.random calls inside the 5 steps (0: the
+// autoencoder itself draws nothing). With dropoutRate = 0 the trajectory and the generator use
+// must be unchanged.
 describe('Autoencoder dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
   const XS = [
     [0.2, 0.7, 0.5],
@@ -351,8 +351,8 @@ describe('Autoencoder dropoutRate = 0 is unchanged by reuseMasks (T015 golden)',
 // Dropout in BOTH sub-networks (the options are shared): encoder [4,[3],2] has 3 draws, decoder
 // [2,[3,3],4] has 6, in the order encoder.predict(x, true), decoder.predict(z, true). The loss is
 // the reconstruction MSE with the mask of THAT step: reseeding before loss() and step() makes
-// both see the same masks. Before T015 the inputGradient and trainWithDeltas of train() drew
-// other masks (mask seeds 11 and 12, init seeds 1..5, lr x0.97 / x1.03).
+// both see the same masks. train() reuses one mask per sub-network for the loss, the decoder
+// gradient and both updates. Init seeds 1..5, mask seeds 11 and 12, lr x0.97 / x1.03.
 describe('Autoencoder with dropout in encoder and decoder: one mask per step (T015, Q9)', () => {
   const X4b = [0.2, 0.7, 0.5, 0.3]
   const SEEDS = [1, 2, 3, 4, 5]

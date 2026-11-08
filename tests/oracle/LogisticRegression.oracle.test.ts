@@ -1,4 +1,4 @@
-// Gradient-oracle test for LogisticRegression and SoftmaxRegression (feature 002, T027).
+// Gradient-oracle test for LogisticRegression and SoftmaxRegression.
 //
 // Convencion (constitucion II): train() hace w + lr*g con g = -dL/dw; un modelo correcto
 // da coseno ~ +1 entre el paso real y -dL/dw por diferencias finitas. Con una muestra y
@@ -13,13 +13,13 @@
 //
 // SoftmaxRegression (CE: L = -log softmax(scores)[y]):
 //   - `weights[k][j]` y `biases[k]` son publicos.
-//   - Desde T014 (Q7) train() CONTINUA desde los pesos existentes si su forma coincide con
-//     los datos, asi que el paso es `train(X, y, lr, 1)` real, sin stub de Math.random, y el
-//     oraculo mide desde cualquier punto (tambien con sesgos distintos de 0).
+//   - train() CONTINUA desde los pesos existentes si su forma coincide con los datos, asi que
+//     el paso es `train(X, y, lr, 1)` real, sin stub de Math.random, y el oraculo mide desde
+//     cualquier punto (tambien con sesgos distintos de 0).
 //   - Gradiente: dL/dW_k = (P_k - 1{k=y}) x, dL/db_k = (P_k - 1{k=y}).
 //
-// predict() y predictProba() validan contra la forma de `weights` (N7, feature 005), así
-// que también funcionan con pesos asignados a mano (ver el bloque final de este archivo).
+// predict() y predictProba() validan contra la forma de `weights`, así que también funcionan
+// con pesos asignados a mano (ver el bloque final de este archivo).
 //
 // Helpers usados sin modificar: gradientOracle (bindParams, expectGradientMatches) y
 // expectLearns. La semilla global (tests/setup.ts) fija Math.random en cada test.
@@ -248,13 +248,13 @@ describe('SoftmaxRegression oraculo', () => {
       for (let i = 0; i < X.length; i++) s += softmaxCE(m.weights, m.biases, X[i], Y[i])
       return s / X.length
     }
-    // train() continua desde los pesos (desde T014): 200 pasos de 1 epoca acumulan aprendizaje.
+    // train() continua desde los pesos: 200 pasos de 1 epoca acumulan aprendizaje.
     expectLearns({ loss: meanCE, step: () => void m.train(X, Y, 0.5, 1), steps: 200 })
   })
 })
 
-// N7 (feature 005): predict/predictProba validan contra `weights`, así que un modelo con
-// pesos asignados a mano (sin train) predice.
+// predict/predictProba validan contra `weights`, así que un modelo con pesos asignados a mano
+// (sin train) predice.
 describe('API: pesos asignados sin train() (N7)', () => {
   it('LogisticRegression.predict funciona con weights/bias asignados a mano', () => {
     const m = new LogisticRegression()

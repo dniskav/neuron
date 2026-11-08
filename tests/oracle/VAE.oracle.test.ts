@@ -8,17 +8,17 @@
 //                Global and per block (decoder, encoder, mu, logVar), for 5 init seeds and
 //                lr x0.97 / x1.03: cosine > 0.999 AND ratio in [0.9, 1.1] (the ratio is what
 //                detects a wrong constant such as the missing factor 2 or dfn of the output).
-//                The optimizer is the default SGD, so no Adam patch (Q1).
-//   3. learns  - Q5: the encoder carries information about the input, causally:
+//                The optimizer is the default SGD.
+//   3. learns  - the encoder carries information about the input, causally:
 //                MSE(x, decode(mu(x))) < 0.5 * MSE(x, decode(mu(x'))) for another input x', and
 //                MSE(x, decode(mu(x))) < 0.5 * MSE of predicting the mean. The spread of mu is
 //                only informative. Robust over 5 seeds x lr {0.7, 1, 1.3} (base lr 1.0).
 //
 // Lo que se verifica: el encoder recibe -dMSE/dz a través de z = mu + sigma * eps; los deltas del
 // decoder y del encoder llevan la derivada de su salida; el delta del decoder lleva el factor 2 de
-// dMSE/dx_hat. La salida del encoder es lineal (Q3).
+// dMSE/dx_hat. La salida del encoder es lineal: mu y logVar no quedan confinados a (0, 1).
 //
-// Q4 (measured): with klWeight = 1 (MSE averaged over n, KL summed over the latent) the
+// Measured: with klWeight = 1 (MSE averaged over n, KL summed over the latent) the
 // posterior collapses: mu is constant (spread ~3e-3) and the loss stays at the mean predictor
 // (self/mean ~1.0) for lr 0.35..0.65 and 5 seeds. "learns" therefore uses klWeight = 0.003
 // (measured: self/cross 0.14-0.16 and self/mean ~0.34 for 5 seeds x lr 0.7..1.3).
@@ -290,7 +290,7 @@ describe('VAE learns', () => {
   })
 })
 
-// T013 gap 3: the totalLoss that train() returns carries klWeight (recon + beta * kl).
+// The totalLoss that train() returns carries klWeight: recon + beta * kl.
 describe('VAE totalLoss with klWeight (T013)', () => {
   for (const beta of [2.5, 0, 1]) {
     it(`beta = ${beta}: totalLoss = recon + beta * kl, computed independently`, () => {
@@ -318,12 +318,12 @@ describe('VAE totalLoss with klWeight (T013)', () => {
   }
 })
 
-// ─── T015 (Q9): one dropout mask per step ────────────────────────────────────
+// ─── One dropout mask per step ───────────────────────────────────────────────
 // Golden (dropoutRate = 0): 5 train() steps with seedRandom(42) on VAE(3,[4],2,[4]) with SGD,
-// klWeight 0.05, lr 0.5. Constants captured on the base BEFORE touching src (digest of each
-// block: count, sum, sum of w_i*(i+1) and sum of squares; 1e-9) plus the number of Math.random
-// calls in the 5 steps (20 = 2 latent x 2 Box-Muller draws x 5): same trajectory, same order
-// and number of draws as before when there is no dropout.
+// klWeight 0.05, lr 0.5. The constants are a digest of each block (count, sum, sum of
+// w_i*(i+1) and sum of squares; 1e-9) plus the number of Math.random calls in the 5 steps
+// (20 = 2 latent x 2 Box-Muller draws x 5). With dropoutRate = 0 the trajectory, the draw order
+// and the number of draws must be unchanged.
 describe('VAE dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
   const XS = [
     [0.2, 0.7, 0.5],
@@ -373,8 +373,8 @@ describe('VAE dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
 // VAE(3,[4],2,[4]) with dropoutRate 0.3 in both sub-networks (shared options). The draws of one
 // training pass are, in order: encoder hidden (4), eps (2 x 2, Box-Muller), decoder hidden (4).
 // The reference loss follows that order with the same reseed, so loss() and step() see the same
-// encoder mask, the same eps and the same decoder mask. Before T015 train() ran its forward
-// without dropout and the decoder's inputGradient / trainWithDeltas drew their own masks.
+// encoder mask, the same eps and the same decoder mask. train() uses that same forward for the
+// loss, the decoder gradient and both updates.
 describe('VAE with dropout: one mask per step (T015, Q9)', () => {
   const MASK_SEEDS = [21, 22]
   const BETA = 0.5

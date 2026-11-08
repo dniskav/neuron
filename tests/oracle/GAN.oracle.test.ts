@@ -3,23 +3,25 @@
 //   1. smoke   - generate/discriminate have the right sizes and ranges, and trainStep
 //                returns finite losses that match an independent computation.
 //   2. oracle  - generator: la actualización de G sigue -dL/dw de L_G = -log D(G(z)) con D
-//                congelado; el gradiente pasa por D.inputGradient. Pruebas normales (dims 3/2/5,
+//                congelado; el gradiente pasa por D.inputGradient. Sin dropout (dims 3/2/5,
 //                5 semillas, lr x0.97/x1/x1.03; coseno y ratio). Además, el paso de G deja los
 //                pesos de D idénticos a una réplica del propio paso de D.
 //   3. oracle  - discriminador: la actualización de D en trainStep (etiqueta real 1, falsa 0)
 //                sigue -dL/dw de la entropía cruzada binaria. delta = objetivo - predicción es
-//                exactamente el gradiente sigmoide + BCE. Prueba normal.
+//                exactamente el gradiente sigmoide + BCE. Sin dropout; solo se asserta el coseno.
 //   4. learns  - (a) el acercamiento al objetivo se verifica contra un D FIJO escrito a mano,
 //                porque el entrenamiento conjunto no converge de forma robusta a 0.20 (ver
 //                'learns (b)'); (b) el comportamiento conjunto se documenta con una propiedad
 //                acotada y finita.
 //
-// Randomness: trainStep draws z (for D) and then z2 (for G) from Math.random, nothing else.
-// resetRng reseeds Math.random before every loss() and step(); each loss draws the same
-// number of values in the same order, so loss and step see the same z / z2.
+// Randomness: without dropout, trainStep draws z (for D) and then z2 (for G) from Math.random,
+// and nothing else; with dropout it also draws the masks of its forward passes (see the dropout
+// block below). resetRng reseeds Math.random before every loss() and step(); each loss draws the
+// same number of values in the same order, so loss and step see the same z / z2.
 // Assumption: L_G uses D after its own update inside trainStep; the oracle freezes D at its
 // initial weights. The difference is O(lr) (measured: cosine >= 0.9999999, ratio 0.999-1.001).
-// Optimizer is the default SGD, so no Adam patch (Q1). Only the cosine is asserted (Q9).
+// Optimizer is the default SGD. The discriminator oracle asserts only the cosine (its scale is
+// not compared); the generator oracle asserts cosine and ratio.
 import { describe, it, expect } from 'vitest'
 import { GAN } from '../../src/GAN'
 import { SGD } from '../../src/optimizers'
@@ -220,9 +222,8 @@ describe('GAN oracle', () => {
   })
 })
 
-// T013 gap 2: the gLoss value that trainStep returns is -log D(G(z2)) (non-saturating), not
-// -log(1 - D). z is drawn for the discriminator's fake sample, z2 for the generator, in this
-// order, per sample.
+// The gLoss value that trainStep returns is -log D(G(z2)) (non-saturating), not -log(1 - D).
+// z is drawn for the discriminator's fake sample, z2 for the generator, in this order, per sample.
 describe('GAN trainStep gLoss / dLoss values (T013)', () => {
   const mkTwin = () => {
     seedRandom(0x5eed)
@@ -271,12 +272,12 @@ describe('GAN trainStep gLoss / dLoss values (T013)', () => {
   })
 })
 
-// ─── T015 (Q9): one dropout mask per forward ─────────────────────────────────
+// ─── One dropout mask per forward ────────────────────────────────────────────
 // Golden (dropoutRate = 0): 5 trainStep() calls (batch of 1) with seedRandom(42) on
-// GAN(2,[4],3,[4]) with SGD in both networks, lr 0.5. Constants captured on the base BEFORE
-// touching src (digest of each block: count, sum, sum of w_i*(i+1), sum of squares; 1e-9) plus
-// the number of Math.random calls (20 = z and z2, one Box-Muller pair each, x 5): same
-// trajectory, same order and number of draws as before when there is no dropout.
+// GAN(2,[4],3,[4]) with SGD in both networks, lr 0.5. The constants are a digest of each block
+// (count, sum, sum of w_i*(i+1), sum of squares; 1e-9) plus the number of Math.random calls
+// (20 = z and z2, one Box-Muller pair each, x 5). With dropoutRate = 0 the trajectory, the draw
+// order and the number of draws must be unchanged.
 describe('GAN dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
   const XS = [
     [0.2, 0.7, 0.5],
@@ -327,9 +328,9 @@ describe('GAN dropoutRate = 0 is unchanged by reuseMasks (T015 golden)', () => {
 // Discriminator [3,4,1] with dropoutRate 0.3 (4 draws per D forward), generator without dropout.
 // The draws of one trainStep, in order: D(xReal) 4, z 2, D(xFake) 4, z2 2, D(xFake2) 4. The
 // reference losses repeat that order after the same reseed, so loss() and step() see the same
-// masks. Before T015 the scores were computed without dropout and D.trainWithDeltas /
-// D.inputGradient drew their own masks. D is frozen at its initial weights x6 as in the
-// generator oracle above (the difference with D updated first inside trainStep is O(lr)).
+// masks. D is frozen at its initial weights x6 as in the generator oracle above (the
+// difference with D updated first inside trainStep is O(lr)). trainStep scores every D
+// forward in training mode and its update reuses that mask.
 describe('GAN with dropout in the discriminator: one mask per forward (T015, Q9)', () => {
   const MASK_SEEDS = [31, 32]
   const mkDropout = (seed: number) => {

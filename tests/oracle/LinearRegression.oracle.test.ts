@@ -1,10 +1,10 @@
-// Gradient-oracle test for LinearRegression.fitGD (feature 002, T028).
+// Gradient-oracle test for LinearRegression.fitGD.
 //
 // fitGD minimiza MSE = (1/m) Σ (ŷ - y)^2 con ŷ = Xa·W, Xa = [X | 1] (sesgo en la
 // última posición de W). Convención (constitución II): el paso real debe seguir
 // -dL/dw, así que el coseno con el gradiente numérico es ~ +1.
 //
-// Desde T014 (Q7) fitGD CONTINUA desde los pesos existentes si weights.length === nFeatures + 1
+// fitGD CONTINUA desde los pesos existentes si weights.length === nFeatures + 1
 // (solo inicializa a cero si no hay pesos o la forma no coincide). Por eso el paso es un
 // `fitGD(X, y, lr, 1)` real que parte del punto que fija el oráculo, y expectLearns acumula
 // pasos de 1 época. fitNormal se usa como referencia de solución cerrada.

@@ -1,14 +1,15 @@
-// Gradient-oracle test for Network (feature 002, T006; multi-output T007 / I5).
+// Gradient-oracle test for Network (nOutputs = 1, 2 and 3).
 //
 // Template (same structure as NetworkN.oracle.test.ts):
 //   1. smoke   - builds, predicts finite outputs in (0, 1), train() returns the squared error.
 //   2. oracle  - expectGradientMatches: the update train() really performs follows -dL/dw
-//                from central finite differences (cosine ~ 1). Loss = (y - t)^2 = the MSE that
-//                train() returns (N10, Q8); the ratio checks the scale. Optimizer is the default SGD.
+//                from central finite differences (cosine ~ 1). Loss = (y - t)^2, which for one
+//                output is the MSE that train() returns; the ratio checks the scale. Optimizer is
+//                the default SGD.
 //   3. learns  - expectLearns: MSE on fixed data drops below half after a few epochs.
-//   4. T007    - nOutputs = 1, 2 and 3 with a vector target: the oracle covers ALL weights
-//                (hidden and every output neuron), loss = mean_k (y_k - t_k)^2 (T016: the
-//                step is the gradient of the mean MSE; before it was 0.5 * sum_k, ratio n/2).
+//   4. vector  - nOutputs = 1, 2 and 3 with a vector target: the oracle covers ALL weights
+//                (hidden and every output neuron), loss = mean_k (y_k - t_k)^2, the MSE that
+//                train() returns (the output delta carries the factor 2 / nOutputs).
 //                Robustness: 5 seeds x lr * 0.97 / 1.03 -> cosine > 0.999 and
 //                |ratio - 1| < 0.01 in every run (ratio = |delta| / (lr |g|)).
 //                "learns" for nOutputs = 2: both outputs get error < 0.5 x initial with
@@ -108,7 +109,7 @@ describe('Network oracle', () => {
     })
   }
 
-  // N10 (Q8): the step of the HIDDEN weights alone is also the gradient of the mean MSE. The hidden
+  // The step of the HIDDEN weights alone is also the gradient of the mean MSE. The hidden
   // delta derives from the output delta, so scaling only the output layer (not the delta that
   // flows back) would leave the output ratio right and the hidden one wrong. Slice = the first
   // (3 + 1) * 4 weights; ratio = (delta . -g) / (lr |g|^2) on that slice, n = 1 and 3.
@@ -141,7 +142,7 @@ describe('Network oracle', () => {
     })
   }
 
-  // Figures (T007 src, seeds 1..5, lr x0.7 / x1.0 / x1.3, 300 epochs, 3 samples):
+  // Figures (seeds 1..5, lr x0.7 / x1.0 / x1.3, 300 epochs, 3 samples):
   // worst final/initial MSE ratio = 0.0158 (output 0) and 0.0694 (output 1).
   // Threshold is 0.5; the robustness rule requires the worst case below 0.7 x 0.5 = 0.35.
   // Oracle (nOutputs 2 and 3, seeds 1..5, lr x0.97/x1.03): min cosine 0.9999999999999997,
