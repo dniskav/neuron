@@ -1,18 +1,17 @@
-// Gradient-oracle test for NetworkTransformer (feature 002, T019).
+// Gradient-oracle test for NetworkTransformer (feature 002 T019, fixed in 003 T006).
 //
-// Template: tests/oracle/TransformerBlock.oracle.test.ts (same family).
 //   1. smoke    - predict gives seqLen*nClasses finite logits, train returns the
 //                 cross-entropy it reports (checked against an independent
-//                 computation from predict()) and moves the weights. No it.fails.
-//   2. oracle   - it.fails (AUDIT C1): the update train() really performs follows
-//                 +dL/dw instead of -dL/dw (cosine ~ -1).
-//   3. learns   - it.fails (AUDIT C1): the loss does not drop; it grows.
-//   4. control  - NOT it.fails: the same step with its delta negated by hand gives
-//                 cosine ~ +1, proving the defect is the sign only.
+//                 computation from predict()) and moves the weights.
+//   2. oracle   - the update train() really performs follows -dL/dw (cosine ~ +1)
+//                 and has the scale of the returned loss (ratio ~ 1, plain SGD).
+//   3. learns   - the cross-entropy drops.
+//   4. stability- a short run at a small lr does not blow up.
 // Loss = mean over positions of -sum_c t_c * log softmax(logits)_c, which is what
-// train() implements (cross-entropy + softmax), NOT the "MSE" its doc comment says.
+// train() implements (cross-entropy + softmax, mean over masked positions).
 // Every weight matrix is Adam (Q1), so every real update runs inside withPlainSGD.
-// Only the cosine is asserted (Q9). A fixed seed (tests/setup.ts) fixes the init.
+// Only the cosine is asserted (Q9); ratio is checked loosely. A fixed seed
+// (tests/setup.ts) fixes the init.
 import { describe, it, expect } from 'vitest'
 import { NetworkTransformer } from '../../src/NetworkTransformer'
 import { softmax } from '../../src/MatMul'
@@ -58,14 +57,6 @@ function step(net: NetworkTransformer, lr: number): number {
   return withPlainSGD(() => net.train(TOKENS, TARGETS, lr))
 }
 
-/** Same step but with the delta negated by hand (control for the sign defect). */
-function negatedStep(net: NetworkTransformer, lr: number): void {
-  const before = [...net.getWeights()]
-  step(net, lr)
-  const after = net.getWeights()
-  net.setWeights(before.map((w, i) => w - (after[i] - w)))
-}
-
 describe('NetworkTransformer oracle', () => {
   it('smoke: finite logits, train returns the cross-entropy and moves the weights', () => {
     const net = build()
@@ -84,25 +75,29 @@ describe('NetworkTransformer oracle', () => {
     expect(after.some((v, i) => v !== before[i])).toBe(true)
   })
 
-  // AUDIT C1: train() backpropagates dLogits = prob - target = +dL/dz, but the
-  // optimizers do `w + lr*g` and expect g = -dL/dz, so every weight moves uphill
-  // (cosine -1.0000 measured in the audit). Remove `.fails` when fixed (feature 003).
-  it.fails('oracle: train() follows -dL/dw from finite differences (cosine > 0.999)', () => {
-    const net = build()
-    const r = gradientOracle({
-      getParams: () => net.getWeights(),
-      setParams: (p) => net.setWeights(p),
-      loss: () => loss(net),
-      step: (lr) => {
-        step(net, lr)
-      },
-      lr: LR,
-    })
-    expect(r.cosine).toBeGreaterThan(0.999)
-  })
+  // Same oracle at the 002 lr and at 10x (measured in 003 T006: cosine >= 0.99999
+  // and ratio within 0.99-1.01 for 5 seeds and lr x0.97/x1.03).
+  it.each([LR, 10 * LR])(
+    'oracle: train() follows -dL/dw from finite differences at lr %s (cosine > 0.999, ratio ~ 1)',
+    (lr) => {
+      const net = build()
+      const r = gradientOracle({
+        getParams: () => net.getWeights(),
+        setParams: (p) => net.setWeights(p),
+        loss: () => loss(net),
+        step: (l) => {
+          step(net, l)
+        },
+        lr,
+      })
+      expect(r.cosine).toBeGreaterThan(0.999)
+      // Plain SGD: the step has the scale of the returned (mean) cross-entropy.
+      expect(r.ratio).toBeGreaterThan(0.9)
+      expect(r.ratio).toBeLessThan(1.1)
+    },
+  )
 
-  // AUDIT C1: same sign defect; the cross-entropy rises instead of dropping.
-  it.fails('learns: the cross-entropy drops below half after a few hundred steps', () => {
+  it('learns: the cross-entropy drops below half after a few hundred steps', () => {
     const net = build()
     expectLearns({
       loss: () => loss(net),
@@ -113,21 +108,8 @@ describe('NetworkTransformer oracle', () => {
     })
   })
 
-  it('control: with the delta negated by hand the oracle gives cosine ~ +1 (sign-only defect)', () => {
-    const net = build()
-    const r = gradientOracle({
-      getParams: () => net.getWeights(),
-      setParams: (p) => net.setWeights(p),
-      loss: () => loss(net),
-      step: (lr) => negatedStep(net, lr),
-      lr: LR,
-    })
-    expect(r.cosine).toBeGreaterThan(0.999)
-  })
-
-  // Guard migrated from GradientCheck.test.ts (T035): not a learning test (C1
-  // makes the model train backwards), only that a short run at a small lr does
-  // not blow up. Keep it as a plain `it` after C1 is fixed.
+  // Guard migrated from GradientCheck.test.ts (T035): only that a short run at a
+  // small lr does not blow up.
   it('stability: 15 steps at lr 1e-3 keep the loss finite and below 1.5x the initial', () => {
     const net = build()
     const initial = loss(net)
