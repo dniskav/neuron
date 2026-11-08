@@ -1,34 +1,39 @@
 # Estado actual
 
-**Mantener este archivo al día después de cada feature.** Última actualización: 2026-11-08.
+**Mantener este archivo al día después de cada feature.** Última actualización: 2026-11-09 (antes de limpiar el contexto de la sesión).
 
 ## Cómo retomar
 
-1. Ejecuta `/model sonnet`.
+1. En una sesión nueva, ejecuta `/model sonnet`.
 2. Di: `Lee specs/HANDOFF.md y specs/ORCHESTRATION.md y retoma como orquestador.`
+3. **Antes de nada, verifica el estado real con git** (`git status`, `git log --oneline -5`, `git fetch && git status -sb`) y comprueba que no hay agentes en marcha ni mutantes sin revertir en `src/` (`git diff --quiet -- src`). Este archivo puede ir por detrás del repositorio.
 
 ## Dónde estamos
 
-- **Rama de trabajo:** `fix/v0.4`, ya en `origin` y fusionada una vez en `master` (PR #4). `master` está protegida: nada se publica salvo aprobación del usuario (versión nueva en `package.json`).
-- **Prueba base:** typecheck, build y 327 tests en verde; `npm audit` sin vulnerabilidades. Los tests siguen siendo inestables hasta la feature 002.
-- **Hecho en la preparación:**
-  - Quitadas las dependencias de runtime sin uso; `vitest` subido y `npm audit fix` aplicado. Los cambios previos de los lockfiles se descartaron. Eran derivados de esas dependencias, y una copia queda solo en el scratchpad de la sesión del 2026-11-08.
-  - Spec Kit 1.3.0 inicializado, sin tocar archivos existentes.
-  - Constitución, roles de agentes, auditoría y este plan escritos.
+- **`master` (en GitHub) contiene las features 001–004**, fusionadas por los PR #4, #5, #6 y #7. La versión sigue en **0.3.2** (la ya publicada): los cuatro merges saltaron el paso `Publish` de `publish.yml`. `master` está protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos).
+- **Rama de trabajo:** `fix/v0.4`, LOCAL por delante de `origin/master` con el trabajo de la **feature 005** (aún sin subir). `origin/fix/v0.4` apunta al último commit de la 004 (ya fusionado).
+- **Feature 005 `api-hardening`:** tareas T001–T017 hechas, integradas y verificadas (1276 tests, 81 archivos, 0 `it.fails`, 0 `it.todo`, typecheck limpio). **Pendiente: T018** (revisión con `math-reviewer`; si se limpió el contexto con ella en curso, comprobar que `git diff --quiet -- src` pasa y que `git status --short` está vacío, y relanzarla) y **T019** (verificador: 20 ejecuciones seguidas, 5 con orden aleatorio y la suite bajo Node 20.19 en `~/.nvm/versions/node/v20.19.0`). Luego: subir la rama (pedir confirmación), abrir el PR y **esperar a que el CI de GitHub pase en verde** antes de darla por cerrada.
+- **Reglas de ejecución aprendidas (obligatorias):** (1) el CI de GitHub (Node 20, Linux) es el árbitro: un test de entrenamiento que pasa N veces en local puede fallar allí (pasó con `ContrastiveLearning` en el PR #5); valida tests de aprendizaje con perturbaciones de lr/semilla y margen ≥ 30 %. (2) Los worktrees de los agentes parten de `master`, sin `node_modules`: cada prompt debe pedir `git rebase fix/v0.4` y `npm ci`, y los archivos de la spec deben estar COMMITEADOS antes de lanzar agentes. (3) El scratchpad es compartido: scripts temporales con nombre único (prefijo por tarea). (4) Mientras `math-reviewer` aplica mutantes en el directorio principal, no ejecutar nada ahí. (5) Verificar siempre yo mismo cada rama antes de integrar (merge `--no-ff`, typecheck, suite 3 veces, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts`). (6) Los agentes no editan `tasks.md`, `package*.json`, `src/index.ts` ni el changelog; los marca el orquestador. (7) Los comandos git compuestos con `&&` o `cd` los rechaza el wrapper del entorno a algunos agentes: pedir comandos sueltos.
+- **Modelos:** Haiku para validaciones mecánicas con criterio ejecutable (`api-dev`, `test-writer`, `docs-chore`); Sonnet para gradientes y diseño (`math-dev`, `spec-author`, `math-reviewer`). **Opus: no se ha usado nunca**, ni en 001–005. Requiere permiso explícito del usuario, explicando por qué.
 
 ## Siguiente acción
 
-Abrir el PR de la 004 (con aprobación del usuario; esperar al CI de GitHub en verde antes de darla por cerrada) y empezar la **feature 005 `api-hardening`** con `spec-author`: N7 y entrenamiento incremental (LogisticRegression/SoftmaxRegression/LinearRegression), I5 (`Network` varias salidas), I2/I3/I4/I6/I7 de la auditoría, `NetworkN.train`/`Network` devuelven MSE medio pero entrenan con ½Σ, dropout en `inputGradient`, `LSTMLayer.backprop` con entradas de longitud distinta.
+1. Cerrar la **feature 005** (T018, T019, PR, CI en verde; ver arriba).
+2. **Feature 006 `coverage`**: tests para los módulos sin cobertura de la auditoría y `Metrics`, un archivo por módulo, valores calculados a mano y comprobación de mutante; revisar `DecisionTree` con XOR; incluye los oráculos de `dx` de `Dropout`, `Flatten` y `MaxPool2D`, la validación de entradas del resto de modelos y los huecos listados en 'Pendiente de tratar' de más abajo. Usar `spec-author` y el mismo flujo (spec → commit → lotes de agentes → revisión → estabilidad → PR → CI).
+3. **Feature 007 `docs`**: `AGENTS.md`, README en un solo idioma con ejemplos ejecutables, y **CHANGELOG** con TODOS los cambios incompatibles de 002–005 (están acumulados en las secciones 'Cambios observables' de este archivo) y su guía de migración.
+4. **Feature 008 `release-app`**: subir a **0.4.0** y publicar **SOLO con aprobación explícita del usuario** (el merge a `master` de un `package.json` con versión nueva dispara `publish.yml`); actualizar `neuron_app` (`/Users/daniel/Desktop/projects/experiments/neuron_app`, rama propia; tiene cambios sin commitear en `bun.lock`, `package-lock.json` y `package.json`: preguntar antes de tocarlos) y reajustar los `lr` (Sudoku, generación de texto, laberinto) porque se eligieron con el entrenamiento roto y la escala de `NetworkN.train` cambió.
+
+**Pendiente del lado del usuario** (recordar antes de la 008): quitar la línea `Bash(npm publish *)` de `.claude/settings.local.json` (permite publicar desde la máquina sin preguntar); confirmar que el secreto `NPM_TOKEN` de GitHub sigue vigente (último publish exitoso: junio de 2026); decidir si deja la regla `Bash(gh pr merge *)` durante 006–007 y la quita para la 008. El usuario fusionó los PR #4–#6 él mismo y autorizó expresamente el #7 ('dale merge'): pedir confirmación por PR.
 
 ## Avance
 
 | Feature | Estado |
 |---|---|
 | 001 `release-safety` | **Hecha.** PR #4 fusionado, `publish.yml` saltó la publicación (0.3.2 ya publicada) y `master` protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos) |
-| 002 `gradient-oracle` | **Hecha** (41/41 tareas; 496 tests + 26 `it.fails` + 1 `it.todo`; 20 ejecuciones seguidas y 5 con orden aleatorio sin fallos). Commits locales, sin PR todavía |
-| 003 `sign-fix` | **Hecha** (13/13 tareas; 552 tests + 8 `it.fails` (solo C2, I1, N7) + 1 `it.todo`; 20+5 ejecuciones seguidas, y 3 con Node 20.19 sin fallos). Commits locales, sin PR todavía |
-| 004 `models-fix` | **Hecha en local** (13/13 tareas; 670 tests + 2 `it.fails` (solo N7) + 1 `it.todo`; verificador independiente: 20+5 ejecuciones seguidas, 5 con Node 20.19 y 3 con otro pool, 33 en total idénticas). Falta PR y CI de GitHub en verde |
-| 005 `api-hardening` | Pendiente |
+| 002 `gradient-oracle` | **Hecha y fusionada** (PR #5; 41/41 tareas) |
+| 003 `sign-fix` | **Hecha y fusionada** (PR #6; 13/13 tareas) |
+| 004 `models-fix` | **Hecha y fusionada** (PR #7; 13/13 tareas; CI de GitHub en verde) |
+| 005 `api-hardening` | **En curso**: T001–T017 hechas (local, sin subir); faltan T018 (revisión), T019 (estabilidad), PR y CI |
 | 006 `coverage` | Pendiente |
 | 007 `docs` | Pendiente |
 | 008 `release-app` | Pendiente |
