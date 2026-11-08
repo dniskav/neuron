@@ -145,7 +145,7 @@
 - [x] T038 [S] [files: ] `math-reviewer` (sin editar): revisar `tests/helpers/*.ts` (convención de signo, `ratio`, muestreo, que `withPlainSGD` no deje fugas), la corrección de la pérdida de cada archivo de `tests/oracle/` (la que se optimiza coincide con la que usa el oráculo), que cada `it.fails` corresponda a C1, C2 o I1 (SC-004) y que ninguno pase por una excepción ajena. Muestrear al menos 6 mutantes en modelos distintos (`NetworkN`, `LSTMLayer`, `Conv1D`, `AttentionHead`, `NetworkTransformer` con el signo arreglado temporalmente para comprobar que el `it.fails` se pone en rojo, `Autoencoder`) y confirmar que los tests fallan. Informe sin hallazgos bloqueantes.
       Gate: informe del revisor sin bloqueantes; `git diff --quiet -- src` tras sus mutaciones
 
-- [x] T039 [H] [files: ] `verifier` (sin editar): definición de terminado y estabilidad. 20 ejecuciones seguidas de la suite, más 5 con orden aleatorio.
+- [ ] T039 [H] [files: ] `verifier` (sin editar): definición de terminado y estabilidad. 20 ejecuciones seguidas de la suite, más 5 con orden aleatorio.
       Gate: `npx tsc --noEmit -p . && npm run typecheck && npm run build && for i in $(seq 1 20); do npx vitest run > /dev/null 2>&1 || { echo FAIL $i; exit 1; }; done && for i in $(seq 1 5); do npx vitest run --sequence.shuffle > /dev/null 2>&1 || { echo FAIL shuffle $i; exit 1; }; done && git diff --quiet -- src package.json && echo OK`
 
 ## Dependencias
