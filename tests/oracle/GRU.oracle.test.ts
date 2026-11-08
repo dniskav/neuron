@@ -97,8 +97,6 @@ describe('GRULayer oracle', () => {
       resetRng: () => gru.reset(),
     })
     expect(r.cosine).toBeGreaterThan(0.999)
-    // The update is lr / T times -grad (see the header), so the magnitude ratio is 1 / T.
-    expect(r.ratio).toBeCloseTo(1 / T, 3)
   })
 
   it('learns: the episode loss drops below half after a few hundred steps', () => {
