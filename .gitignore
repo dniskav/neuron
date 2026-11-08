@@ -7,3 +7,5 @@ app/
 .rimuru/
 bun.lock
 *.tgz
+coverage/
+.claude/worktrees/
