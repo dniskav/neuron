@@ -8,7 +8,7 @@
 //                train() returns, measured with predict() only. Adam is replaced by
 //                plain `w + lr*g` (withPlainSGD, Q1). Only the cosine is asserted (Q9).
 //   3. learns  - expectLearns: the same loss on fixed data drops below half.
-// C1 fixed (feature 003, T007): train() passes -dL/dpred; inputProj updated once.
+// train() passes -dL/dpred (the gradient of the returned MSE) and updates inputProj once per call.
 import { describe, it, expect } from 'vitest'
 import { NetworkTransformerRL } from '../../src/NetworkTransformerRL'
 import { expectGradientMatches, withPlainSGD } from '../helpers/gradientOracle'

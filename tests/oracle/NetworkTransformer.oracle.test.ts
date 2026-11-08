@@ -1,4 +1,4 @@
-// Gradient-oracle test for NetworkTransformer (feature 002 T019, fixed in 003 T006).
+// Gradient-oracle test for NetworkTransformer (feature 002 T019).
 //
 //   1. smoke    - predict gives seqLen*nClasses finite logits, train returns the
 //                 cross-entropy it reports (checked against an independent

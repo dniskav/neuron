@@ -1,14 +1,12 @@
-// Input-sensitivity oracle for the attention family (feature 002, T040, finding N1).
+// Input-sensitivity oracle for the attention family (feature 002, T040).
 //
 // Template: the dX sensitivity check of tests/oracle/AttentionHead.oracle.test.ts.
-// AttentionHead.backward() computes dX from the pre-update weights (N1 fixed), so dX
-// does not depend on lr.
+// AttentionHead.backward() computes dX from the pre-update weights, so dX does not
+// depend on lr.
 //   1. control  - with lr = 0, dX matches -dL/dX from central finite differences
 //                 (cosine > 0.999).
 //   2. property - two identical copies, one backward with lr = 0 and one with
 //                 lr > 0, must return the same dX (normal test).
-// TransformerBlock used to depend on lr through LayerNorm.backwardOne (gamma updated at
-// pos i was read at pos i+1); LayerNorm now keeps the forward-time gamma (T008).
 // withPlainSGD makes the lr > 0 step deterministic (Adam would hide the size of lr).
 // Convention: backward receives dOut = -dL/dout and returns dX = -dL/dX.
 // A fixed seed (tests/setup.ts) fixes the initial weights.

@@ -8,9 +8,8 @@
 // con `as any` (Q5). El optimizador por defecto es SGD (`w + lr*g`), sin withPlainSGD.
 // Perdida de TCN = MSE medio sobre T*outputSize, la que devuelve train().
 //
-// C1 corregido en 003/T004: TCN.train entrega dOut = -2*diff/(T*outputSize) (= -dL/dy de la
-// perdida media) y usa lr sin dividir en proyeccion y capas conv. Antes: signo invertido y
-// las capas conv se movian T veces mas que la proyeccion (ratio 6 con T=6).
+// TCN.train entrega dOut = -2*diff/(T*outputSize) (= -dL/dy de la perdida media) y usa lr
+// sin dividir en proyeccion y capas conv, de modo que el paso tiene la escala de la perdida.
 import { describe, it, expect } from 'vitest'
 import { CausalConv1D, TCN } from '../../src/TCN'
 import { bindParams, expectGradientMatches } from '../helpers/gradientOracle'
@@ -148,7 +147,7 @@ describe('TCN oraculo', () => {
       lr: LR,
     })
     expect(r.cosine).toBeGreaterThan(0.999)
-    // Escala coherente: sin el 1/T desparejado entre proyeccion y capas conv.
+    // Escala: el paso tiene la escala de la perdida media (ratio en (0.9, 1.1)).
     expect(r.ratio).toBeGreaterThan(0.9)
     expect(r.ratio).toBeLessThan(1.1)
   })

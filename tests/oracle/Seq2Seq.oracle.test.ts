@@ -5,8 +5,8 @@
 //   2. oracle  - the update trainStep() really performs follows -dL/dw from central finite
 //                differences. Loss = teacher-forced MSE, the value trainStep returns. Only
 //                the cosine is asserted (> 0.999), never the ratio (Q9).
-//   3. blocks  - the same oracle on encoder only, decoder only and W_out/b_out only, so
-//                feature 003 can see which part fails.
+//   3. blocks  - the same oracle on encoder only, decoder only and W_out/b_out only,
+//                to localise a failure to one part.
 //   4. learns  - expectLearns: the loss on a fixed pair drops below half.
 //   5. T_in != T_out - the same oracle with sequences of different lengths (the encoder
 //                update is scaled by T_in/T_out so the total gradient is that of the loss
