@@ -201,7 +201,13 @@ export class Autoencoder {
     }
 
     // `deltas` now holds ∂L/∂z — the gradient at the encoder's output.
-    const dLdz = deltas;
+    // Those values are the gradient w.r.t. the encoder's OUTPUT (post-activation z).
+    // trainWithDeltas expects deltas at the pre-activation of the output layer, so we
+    // apply the chain rule through the encoder's output activation: δz[k] = dLdz[k]·act'(z[k]).
+    // (act' takes the post-activation value, same convention as the decoder above.)
+    // Without this factor the encoder step was off by act'(z) (~4x for sigmoid) (AUDIT N6).
+    const encoderOutAct = this.encoder.layers[this.encoder.layers.length - 1].neurons[0].activation;
+    const dLdz = deltas.map((d, k) => d * encoderOutAct.dfn(z[k]));
 
     // ── Update decoder weights (after we have extracted ∂L/∂z) ───────────
     this.decoder.trainWithDeltas(z, outputDeltas, lr);
