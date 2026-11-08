@@ -18,14 +18,14 @@
 
 ## Siguiente acción
 
-Empezar la **feature 002 `gradient-oracle`** con `spec-author`. Con `master` protegida, todo llega por PR desde `fix/v0.4` (o ramas por feature).
+Abrir el PR de la 002 (con aprobación del usuario) y empezar la **feature 003 `sign-fix`** con `spec-author`. Antes de planificarla, leer las 'Notas para 003 por modelo' y los hallazgos N1–N9 de abajo. Con `master` protegida, todo llega por PR desde `fix/v0.4` (o ramas por feature).
 
 ## Avance
 
 | Feature | Estado |
 |---|---|
 | 001 `release-safety` | **Hecha.** PR #4 fusionado, `publish.yml` saltó la publicación (0.3.2 ya publicada) y `master` protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos) |
-| 002 `gradient-oracle` | Pendiente |
+| 002 `gradient-oracle` | **Hecha** (41/41 tareas; 496 tests + 26 `it.fails` + 1 `it.todo`; 20 ejecuciones seguidas y 5 con orden aleatorio sin fallos). Commits locales, sin PR todavía |
 | 003 `sign-fix` | Pendiente |
 | 004 `models-fix` | Pendiente |
 | 005 `api-hardening` | Pendiente |
