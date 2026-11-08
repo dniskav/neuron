@@ -67,6 +67,10 @@ Ninguno en 001: 8 tareas Haiku (T001–T005, T007, T008), todas a la primera; T0
 
 - **Pendiente de la revisión T038 (aprobada, sin bloqueantes):** (a) el oráculo de `NetworkLSTM` es insensible a `dc_next` (solo lo atrapa `LSTMLayer.oracle`); (b) con lr 1e-3 N1 queda enmascarado en `MultiHeadAttention`/`TransformerBlock`/`LayerNorm` (error O(lr)): al corregirlo en 003, subir lr; (c) GAN: el discriminador se actualiza antes que el generador; al corregir C2 confirmar coseno > 0.999; (d) `Dropout`, `Flatten` y `MaxPool2D` no tienen oráculo de `dx`. Cerrado: el oráculo de `NetworkN` ahora comprueba `ratio ≈ 1` (detectaba mal un `dfn` de salida omitido).
 
+- **N1 en LayerNorm (confirmado en 003/T001):** `TransformerBlock` llama a `LayerNorm.backwardOne` por posición y el `gamma/beta` actualizado en la posición `i` se lee en la `i+1` (`gammaOld` solo protege dentro de una llamada). La spec de 003 lo daba por inexistente; corregido en T008 (ahora [S] con cambio en `src/LayerNorm.ts`).
+- **N10 `Autoencoder`:** el paso es `d/2` veces el de la pérdida MSE media que `train` devuelve (los `outputDeltas` no llevan `2/d`; ratio 1.50 con d=3). No afecta al coseno; normalizar cambiaría el lr efectivo de los usuarios. Decidir en 004/005 con el usuario.
+- **Lección CI (002):** pasar N veces en mi máquina no demuestra estabilidad entre plataformas (Node 26/macOS aquí, Node 20/Linux en CI); validar tests de entrenamiento con perturbaciones de lr/semilla y esperar al CI antes de cerrar una feature.
+
 ## Avisos
 
 - **`.claude/settings.local.json` permite `Bash(npm publish *)` sin preguntar.** La constitución lo prohíbe a los agentes, pero el permiso sigue activo. Recomendado: que el usuario lo quite antes de lanzar el enjambre. Un agente no debe editar sus propios permisos.
