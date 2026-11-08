@@ -94,9 +94,24 @@ export class NetworkLSTM {
   // ── Train on a full episode ────────────────────────────────────────────────
   // targets: one target vector per step (same order as predict() calls).
   // Accumulates gradients across all T steps before applying (batch update).
+  // Throws (and leaves the episode intact) when targets does not match the
+  // trajectory or a row does not measure the output size. An empty episode with
+  // empty targets is a no-op, as before.
   train(targets: number[][], lr: number): void {
     const T = this._acts.length;
-    if (T === 0 || targets.length !== T) return;
+    if (!Array.isArray(targets)) {
+      throw new Error(`NetworkLSTM.train: expected targets array, got ${typeof targets}`);
+    }
+    if (targets.length !== T) {
+      throw new Error(`NetworkLSTM.train: expected targets of length ${T}, got ${targets.length}`);
+    }
+    const outSize = this.denseLayers.length > 0
+      ? this.denseLayers[this.denseLayers.length - 1].neurons.length
+      : this.hiddenSize;
+    for (let t = 0; t < T; t++) {
+      validateArray(targets[t], outSize, `NetworkLSTM.train(targets[${t}])`);
+    }
+    if (T === 0) return;
 
     // Gradient accumulators for each dense layer
     const denseGrads = this.denseLayers.map(layer => ({
@@ -145,6 +160,11 @@ export class NetworkLSTM {
       dh_seq.push(deltas);
     }
 
+    // BPTT through the LSTM first: if its trajectory does not match, it throws
+    // before any dense weight changes. dh_seq is already computed above, so the
+    // order does not change the numbers.
+    this.lstm.backprop(dh_seq, lr);
+
     // Apply averaged dense layer gradients via optimizer
     for (let l = 0; l < this.denseLayers.length; l++) {
       const layer = this.denseLayers[l];
@@ -158,8 +178,6 @@ export class NetworkLSTM {
       });
     }
 
-    // BPTT through the LSTM (clears trajectory internally)
-    this.lstm.backprop(dh_seq, lr);
     this._acts = [];
   }
 

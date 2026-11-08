@@ -184,13 +184,29 @@ export class LSTMLayer {
   // returned { dh0, dc0 } is the gradient with respect to the initial state
   // (h_{-1}, c_{-1}) in the same negated convention, UNSCALED (not divided by T),
   // so a caller that chains layers (Seq2Seq) can feed it to the previous layer.
+  //
+  // Throws (and leaves the trajectory intact) when dh_seq does not match the
+  // trajectory, a row does not measure hiddenSize, or dcFinal does not measure
+  // hiddenSize. An empty trajectory with an empty dh_seq returns zeros as before.
   backprop(
     dh_seq: number[][],
     lr: number,
     dcFinal?: number[],
   ): { dh0: number[]; dc0: number[] } {
     const T = this._traj.length;
-    if (T === 0 || dh_seq.length !== T) {
+    if (!Array.isArray(dh_seq)) {
+      throw new Error(`LSTMLayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
+    }
+    if (dh_seq.length !== T) {
+      throw new Error(`LSTMLayer.backprop: expected dh_seq of length ${T}, got ${dh_seq.length}`);
+    }
+    for (let t = 0; t < T; t++) {
+      validateArray(dh_seq[t], this.hSize, `LSTMLayer.backprop(dh_seq[${t}])`);
+    }
+    if (dcFinal !== undefined) {
+      validateArray(dcFinal, this.hSize, "LSTMLayer.backprop(dcFinal)");
+    }
+    if (T === 0) {
       return { dh0: new Array(this.hSize).fill(0), dc0: new Array(this.hSize).fill(0) };
     }
 
@@ -209,7 +225,7 @@ export class LSTMLayer {
 
     let dh_next: number[] = new Array(hSize).fill(0);
     let dc_next: number[] =
-      dcFinal && dcFinal.length === hSize ? [...dcFinal] : new Array(hSize).fill(0);
+      dcFinal !== undefined ? [...dcFinal] : new Array(hSize).fill(0);
 
     for (let t = T - 1; t >= 0; t--) {
       const s  = this._traj[t];
