@@ -4,14 +4,9 @@
 // Convención del código: el máximo es el PRIMER valor en orden de escaneo
 // (ph antes que pw) porque la comparación es estricta (`val > maxVal`).
 //
-// HALLAZGO (no fijado aquí, ver informe T015): con ventanas solapadas
-// (stride < poolSize) `_maxMask` es un booleano por posición de entrada, no por
-// ventana. Si una posición es el máximo de una ventana pero no de otra que la
-// contiene, `backward` le suma también el gradiente de esa otra ventana. Caso
-// reproducible: entrada [[[1],[5],[9]],[[0],[3],[4]]], poolSize 2, stride 1,
-// backward([[[1],[2]]]) devuelve [[[0],[3],[2]],[[0],[0],[0]]] en vez de
-// [[[0],[1],[2]],[[0],[0],[0]]]. Los tests de solapamiento de este archivo solo
-// usan casos donde el máximo compartido es el máximo de todas sus ventanas.
+// T055: con ventanas solapadas (stride < poolSize) el gradiente de cada ventana
+// va SOLO a su propio argmax (guardado por ventana en forward) y se acumula con
+// `+=` si una posición es el máximo de varias ventanas.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MaxPool2D } from '../src/MaxPool2D'
 import { restoreRandom, seedRandom } from './helpers/seed'
@@ -141,6 +136,53 @@ describe('MaxPool2D backward', () => {
     expect(out).toEqual([[[9], [9]]])
     expect(p.backward([[[0.5], [2]]])).toEqual([
       [[0], [2.5], [0]],
+      [[0], [0], [0]],
+    ])
+  })
+
+  it('T055 ventanas solapadas, máximo de una ventana pero no de otra: cada gradiente va a SU argmax', () => {
+    // H 2, W 3, p 2, s 1. X = [[1, 5, 9], [0, 3, 4]].
+    // Ventana (0,0) {1,5,0,3} → 5 en (0,1). Ventana (0,1) {5,9,3,4} → 9 en (0,2).
+    // Con dOut = [[1, 2]]: dX(0,1) = 1, dX(0,2) = 2, resto 0.
+    // (5 es máximo de la primera ventana pero no de la segunda: no recibe el 2.)
+    const p = new MaxPool2D(2, 1)
+    expect(p.forward([[[1], [5], [9]], [[0], [3], [4]]])).toEqual([[[5], [9]]])
+    expect(p.backward([[[1], [2]]])).toEqual([
+      [[0], [1], [2]],
+      [[0], [0], [0]],
+    ])
+  })
+
+  it('T055 poolSize 3, stride 1, sin empates: gradiente por ventana a su argmax', () => {
+    // H 3, W 4, p 3, s 1. X = [[1,2,3,0],[4,9,5,8],[6,7,0,1]] (sin empates).
+    // Ventana (0,0): cols 0..2, máx 9 en (1,1). Ventana (0,1): cols 1..3, máx 9 en (1,1).
+    // Ambas apuntan a (1,1): dOut = [[1, 10]] → dX(1,1) = 11. Resto 0.
+    // Segundo caso: X2 = [[1,2,3,0],[4,6,5,8],[6,7,0,1]]:
+    // ventana (0,0) {1,2,3,4,6,5,6,7,0}: máx 7 en (2,1); ventana (0,1) {2,3,0,6,5,8,7,0,1}: máx 8 en (1,3).
+    // (6 aparece dos veces en la primera ventana, pero 7 es mayor: sin empate en el máximo.)
+    const p = new MaxPool2D(3, 1)
+    p.forward([[[1], [2], [3], [0]], [[4], [9], [5], [8]], [[6], [7], [0], [1]]])
+    expect(p.backward([[[1], [10]]])).toEqual([
+      [[0], [0], [0], [0]],
+      [[0], [11], [0], [0]],
+      [[0], [0], [0], [0]],
+    ])
+    p.forward([[[1], [2], [3], [0]], [[4], [6], [5], [8]], [[6], [7], [0], [1]]])
+    expect(p.backward([[[1], [10]]])).toEqual([
+      [[0], [0], [0], [0]],
+      [[0], [0], [0], [10]],
+      [[0], [1], [0], [0]],
+    ])
+  })
+
+  it('T055 empate con ventanas solapadas: primer máximo de cada ventana, acumulado', () => {
+    // H 2, W 3, p 2, s 1. X = [[3, 3, 3], [0, 0, 0]].
+    // Ventana (0,0) {3,3,0,0}: primer 3 en (0,0). Ventana (0,1) {3,3,0,0}: primer 3 en (0,1).
+    // dOut = [[1, 2]] → dX(0,0) = 1, dX(0,1) = 2.
+    const p = new MaxPool2D(2, 1)
+    p.forward([[[3], [3], [3]], [[0], [0], [0]]])
+    expect(p.backward([[[1], [2]]])).toEqual([
+      [[1], [2], [0]],
       [[0], [0], [0]],
     ])
   })

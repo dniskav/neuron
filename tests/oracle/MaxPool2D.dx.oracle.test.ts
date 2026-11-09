@@ -10,9 +10,9 @@
 //
 // Puntos de prueba: entradas sin empates, con separación ≥ 0.5 entre el máximo
 // y el resto de cada ventana, de modo que una perturbación de EPS no cambie el
-// argmax. Las ventanas NO se solapan (stride = poolSize): el caso solapado tiene
-// un defecto conocido en backward (ver cabecera de tests/MaxPool2D.test.ts) y no
-// se usa aquí para no fijarlo ni enmascararlo.
+// argmax. Los primeros tests usan ventanas NO solapadas (stride = poolSize); el
+// bloque final (T055) cubre ventanas solapadas (stride 1, poolSize 2 y 3) y un
+// máximo compartido por varias ventanas (sus gradientes se suman).
 //
 // Los valores esperados se deducen a mano en cada `it`.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -241,5 +241,81 @@ describe('MaxPool2D dx oracle', () => {
     ]
     expect(maxAbsDiff(dx, expected)).toBeLessThan(TOL)
     expect(maxAbsDiff(dx, finiteDiff(L2, X))).toBeLessThan(TOL)
+  })
+})
+
+// ── T055: ventanas solapadas ────────────────────────────────────────────────
+// Entrada 4×5×1 sin empates (v = valores distintos, separación ≥ 0.5 con el
+// máximo de cada ventana). Es una permutación "desordenada" para que haya
+// posiciones que son máximo de una ventana pero no de otra:
+//   fila0: 1.0  6.5  2.0  8.0  3.0
+//   fila1: 5.0  0.5  9.5  1.5  7.0
+//   fila2: 4.0  7.5  3.5  6.0  2.5
+//   fila3: 8.5  2.2  5.5  0.2  4.5
+const XO: number[][][] = [
+  [[1.0], [6.5], [2.0], [8.0], [3.0]],
+  [[5.0], [0.5], [9.5], [1.5], [7.0]],
+  [[4.0], [7.5], [3.5], [6.0], [2.5]],
+  [[8.5], [2.2], [5.5], [0.2], [4.5]],
+]
+
+function lossOverlap(pool: number, x: number[][][], w: number[]): number {
+  return flat3(new MaxPool2D(pool, 1).forward(x)).reduce((s, v, k) => s + w[k] * v, 0)
+}
+
+function weightsFor(n: number): number[] {
+  // pesos distintos y no nulos, deterministas: 0.5, -1.25, 2, -0.75, ...
+  return Array.from({ length: n }, (_, k) => (k % 2 === 0 ? 1 : -1) * (0.5 + 0.75 * k))
+}
+
+describe('MaxPool2D dx oracle, ventanas solapadas (T055)', () => {
+  for (const pool of [2, 3]) {
+    it(`stride 1, poolSize ${pool}: backward(c) coincide con diferencias finitas`, () => {
+      const p = new MaxPool2D(pool, 1)
+      const out = p.forward(XO)
+      const [oh, ow] = p.outputShape(4, 5, 1)
+      const n = oh * ow
+      expect(flat3(out)).toHaveLength(n)
+      const w = weightsFor(n)
+      const dOut = Array.from({ length: oh }, (_, i) =>
+        Array.from({ length: ow }, (_, j) => [w[i * ow + j]]),
+      )
+      const dx = p.backward(dOut)
+      const fd = finiteDiff((x) => lossOverlap(pool, x, w), XO)
+      expect(maxAbsDiff(dx, fd)).toBeLessThan(TOL)
+    })
+  }
+
+  it('poolSize 2, stride 1: valor a mano en una posición que es máximo de una ventana y no de otra', () => {
+    // Ventana (0,0) ={1.0,6.5,5.0,0.5}: máx 6.5 en (0,1).
+    // Ventana (0,1) = {6.5,2.0,0.5,9.5}: máx 9.5 en (1,2). 6.5 es máximo de (0,0) pero no de (0,1),
+    // por lo que dX(0,1) solo recibe c(0,0), no c(0,1).
+    const p = new MaxPool2D(2, 1)
+    p.forward(XO)
+    const dOut = [
+      [[1], [10], [0], [0]],
+      [[0], [0], [0], [0]],
+      [[0], [0], [0], [0]],
+    ]
+    const dx = p.backward(dOut)
+    expect(dx[0][1][0]).toBeCloseTo(1, 12)
+    expect(dx[1][2][0]).toBeCloseTo(10, 12)
+  })
+
+  it('máximo compartido por varias ventanas: los gradientes se suman y coinciden con diferencias finitas', () => {
+    // 9.5 en (1,2) es el máximo de las 4 ventanas 2×2 que lo contienen:
+    // (0,1),(0,2),(1,1),(1,2). Con c = 1, 2, 3, 4 en ellas: dX(1,2) = 1+2+3+4 = 10.
+    const p = new MaxPool2D(2, 1)
+    p.forward(XO)
+    const dOut = [
+      [[0], [1], [2], [0]],
+      [[0], [3], [4], [0]],
+      [[0], [0], [0], [0]],
+    ]
+    const dx = p.backward(dOut)
+    expect(dx[1][2][0]).toBeCloseTo(10, 12)
+    const w = [0, 1, 2, 0, 0, 3, 4, 0, 0, 0, 0, 0]
+    const fd = finiteDiff((x) => lossOverlap(2, x, w), XO)
+    expect(maxAbsDiff(dx, fd)).toBeLessThan(TOL)
   })
 })
