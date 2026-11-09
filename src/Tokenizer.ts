@@ -62,6 +62,8 @@ export interface TokenizerSnapshot {
   lowercase: boolean
   maxVocab: number
   token2id: Record<string, number>
+  /** Custom special tokens (after PAD/UNK/BOS/EOS). Absent in snapshots from older versions. */
+  specialTokens?: string[]
 }
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
@@ -86,6 +88,16 @@ export class Tokenizer {
     this._lowercase    = options.lowercase    ?? true
     this._maxVocab     = options.maxVocab     ?? 0
     this._extraSpecial = options.specialTokens ?? []
+
+    // The cap counts the special tokens (PAD/UNK/BOS/EOS + custom), so a cap
+    // smaller than that would make fit() slice with a negative end index and
+    // return a vocabulary larger than the cap. 0 still means unlimited.
+    const nSpecial = 4 + this._extraSpecial.length
+    if (this._maxVocab > 0 && this._maxVocab < nSpecial) {
+      throw new Error(
+        `Tokenizer: maxVocab must be >= number of special tokens (${nSpecial})`
+      )
+    }
   }
 
   // ── Fit ───────────────────────────────────────────────────────────────────
@@ -284,6 +296,7 @@ export class Tokenizer {
       lowercase: this._lowercase,
       maxVocab:  this._maxVocab,
       token2id:  Object.fromEntries(this._token2id),
+      specialTokens: [...this._extraSpecial],
     }
   }
 
@@ -295,6 +308,8 @@ export class Tokenizer {
       mode:      snapshot.mode,
       lowercase: snapshot.lowercase,
       maxVocab:  snapshot.maxVocab,
+      // Older snapshots have no specialTokens: fall back to the defaults only.
+      specialTokens: snapshot.specialTokens ?? [],
     })
     for (const [token, id] of Object.entries(snapshot.token2id)) {
       tok._token2id.set(token, id)

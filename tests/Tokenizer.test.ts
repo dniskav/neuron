@@ -270,6 +270,8 @@ describe('Tokenizer', () => {
           cat: 6,
           dog: 7,
         },
+        // Sin especiales propios → lista vacía (campo aditivo, T049).
+        specialTokens: [],
       })
     })
 
