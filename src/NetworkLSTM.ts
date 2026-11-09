@@ -247,11 +247,13 @@ export class NetworkLSTM {
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: LSTM (flat), then dense layer 0, dense layer 1, ..., dense layer N.
   getWeightsFlat(): number[] {
+    // Elemento a elemento: pasar el array como argumentos supera el límite de la VM.
     const w: number[] = [];
-    w.push(...this.lstm.getWeightsFlat());
+    for (const v of this.lstm.getWeightsFlat()) w.push(v);
     for (const layer of this.denseLayers) {
       for (const n of layer.neurons) {
-        w.push(...n.weights, n.bias);
+        for (const v of n.weights) w.push(v);
+        w.push(n.bias);
       }
     }
     return w;
