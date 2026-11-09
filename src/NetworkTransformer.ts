@@ -191,13 +191,14 @@ export class NetworkTransformer {
 
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: tokenEmb, posEmb, block0, block1, ..., blockN, outputProj, outputBias.
+  // Elemento a elemento: pasar el array como argumentos supera el límite de la VM.
   getWeights(): number[] {
     const w: number[] = [];
-    w.push(...this.tokenEmb.getWeights());
-    w.push(...this.posEmb.getWeights());
-    for (const block of this.blocks) w.push(...block.getWeights());
-    w.push(...this.outputProj.getWeights());
-    w.push(...this.outputBias.getWeights());
+    for (const v of this.tokenEmb.getWeights()) w.push(v);
+    for (const v of this.posEmb.getWeights()) w.push(v);
+    for (const block of this.blocks) for (const v of block.getWeights()) w.push(v);
+    for (const v of this.outputProj.getWeights()) w.push(v);
+    for (const v of this.outputBias.getWeights()) w.push(v);
     return w;
   }
 

@@ -338,16 +338,18 @@ export class LSTMLayer {
 
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: forgetGate (W, b), inputGate (W, b), cellGate (W, b), outputGate (W, b).
+  // Se añade elemento a elemento: pasar una fila grande como argumentos
+  // supera el límite de la VM (RangeError).
   getWeightsFlat(): number[] {
     const w: number[] = [];
-    for (const row of this.forgetGate.W) w.push(...row);
-    w.push(...this.forgetGate.b);
-    for (const row of this.inputGate.W) w.push(...row);
-    w.push(...this.inputGate.b);
-    for (const row of this.cellGate.W) w.push(...row);
-    w.push(...this.cellGate.b);
-    for (const row of this.outputGate.W) w.push(...row);
-    w.push(...this.outputGate.b);
+    for (const row of this.forgetGate.W) for (const v of row) w.push(v);
+    for (const v of this.forgetGate.b) w.push(v);
+    for (const row of this.inputGate.W) for (const v of row) w.push(v);
+    for (const v of this.inputGate.b) w.push(v);
+    for (const row of this.cellGate.W) for (const v of row) w.push(v);
+    for (const v of this.cellGate.b) w.push(v);
+    for (const row of this.outputGate.W) for (const v of row) w.push(v);
+    for (const v of this.outputGate.b) w.push(v);
     return w;
   }
 

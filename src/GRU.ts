@@ -251,14 +251,16 @@ export class GRULayer {
 
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: resetGate (W, b), updateGate (W, b), newGate (W, b).
+  // Se añade elemento a elemento: pasar una fila grande como argumentos
+  // supera el límite de la VM (RangeError).
   getWeightsFlat(): number[] {
     const w: number[] = [];
-    for (const row of this.resetGate.W) w.push(...row);
-    w.push(...this.resetGate.b);
-    for (const row of this.updateGate.W) w.push(...row);
-    w.push(...this.updateGate.b);
-    for (const row of this.newGate.W) w.push(...row);
-    w.push(...this.newGate.b);
+    for (const row of this.resetGate.W) for (const v of row) w.push(v);
+    for (const v of this.resetGate.b) w.push(v);
+    for (const row of this.updateGate.W) for (const v of row) w.push(v);
+    for (const v of this.updateGate.b) w.push(v);
+    for (const row of this.newGate.W) for (const v of row) w.push(v);
+    for (const v of this.newGate.b) w.push(v);
     return w;
   }
 
