@@ -25,6 +25,24 @@
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { relu as reluActivation } from "./activations";
 
+// ── Input checks (T040). Run before any cache or weight is touched.
+function checkLr(where: string, lr: number): void {
+  if (!Number.isFinite(lr) || lr < 0) {
+    throw new Error(`${where}: lr must be a finite number >= 0`);
+  }
+}
+
+function checkRows(where: string, name: string, rows: unknown, width: number): void {
+  if (!Array.isArray(rows)) {
+    throw new Error(`${where}: ${name} must be an array of rows`);
+  }
+  rows.forEach((row, t) => {
+    if (!Array.isArray(row) || row.length !== width) {
+      throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
+    }
+  });
+}
+
 // ─── CausalConv1D ─────────────────────────────────────────────────────────────
 //
 // One causal dilated 1D convolution block.
@@ -134,6 +152,13 @@ export class CausalConv1D {
     if (!this._paddedInput) {
       throw new Error('CausalConv1D.backward: call forward() first');
     }
+    checkLr('CausalConv1D.backward', lr);
+    if (!Array.isArray(dOutput) || dOutput.length !== this._inputLen) {
+      throw new Error(
+        `CausalConv1D.backward: dOutput must have ${this._inputLen} rows (one per time step)`
+      );
+    }
+    checkRows('CausalConv1D.backward', 'dOutput', dOutput, this.outputChannels);
 
     const T      = this._inputLen;
     const pad    = (this.kernelSize - 1) * this.dilation;
@@ -269,6 +294,11 @@ export class TCN {
   // sequence: [T][inputChannels]
   // Returns:  [T][outputSize]
   forward(sequence: number[][]): number[][] {
+    if (sequence.length === 0) {
+      throw new Error('TCN.forward: sequence must not be empty');
+    }
+    checkRows('TCN.forward', 'sequence', sequence, this.inputChannels);
+
     this._layerInputs  = [];
     this._layerOutputs = [];
 
@@ -308,6 +338,16 @@ export class TCN {
   // targets:  [T][outputSize]
   // Returns MSE loss.
   train(sequence: number[][], targets: number[][], lr: number): number {
+    if (sequence.length === 0) {
+      throw new Error('TCN.train: sequence must not be empty');
+    }
+    checkRows('TCN.train', 'sequence', sequence, this.inputChannels);
+    checkLr('TCN.train', lr);
+    checkRows('TCN.train', 'targets', targets, this.outputSize);
+    if (targets.length !== sequence.length) {
+      throw new Error(`TCN.train: targets must have one row per time step (${sequence.length})`);
+    }
+
     const outputs = this.forward(sequence);
     const T = outputs.length;
 
