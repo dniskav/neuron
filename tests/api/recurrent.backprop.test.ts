@@ -266,3 +266,25 @@ describe('NetworkLSTM.train valida la forma (Q10)', () => {
     })
   })
 })
+
+// ─── NetworkLSTM: denseStructure vacío (T021, MENOR 2) ───────────────────────
+//
+// Sin capas densas, train() revienta con TypeError al leer la última capa densa.
+// El constructor lo rechaza con un Error que nombra NetworkLSTM. Con una capa
+// densa el comportamiento no cambia (ver los tests de arriba).
+
+describe('NetworkLSTM rechaza denseStructure vacío (T021)', () => {
+  it('new NetworkLSTM(IN, H, []) lanza un Error que nombra NetworkLSTM y denseStructure', () => {
+    expect(() => new NetworkLSTM(IN, H, [])).toThrow(/NetworkLSTM.*denseStructure/)
+  })
+
+  it('el mensaje indica que hace falta al menos una capa densa', () => {
+    expect(() => new NetworkLSTM(IN, H, [])).toThrow(/at least one dense layer/)
+  })
+
+  it('con una capa densa la construcción y el primer train siguen funcionando', () => {
+    const n = new NetworkLSTM(IN, H, [2])
+    netEpisode(n)
+    expect(() => n.train(T_OK, 0.5)).not.toThrow()
+  })
+})

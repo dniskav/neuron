@@ -53,6 +53,14 @@ export class NetworkLSTM {
     denseStructure: number[],
     options: NetworkLSTMOptions = {},
   ) {
+    // train() reads the output layer (the last dense layer), so an empty
+    // denseStructure would only fail later, inside train(). Reject it here.
+    if (denseStructure.length === 0) {
+      throw new Error(
+        "NetworkLSTM: denseStructure must have at least one dense layer (got []), e.g. new NetworkLSTM(inputSize, hiddenSize, [outputSize])",
+      );
+    }
+
     this.inputSize  = inputSize;
     this.hiddenSize = hiddenSize;
 
