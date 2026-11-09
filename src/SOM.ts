@@ -39,6 +39,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateDataset } from './Validation'
+
 export interface SOMOptions {
   initialLr?: number;
   finalLr?: number;
@@ -64,7 +66,11 @@ export class SOM {
     inputSize: number,
     options: SOMOptions = {}
   ) {
-    if (rows < 1 || cols < 1 || inputSize < 1) {
+    // Non-integer sizes are rejected: Array.from would silently truncate them.
+    if (
+      !Number.isInteger(rows) || !Number.isInteger(cols) || !Number.isInteger(inputSize) ||
+      rows < 1 || cols < 1 || inputSize < 1
+    ) {
       throw new Error(
         `SOM: rows, cols and inputSize must be positive integers, got ${rows}×${cols}×${inputSize}`
       );
@@ -99,6 +105,9 @@ export class SOM {
         `SOM.train: expected input size ${this._inputSize}, got ${X[0].length}`
       );
     }
+    // Validate every row (width and finiteness) before any weight is touched,
+    // so a bad row cannot leave the map half-trained.
+    validateDataset(X, undefined, 'SOM.train', { nFeatures: this._inputSize });
 
     const totalSteps = epochs * X.length;
     let step = 0;
@@ -180,6 +189,9 @@ export class SOM {
   //   QE = (1/n) · Σᵢ ‖xᵢ − w[BMU(xᵢ)]‖
   // Measures how well the prototypes represent the data. Lower is better.
   quantizationError(X: number[][]): number {
+    if (!X || X.length === 0) {
+      throw new Error("SOM.quantizationError: dataset X must be non-empty");
+    }
     let total = 0;
     for (const x of X) {
       const [r, c] = this.getBMU(x);
