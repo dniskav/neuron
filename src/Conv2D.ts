@@ -14,8 +14,10 @@
 //
 // Padding 'valid': no padding  → all four pads are 0
 // Padding 'same':  zero-pad so that outH = ceil(H / stride), outW = ceil(W / stride)
-//                  (TensorFlow style, independent per axis). Total padding per axis
-//                  is k − 1, split asymmetrically:
+//                  (independent per axis). Total padding per axis is k − 1, split
+//                  asymmetrically (not exactly TensorFlow: the output size ceil(L / stride)
+//                  matches, but with stride > 1 the windows are shifted differently,
+//                  since TF uses total = max((ceil(L/s) − 1)·s + k − L, 0)):
 //                    top  = left   = floor((k − 1) / 2)
 //                    bottom = right = (k − 1) − top      (the extra row/column, if any,
 //                                                         goes to bottom/right)
@@ -70,6 +72,15 @@ export class Conv2D {
     }
     if (kH <= 0 || kW <= 0) {
       throw new Error('Conv2D: kernelSize must be positive');
+    }
+    const stride = options?.stride ?? 1;
+    if (!Number.isInteger(stride) || stride < 1) {
+      throw new Error(`Conv2D: stride must be a finite integer >= 1, got ${stride}`);
+    }
+    if ((options?.padding ?? 'valid') === 'valid' && (kH > inputHeight || kW > inputWidth)) {
+      throw new Error(
+        `Conv2D: kernel ${kH}x${kW} cannot exceed input ${inputHeight}x${inputWidth} with valid padding`
+      );
     }
 
     this.inputHeight = inputHeight;
