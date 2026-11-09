@@ -8,7 +8,7 @@
 **Mutantes (Constitución IV)**: el agente lista ≥ 3 mutantes DISTINTOS del módulo (operador, índice, validación quitada, constante), comprueba que el archivo de tests FALLA con cada uno, restaura con `git checkout -- src` y repite el gate. El informe dice en una línea cuáles aplicó. Un test que no detecta ningún mutante se rechaza.
 **Tests de aprendizaje robustos (lección CI)**: validar con ≥ 5 semillas y `lr` ×0.7 y ×1.3; el peor caso queda por debajo de `0.7 ×` el umbral (margen ≥ 30 %); cifras en la cabecera del test. Semilla: `seedRandom` de `tests/helpers/seed.ts` en `beforeEach` y `restoreRandom` en `afterEach`.
 **Falla antes / pasa después (solo T033–T043, que cambian `src/`)**: capturar primero un golden numérico con la base (`toEqual` o tolerancia 1e-9), escribir el test nuevo, demostrar que FALLA sin el cambio con `git stash push -- <archivos src de la tarea>`, `npx vitest run <archivo>`, `git stash pop` (un `stash` por tarea, con mensaje único), y que PASA con él.
-**Preguntas del spec que bloquean**: T003 (Q1), T036 (Q2), T034/T035 (Q5: si el usuario pide barrido total, el orquestador añade una tarea mecánica). El resto no depende de Q. Máximo 4 agentes a la vez.
+**Decisiones del usuario (2026-11-09)**: Q1 = (b) permitir divisiones de ganancia cero (`<=`) en `DecisionTree`, XOR debe dar 1.0; Q2 = LANZAR en entradas degeneradas de `Metrics` (`r2Score` con `yTrue` constante: 1 solo si `ssRes === 0`, 0 si no); Q5 = barrido total de `push(...)` (tarea T048). Ya no hay preguntas bloqueantes. Máximo 4 agentes a la vez.
 
 ## Lote 1 (archivos disjuntos; en paralelo)
 
@@ -20,7 +20,7 @@
       Mutantes: cambiar `/ yTrue.length` por `/ (yTrue.length + 1)` en `mae`; `i` por `j` en `confusionMatrix`; quitar `Math.abs` en `auc`; `1 - ssRes / ssTot` por `ssRes / ssTot`; `K` sin `+ 1` en `precision` macro.
       Gate: `npx vitest run tests/Metrics.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Metrics.test.ts 2>&1 | grep Metrics` (líneas ≥ 90 %) `&& GC`.
 
-- [ ] T003 [S] [files: tests/DecisionTree.test.ts] (+ `src/DecisionTree.ts` SOLO si Q1 = (b)) US3 / FR-005: tests de `DecisionTree` (`fit`, `predict`, `predictBatch`, `maxDepth`, `minSamplesSplit`, `task: 'regression'`, errores de constructor y de `fit`/`predict` sin ajustar) con árboles deducidos a mano (AND: la raíz divide por cualquier característica con umbral 0.5; regresión: hojas = medias). XOR según Q1: (a) test que fija acierto 0.5 (`[0,0,0,0]` en `[[0,0],[0,1],[1,0],[1,1]]`), control AND y XOR con característica extra `x1·x2` (acierto 1.0), y cabecera en `src/DecisionTree.ts` que dice "limitación: división voraz de ganancia estricta (`weightedImpurity < parentImpurity`); XOR no se separa"; (b) cambio de `<` a `<=` con golden previo de AND/OR/regresión y XOR = 1.0. Sin respuesta a Q1, se aplica (a) y se informa.
+- [ ] T003 [S] [files: src/DecisionTree.ts, tests/DecisionTree.test.ts] (+ `src/DecisionTree.ts`; DECIDIDO Q1 = (b)) US3 / FR-005: tests de `DecisionTree` (`fit`, `predict`, `predictBatch`, `maxDepth`, `minSamplesSplit`, `task: 'regression'`, errores de constructor y de `fit`/`predict` sin ajustar) con árboles deducidos a mano (AND: la raíz divide por cualquier característica con umbral 0.5; regresión: hojas = medias). XOR según Q1: (a) test que fija acierto 0.5 (`[0,0,0,0]` en `[[0,0],[0,1],[1,0],[1,1]]`), control AND y XOR con característica extra `x1·x2` (acierto 1.0), y cabecera en `src/DecisionTree.ts` que dice "limitación: división voraz de ganancia estricta (`weightedImpurity < parentImpurity`); XOR no se separa"; (b) cambio de `<` a `<=` con golden previo de AND/OR/regresión y XOR = 1.0. DECIDIDO: se aplica (b); (a) queda descartada.
       Mutantes: `<` por `<=` en `_bestSplit` (debe romper el test XOR de la opción elegida); `<=` por `<` en `_traverse`; `maxDepth` ignorado; media sustituida por mediana en `_leafValue` regresión; `gini` sin el `1 -`.
       Gate: `npx vitest run tests/DecisionTree.test.ts && npx vitest run --coverage --coverage.reporter=text tests/DecisionTree.test.ts 2>&1 | grep DecisionTree && GC`.
 
@@ -223,7 +223,10 @@
 ## Dependencias y orden
 
 - Lote 1 → 12 en serie; dentro de un lote, 4 agentes en paralelo (`[P]` con archivos disjuntos). El orquestador integra una rama cada vez (`merge --no-ff`, typecheck, suite 3 veces).
-- T003 espera a Q1 (por defecto (a)); T036 espera a Q2.
+- Q1, Q2 y Q5 decididas (ver arriba); T003 aplica (b) y T036 lanza.
 - T033 antes de T037–T039 (helper). T002 antes de T036; T009 y T015 antes de T043; T017, T021, T042 comparten módulos pero no archivos; T025/T026 antes de T037; T004/T005/T024 antes de T038; T006/T003 antes de T039; T027–T029 antes de T040; T022/T023/T030/T031 antes de T041; T010/T019/T017/T021 antes de T042; T034/T035 independientes de los demás.
-- Q5 (barrido total de `push(...)`) y Q7 (aplazados a 007) no añaden tareas aquí.
+- Q7 (aplazados a 007) no añade tareas. T048 cubre el barrido total de Q5.
 - Cada módulo tiene como máximo dos tareas (comportamiento y validación), más T034/T035 para `getWeights`. Las tareas de validación pueden reescribir en el archivo de comportamiento SOLO el `describe` que fijaba el caso degenerado (T036, T037, T042, T041, T043), y lo declaran en `[files: ...]`.
+
+- [ ] T048 [P] [H] [files: src/Network.ts, src/NetworkN.ts, src/Conv1D.ts, src/Conv2D.ts, src/WeightInspector.ts, tests/api/getWeights.large.dense.test.ts] FR-008 / Q5 (barrido total): sustituir los `push(...)` restantes (`push(...n.weights, n.bias)`, `push(...this.biases)` y similares; localizar con `grep -n "push(\.\.\." src/`) por bucles, mismo orden. Golden previo con semilla a tamaño pequeño (`toEqual` tras el cambio). Test con una capa/vector que supere ~120 000 elementos donde sea construible. Tras T034/T035 el `grep` no debe devolver ninguna coincidencia en `src/` salvo justificadas en el informe.
+      Gate: npx vitest run tests/api/getWeights.large.dense.test.ts && npx tsc --noEmit && ! grep -rn "push(\.\.\." src/
