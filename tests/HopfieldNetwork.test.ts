@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { HopfieldNetwork } from '../src/HopfieldNetwork'
 import { seedRandom, restoreRandom } from './helpers/seed'
 
@@ -36,8 +36,15 @@ import { seedRandom, restoreRandom } from './helpers/seed'
 //   Recall asíncrono llega a uno de ellos (depende del orden); la síncrona oscila entre [−1,−1] y [+1,+1].
 
 describe('HopfieldNetwork', () => {
-  beforeEach(() => seedRandom(42))
-  afterEach(restoreRandom)
+  beforeEach(() => {
+    seedRandom(42)
+    // El aviso de capacidad (T052) saltaría con N pequeño; se silencia para no ensuciar la salida.
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    restoreRandom()
+    vi.restoreAllMocks()
+  })
 
   describe('constructor', () => {
     it('creates an n×n zero matrix and no stored patterns', () => {
