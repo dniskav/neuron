@@ -7,8 +7,8 @@ import { DatasetLoader } from '../src/DatasetLoader'
 // Valores esperados: derivados a mano de cada CSV/JSON (comentarios junto a cada
 // expect). No se copian de la salida del módulo.
 //
-// Nota: no se fijan como correctos dos comportamientos sospechosos (celda numérica
-// vacía → NaN; filas irregulares aceptadas en silencio). Ver el informe de T008.
+// Celdas numéricas vacías y filas irregulares lanzan (T050): ver
+// tests/api/DatasetLoader.validation.test.ts.
 
 // ── CSV de referencia ───────────────────────────────────────────────────────
 // Cabecera: x1, x2, color, label (la línea "# ..." se salta).
