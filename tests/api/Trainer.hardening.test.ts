@@ -206,7 +206,8 @@ describe('Trainer.train lanza ante opciones sin efecto o invalidas (Q2)', () => 
     ['epochs negativo', { epochs: -3 }, /epochs/],
     ['epochs no entero', { epochs: 2.5 }, /epochs/],
     ['epochs NaN', { epochs: NaN }, /epochs/],
-    ['epochs Infinity', { epochs: Infinity }, /epochs/],
+    // epochs: Infinity se prueba aparte con una red centinela (ver abajo): con
+    // makeStub, quitar la validacion haria un bucle sin fin.
     ['lr 0', { lr: 0 }, /\blr\b/],
     ['lr negativo', { lr: -0.1 }, /\blr\b/],
     ['lr NaN', { lr: NaN }, /\blr\b/],
@@ -221,6 +222,9 @@ describe('Trainer.train lanza ante opciones sin efecto o invalidas (Q2)', () => 
     ['patience 0', { earlyStopping: { patience: 0, minDelta: 0 } }, /patience/],
     ['patience no entero', { earlyStopping: { patience: 1.5, minDelta: 0 } }, /patience/],
     ['patience NaN', { earlyStopping: { patience: NaN, minDelta: 0 } }, /patience/],
+    ['minDelta NaN', { earlyStopping: { patience: 2, minDelta: NaN } }, /minDelta/],
+    ['minDelta negativo', { earlyStopping: { patience: 2, minDelta: -0.1 } }, /minDelta/],
+    ['minDelta Infinity', { earlyStopping: { patience: 2, minDelta: Infinity } }, /minDelta/],
   ]
   for (const [name, opts, re] of bad) {
     it(`parametro invalido: ${name}`, () => {
@@ -231,6 +235,34 @@ describe('Trainer.train lanza ante opciones sin efecto o invalidas (Q2)', () => 
       expect(trainSpy).not.toHaveBeenCalled()
     })
   }
+
+  it('epochs Infinity lanza antes de entrenar, sin bucle infinito', () => {
+    // La red centinela lanza en su primera llamada a train. Si faltara la
+    // validacion de epochs, el bucle `epoch < Infinity` llamaria a train, el
+    // test fallaria con el mensaje CENTINELA (no con 'Worker exited').
+    const trainSpy = vi.fn((): number => {
+      throw new Error('CENTINELA: network.train fue llamado')
+    })
+    const t = new Trainer({ train: trainSpy }, { epochs: Infinity })
+    expect(() => t.train(tiny)).toThrow(/epochs/)
+    expect(trainSpy).not.toHaveBeenCalled()
+  })
+
+  it('earlyStopping con validacion vacia lanza y no llama a network.train', () => {
+    const { net, trainSpy } = makeStub()
+    const t = new Trainer(net, { epochs: 3, earlyStopping: { patience: 2, minDelta: 0 } })
+    t.setValidationData({ inputs: [], targets: [] })
+    expect(() => t.train(tiny)).toThrow(/validation data is empty/)
+    expect(trainSpy).not.toHaveBeenCalled()
+  })
+
+  it('sin earlyStopping, la validacion vacia no cambia el comportamiento', () => {
+    const { net, trainSpy } = makeStub()
+    const t = new Trainer(net, { epochs: 2 })
+    expect(() => t.setValidationData({ inputs: [], targets: [] })).not.toThrow()
+    expect(() => t.train(tiny)).not.toThrow()
+    expect(trainSpy).toHaveBeenCalledTimes(4) // 2 epocas x 2 muestras
+  })
 
   it('limites validos no lanzan: lrDecay 1, weightDecay 0, patience 1, epochs 1', () => {
     const { net } = makeStub()

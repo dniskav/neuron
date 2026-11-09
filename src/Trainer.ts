@@ -13,8 +13,10 @@
 // earlyStopping without setValidationData(), weightDecay/earlyStopping/
 // restoreBestWeights on a network without getWeights/setWeights/predict,
 // computeMetrics without predict(), an empty dataset, and invalid epochs
-// (integer > 0), lr (finite > 0), lrDecay (in (0, 1]), weightDecay (finite >= 0)
-// or patience (integer >= 1). Errors are thrown before any network.train call.
+// (integer > 0), lr (finite > 0), lrDecay (in (0, 1]), weightDecay (finite >= 0),
+// patience (integer >= 1) or minDelta (finite >= 0), and empty or mismatched
+// validation data when earlyStopping is set. Errors are thrown before any
+// network.train call.
 // The only remaining console.warn is computeMetrics with targets that do not
 // look like classification (a heuristic over the data).
 //
@@ -291,6 +293,9 @@ export class Trainer {
     if (es && !(Number.isInteger(es.patience) && es.patience >= 1)) {
       fail(`earlyStopping.patience must be an integer >= 1, got ${es.patience}`);
     }
+    if (es && !(finite(es.minDelta) && es.minDelta >= 0)) {
+      fail(`earlyStopping.minDelta must be a finite number >= 0, got ${es.minDelta}`);
+    }
 
     const netExt = this._hasWeights(this.network);
     const needs = 'requires a network with getWeights/setWeights/predict';
@@ -302,6 +307,12 @@ export class Trainer {
     }
     if (es && !this._validationData) {
       fail('earlyStopping requires validation data: call setValidationData() before train()');
+    }
+    // Checked here, not in setValidationData, so that a validation set given to a
+    // Trainer without earlyStopping keeps its current behaviour. (Mismatched
+    // lengths are already rejected by setValidationData itself.)
+    if (es && this._validationData && this._validationData.inputs.length === 0) {
+      fail('earlyStopping validation data is empty: setValidationData() needs at least one sample');
     }
     if (this.restoreBestWeights && !es) {
       fail('restoreBestWeights requires earlyStopping (and validation data)');
