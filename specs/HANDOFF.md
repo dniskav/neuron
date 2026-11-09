@@ -34,7 +34,7 @@
 | 003 `sign-fix` | **Hecha y fusionada** (PR #6; 13/13 tareas) |
 | 004 `models-fix` | **Hecha y fusionada** (PR #7; 13/13 tareas; CI de GitHub en verde) |
 | 005 `api-hardening` | **Hecha y fusionada** (PR #8; T001–T023; CI en verde) |
-| 006 `coverage` | En curso: spec hecha (48 tareas); Lotes 1–3 integrados en `fix/v0.4` local (T001–T012, T049–T051; tests 1588+); defectos hallados se convierten en tareas T049–T053 (Tokenizer, DatasetLoader, PCA hechas; T052 Hopfield y T053 LossPlotter pendientes). Decisiones: Q1 `<=` en DecisionTree, Q2 `Metrics` lanza, Q5 barrido `push(...)` (T048). `f1Score` macro se alinea con sklearn (media de F1 por clase; entra en T036, cambio incompatible para el changelog). Lote 2 (T005–T008) lanzado |
+| 006 `coverage` | En curso: spec hecha (48 tareas); Lotes 1–4 integrados en `fix/v0.4` local (T001–T014, T049–T053; 1673 tests+); defectos hallados por los agentes se convierten en tareas T049–T054 (T054 WeightInspector pendiente). Decisiones: Q1 `<=` en DecisionTree, Q2 `Metrics` lanza, Q5 barrido `push(...)` (T048). `f1Score` macro se alinea con sklearn (media de F1 por clase; entra en T036, cambio incompatible para el changelog). Lote 2 (T005–T008) lanzado |
 | 007 `docs` | Pendiente |
 | 008 `release-app` | Pendiente |
 
