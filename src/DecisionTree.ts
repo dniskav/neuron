@@ -34,7 +34,20 @@
 //   - Node depth reaches maxDepth
 //   - Node has fewer than minSamplesSplit samples
 //   - All samples have the same label (Gini = 0)
-//   - No split improves the impurity (pure node or single unique value)
+//   - No split with weightedImpurity <= parentImpurity exists (e.g. every
+//     feature has a single unique value in the node)
+//
+// ─── ZERO-GAIN SPLITS (XOR) ───────────────────────────────────────────────────
+//
+//   The search is greedy, but a split is accepted when it does NOT worsen the
+//   parent (weightedImpurity <= parentImpurity), so zero-gain splits are
+//   allowed in impure nodes. Among candidates the first strictly-best one
+//   wins (ties keep the earliest feature / threshold).
+//   Consequence: XOR ([0,0],[0,1],[1,0],[1,1] → 0,1,1,0) has no gain at the
+//   root (Gini 0.5 for every split) but the tree splits anyway and separates
+//   it perfectly with maxDepth >= 2. With maxDepth = 1 it stays a stump.
+//   Side effect: on noisy data, zero-gain splits can make trees deeper than a
+//   strict-gain CART, always bounded by maxDepth and minSamplesSplit.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -165,8 +178,10 @@ export class DecisionTree {
           (leftY.length  / n) * this._impurity(leftY) +
           (rightY.length / n) * this._impurity(rightY);
 
-        // Only consider splits that strictly improve over the parent
-        if (weightedImpurity < bestImpurity && weightedImpurity < parentImpurity) {
+        // Accept splits that do not worsen the parent (zero-gain allowed, so
+        // XOR-like data can be separated at the next level). Among candidates,
+        // the first strictly-best one wins (ties keep the earliest).
+        if (weightedImpurity < bestImpurity && weightedImpurity <= parentImpurity) {
           bestImpurity = weightedImpurity;
           bestSplit = { featureIndex: j, threshold };
         }
