@@ -198,9 +198,9 @@ export class CausalConv1D {
 //
 // ReLU activations are applied between conv layers (not at the final projection).
 //
-// Residual connections: when inputChannels == channels, the input of each block
-// is added to the block output before the activation (ResNet-style). This
-// further stabilizes gradients in deep stacks.
+// Residual connections: when inputChannels == channels, the input of each level
+// is added to the level output AFTER the ReLU, so the sum is not passed through
+// the ReLU (ResNet-style). This further stabilizes gradients in deep stacks.
 //
 export class TCN {
   readonly layers: CausalConv1D[];
