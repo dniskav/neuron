@@ -26,6 +26,8 @@
 // ─── CAPACITY ────────────────────────────────────────────────────────────────
 //   Theoretical maximum before spurious states dominate:
 //     P_max ≈ 0.138 · N         (Amit, Gutfreund & Sompolinsky, 1985)
+//   store() warns once per network (console.warn) when storedPatterns exceeds
+//   max(1, floor(0.138 · N)).
 //   Storing more than ~14% of N patterns causes interference and recall errors.
 //   Beyond capacity the network may converge to "spurious" states — linear
 //   combinations (mixtures) of stored patterns.
@@ -70,12 +72,14 @@ export class HopfieldNetwork {
     this.storedPatterns++;
 
     // Warn once per network when the theoretical capacity is exceeded
-    // (~0.138·N patterns). Not thrown: the network keeps working, with errors.
-    if (!this._capacityWarned && this.storedPatterns > Math.floor(0.138 * this.n)) {
+    // (~0.138·N patterns, at least 1: a single pattern is always valid).
+    // Not thrown: the network keeps working, with errors.
+    const capacity = Math.max(1, Math.floor(0.138 * this.n));
+    if (!this._capacityWarned && this.storedPatterns > capacity) {
       this._capacityWarned = true;
       console.warn(
         `HopfieldNetwork.store: ${this.storedPatterns} patterns exceed the capacity ` +
-        `~0.138·N = ${Math.floor(0.138 * this.n)} for N = ${this.n}; recall may converge to spurious states.`
+        `max(1, floor(0.138·N)) = ${capacity} for N = ${this.n}; recall may converge to spurious states.`
       );
     }
   }

@@ -4,9 +4,9 @@ import { seedRandom, restoreRandom } from '../helpers/seed'
 
 // T052: validación de entradas y aviso de capacidad de HopfieldNetwork.
 //
-// Capacidad: floor(0.138·N). N = 4 → 0 (avisa en el 1.er patrón);
-// N = 20 → floor(2.76) = 2 (avisa en el 3.er patrón); N = 8 → floor(1.104) = 1
-// (avisa en el 2.º patrón).
+// Capacidad: max(1, floor(0.138·N)). N = 4 → floor(0.552) = 0 → 1 (avisa en el 2.º);
+// N = 20 → floor(2.76) = 2 (avisa en el 3.º); N = 8 → floor(1.104) = 1 (avisa en el 2.º);
+// N = 100 → floor(13.8) = 13 (avisa en el 14.º).
 //
 // Golden (N = 6, patrones a = [1,-1,1,-1,1,1], b = [-1,-1,1,1,-1,1]), capturado
 // con la base antes del cambio; ver derivaciones: W_ij = (a_i a_j + b_i b_j)/6.
@@ -131,6 +131,26 @@ describe('HopfieldNetwork validation (T052)', () => {
       n2.store(p1)
       n2.store(p2)
       expect(spy).toHaveBeenCalledTimes(2)
+    })
+
+    it('N = 4: one pattern never warns, the 2nd does', () => {
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const net = new HopfieldNetwork(4)
+      const [p1, p2] = pats(4, 2)
+      net.store(p1)
+      expect(spy).not.toHaveBeenCalled()
+      net.store(p2)
+      expect(spy).toHaveBeenCalledTimes(1)
+    })
+
+    it('N = 100: threshold 13, warns at the 14th pattern', () => {
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const net = new HopfieldNetwork(100)
+      const all = pats(100, 14)
+      for (const p of all.slice(0, 13)) net.store(p)
+      expect(spy).not.toHaveBeenCalled()
+      net.store(all[13])
+      expect(spy).toHaveBeenCalledTimes(1)
     })
 
     it('does not warn for a rejected pattern', () => {
