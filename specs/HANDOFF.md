@@ -34,7 +34,7 @@
 | 003 `sign-fix` | **Hecha y fusionada** (PR #6; 13/13 tareas) |
 | 004 `models-fix` | **Hecha y fusionada** (PR #7; 13/13 tareas; CI de GitHub en verde) |
 | 005 `api-hardening` | **Hecha y fusionada** (PR #8; T001–T023; CI en verde) |
-| 006 `coverage` | En curso: `fix/v0.4` recreada desde `master`; falta la spec (`spec-author`) |
+| 006 `coverage` | En curso: spec hecha (48 tareas); Lote 1 (T001–T004) integrado en `fix/v0.4` local, 1377 tests; siguiente lote T005–T008. Decisiones: Q1 `<=` en DecisionTree, Q2 `Metrics` lanza, Q5 barrido `push(...)` (T048). Pendiente de decidir: convención de `f1Score` macro (ver notas en `specs/006-coverage/tasks.md`) |
 | 007 `docs` | Pendiente |
 | 008 `release-app` | Pendiente |
 
