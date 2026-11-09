@@ -12,8 +12,11 @@
 // Backward pass:
 //   Gradient flows only to the position that held the maximum value in each
 //   window. All other positions receive zero gradient.
-//   This is equivalent to a binary mask: mask[h][w][c] = 1 iff that position
-//   was the max for its window.
+//   The argmax of each window is stored per window in forward (not as a
+//   per-position mask), so with overlapping windows (stride < poolSize) each
+//   window's gradient goes only to its own argmax; a position that is the max
+//   of several windows accumulates (+=) their gradients. Ties: first position
+//   in scan order (strict `>`).
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -21,9 +24,9 @@ export class MaxPool2D {
   readonly poolSize: number;
   readonly stride: number;
 
-  // Mask stored during forward pass for backprop:
-  // _maxMask[h][w][c] = true if input[h][w][c] was the maximum in its window
-  private _maxMask: boolean[][][] | null = null;
+  // Argmax per window stored during forward pass for backprop:
+  // _argmax[oh][ow][c] = [ih, iw] input position of the max of that window
+  private _argmax: [number, number][][][] | null = null;
   private _inputH: number = 0;
   private _inputW: number = 0;
   private _inputC: number = 0;
@@ -61,8 +64,8 @@ export class MaxPool2D {
     const output: number[][][] = Array.from({ length: outH }, () =>
       Array.from({ length: outW }, () => new Array(C).fill(-Infinity))
     );
-    this._maxMask = Array.from({ length: H }, () =>
-      Array.from({ length: W }, () => new Array(C).fill(false))
+    const argmax: [number, number][][][] = Array.from({ length: outH }, () =>
+      Array.from({ length: outW }, () => new Array<[number, number]>(C))
     );
 
     for (let oh = 0; oh < outH; oh++) {
@@ -83,11 +86,12 @@ export class MaxPool2D {
             }
           }
 
-          output[oh][ow][c]                                                     = maxVal;
-          this._maxMask[oh * this.stride + maxPH][ow * this.stride + maxPW][c] = true;
+          output[oh][ow][c] = maxVal;
+          argmax[oh][ow][c] = [oh * this.stride + maxPH, ow * this.stride + maxPW];
         }
       }
     }
+    this._argmax = argmax;
 
     return output;
   }
@@ -97,7 +101,7 @@ export class MaxPool2D {
   // Returns dInput: number[][][] of shape [H][W][C]
   // Gradient is routed only to the max position; all others get 0.
   backward(dOutput: number[][][]): number[][][] {
-    if (!this._maxMask) {
+    if (!this._argmax) {
       throw new Error('MaxPool2D.backward: call forward() first');
     }
 
@@ -112,15 +116,8 @@ export class MaxPool2D {
     for (let oh = 0; oh < outH; oh++) {
       for (let ow = 0; ow < outW; ow++) {
         for (let c = 0; c < C; c++) {
-          for (let ph = 0; ph < this.poolSize; ph++) {
-            for (let pw = 0; pw < this.poolSize; pw++) {
-              const ih = oh * this.stride + ph;
-              const iw = ow * this.stride + pw;
-              if (this._maxMask[ih][iw][c]) {
-                dInput[ih][iw][c] += dOutput[oh][ow][c];
-              }
-            }
-          }
+          const [ih, iw] = this._argmax[oh][ow][c];
+          dInput[ih][iw][c] += dOutput[oh][ow][c];
         }
       }
     }
