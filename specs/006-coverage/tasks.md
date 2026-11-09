@@ -70,7 +70,7 @@
       Mutantes: umbral `<` por `<=`; excluir los sesgos; desviación con `n − 1`; `countDeadReLUs` contando positivos.
       Gate: `npx vitest run tests/WeightInspector.test.ts && npx vitest run --coverage --coverage.reporter=text tests/WeightInspector.test.ts 2>&1 | grep WeightInspector && GC`.
 
-- [ ] T014 [P] [H] [files: tests/Flatten.test.ts, tests/oracle/Flatten.dx.oracle.test.ts] Tests de `Flatten` (`src/Flatten.ts`) y oráculo de `dx` (US4/FR-006). Forward: `[[[1,2],[3,4]],[[5,6],[7,8]]]` (2×2×2) → `[1,2,3,4,5,6,7,8]` (orden fila, columna, canal); `backward` es la inversa exacta; errores (sin `forward` previo, longitud del gradiente errónea). Oráculo: derivada por diferencias finitas de `L = Σ c_i·flat_i` respecto de cada componente, `|a − b| < 1e-6` por componente, con `c` fijo.
+- [x] T014 [P] [H] [files: tests/Flatten.test.ts, tests/oracle/Flatten.dx.oracle.test.ts] Tests de `Flatten` (`src/Flatten.ts`) y oráculo de `dx` (US4/FR-006). Forward: `[[[1,2],[3,4]],[[5,6],[7,8]]]` (2×2×2) → `[1,2,3,4,5,6,7,8]` (orden fila, columna, canal); `backward` es la inversa exacta; errores (sin `forward` previo, longitud del gradiente errónea). Oráculo: derivada por diferencias finitas de `L = Σ c_i·flat_i` respecto de cada componente, `|a − b| < 1e-6` por componente, con `c` fijo.
       Mutantes: orden `c, w, h`; `backward` sin respetar `inputShape`; omitir la comprobación de longitud.
       Gate: `npx vitest run tests/Flatten.test.ts tests/oracle/Flatten.dx.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Flatten.test.ts 2>&1 | grep Flatten && GC`.
 
