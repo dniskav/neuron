@@ -124,14 +124,16 @@ describe('NetworkTransformerRL.setWeightsStructured (I2, T003)', () => {
     const nan = clone(before)
     nan.blocks[0].b1[0] = NaN
 
+    const nOut = before.outputBias.length
+    expect(N).toBeGreaterThan(0)
     expect(() => net.setWeightsStructured(short)).toThrow(
-      new RegExp(`${esc(method)}: expected array of length ${N}, got ${N - 1}`),
+      new RegExp(`${esc(method)}\\(outputBias\\): expected array of length ${nOut}, got ${nOut - 1}`),
     )
     expect(() => net.setWeightsStructured(long)).toThrow(
-      new RegExp(`${esc(method)}: expected array of length ${N}, got ${N + 1}`),
+      new RegExp(`${esc(method)}\\(outputBias\\): expected array of length ${nOut}, got ${nOut + 1}`),
     )
     expect(() => net.setWeightsStructured(nan)).toThrow(
-      new RegExp(`${esc(method)}: invalid value at index`),
+      new RegExp(`${esc(method)}\\(blocks\\[0\\]\\.b1\\): invalid value at index 0`),
     )
 
     expect(net.getWeightsStructured()).toEqual(before)
@@ -151,6 +153,95 @@ describe('NetworkTransformerRL.setWeightsStructured (I2, T003)', () => {
     const shifted = mapNumbers(before, v => v + 1)
     net.setWeightsStructured(shifted)
     expect(net.getWeightsFlat()).toEqual(beforeFlat.map(v => v + 1))
+  })
+})
+
+describe('NetworkTransformerRL.setWeightsStructured atomico y con forma (T020)', () => {
+  const method = 'NetworkTransformerRL.setWeightsStructured'
+  type S = ReturnType<NetworkTransformerRL['getWeightsStructured']>
+
+  it('mover un elemento de b1 al final de ff1[0] lanza y deja el modelo intacto', () => {
+    const net = makeRL()
+    const before = net.getWeightsStructured()
+    const flat = net.getWeightsFlat()
+    const bad = clone(before)
+    bad.blocks[0].ff1[0].push(bad.blocks[0].b1.pop() as number)
+    expect(() => net.setWeightsStructured(bad)).toThrow(new RegExp(esc(method)))
+    expect(net.getWeights()).toEqual(flat)
+    expect(net.getWeightsStructured()).toEqual(before)
+  })
+
+  it('reformar Wq de 4x2 a 2x4 (mismo total) lanza y deja el modelo intacto', () => {
+    const net = makeRL()
+    const before = net.getWeightsStructured()
+    const flat = net.getWeightsFlat()
+    const bad = clone(before)
+    const wq = bad.blocks[0].attn.heads[0].Wq
+    const [r, c] = [wq.length, wq[0].length]
+    expect(r).not.toBe(c)
+    const f = wq.flat()
+    // Mismo total, filas y columnas intercambiadas (p. ej. 2x4 -> 4x2)
+    bad.blocks[0].attn.heads[0].Wq = Array.from({ length: c }, (_, i) => f.slice(i * r, (i + 1) * r))
+    expect(bad.blocks[0].attn.heads[0].Wq.flat().length).toBe(f.length)
+    expect(() => net.setWeightsStructured(bad)).toThrow(new RegExp(esc(method) + '\\(blocks\\[0\\]\\.heads\\[0\\]\\.Wq\\)'))
+    expect(net.getWeights()).toEqual(flat)
+  })
+
+  // Un fallo de forma en cada tipo de matriz/vector no escribe nada
+  const mutations: [string, (d: S) => void][] = [
+    ['inputProj', d => { d.inputProj[0].pop() }],
+    ['Wk', d => { d.blocks[0].attn.heads[1].Wk.pop() }],
+    ['Wv', d => { d.blocks[0].attn.heads[0].Wv[0].push(1) }],
+    ['Wo', d => { d.blocks[0].attn.Wo[1].pop() }],
+    ['ff1', d => { d.blocks[0].ff1[0].push(d.blocks[0].ff1[1].pop() as number) }],
+    ['ff2', d => { d.blocks[0].ff2.pop() }],
+    ['norm1.gamma', d => { d.blocks[0].norm1.gamma.pop() }],
+    ['norm2.beta', d => { d.blocks[0].norm2.beta.push(0) }],
+    ['b2', d => { d.blocks[0].b2.pop() }],
+    ['outputProj', d => { d.outputProj[0].pop() }],
+    ['outputBias', d => { d.outputBias.pop() }],
+    ['numero de cabezas', d => { d.blocks[0].attn.heads.pop() }],
+    ['numero de bloques', d => { d.blocks.pop() }],
+  ]
+  for (const [label, mutate] of mutations) {
+    it(`forma invalida en ${label}: lanza y no cambia nada`, () => {
+      const net = makeRL()
+      // Pesos distintos en TODAS partes: si algo se escribiera antes del fallo, se vería.
+      const shifted = mapNumbers(net.getWeightsStructured(), (v: number) => v + 1) as S
+      const flat = net.getWeightsFlat()
+      mutate(shifted)
+      expect(() => net.setWeightsStructured(shifted), label).toThrow(new RegExp(esc(method)))
+      expect(net.getWeightsFlat()).toEqual(flat)
+    })
+  }
+
+  it('el fallo en el ultimo elemento (outputBias) tampoco deja escrito el principio', () => {
+    const net = makeRL()
+    const flat = net.getWeightsFlat()
+    const bad = mapNumbers(net.getWeightsStructured(), (v: number) => v + 1) as S
+    bad.outputBias.pop()
+    expect(() => net.setWeightsStructured(bad)).toThrow(/outputBias/)
+    expect(net.getWeightsFlat()).toEqual(flat)
+  })
+
+  it('setWeightsStructured(getWeightsStructured()) es identidad', () => {
+    const net = makeRL()
+    net.train([[1, 2], [3, 4], [5, 6]], [1, 0], 0.01)
+    const flat = net.getWeightsFlat()
+    const st = net.getWeightsStructured()
+    net.setWeightsStructured(st)
+    expect(net.getWeightsFlat()).toEqual(flat)
+    expect(net.getWeightsStructured()).toEqual(st)
+  })
+
+  it('una fila de 200000 elementos no desborda la pila', () => {
+    const big = new NetworkTransformerRL(1, 200000, { d_model: 2, nHeads: 1, d_ff: 2, nBlocks: 1, nActions: 1 })
+    const st = big.getWeightsStructured()
+    expect(st.inputProj[0].length).toBe(200000)
+    const shifted = clone(st)
+    shifted.inputProj[0][199999] = 7
+    big.setWeightsStructured(shifted)
+    expect(big.getWeightsStructured().inputProj[0][199999]).toBe(7)
   })
 })
 
