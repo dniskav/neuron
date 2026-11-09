@@ -1,0 +1,229 @@
+# Tasks: coverage
+
+**Input**: `specs/006-coverage/spec.md`, `plan.md`
+**Formato**: `- [ ] T0NN [P?] [H|S] [files: ...]` + línea `Mutantes:` + línea `Gate:`. `[P]` solo si los archivos no se solapan con otras tareas `[P]` del mismo lote. `package.json`, `package-lock.json`, `src/index.ts`, el changelog y `tasks.md` son exclusivos del orquestador: ninguna tarea los toca.
+**Requisitos de cada agente**: comprobar la base (`git merge-base --is-ancestor fix/v0.4 HEAD`; si no, `git rebase fix/v0.4`), `npm ci` si falta `node_modules`, comandos git simples (sin `cd && git` ni `for`), UN solo `vitest` completo al final (no en bucle), scripts temporales con el prefijo de la tarea (`t0NN_*`) en el scratchpad. Los mutantes se aplican SOLO en el worktree propio.
+**GC (gate común)**, repetido en cada tarea: `npm run typecheck && npx vitest run tests/oracle tests/api && git diff --quiet -- package.json package-lock.json src/index.ts`. La definición de terminado (`npx tsc --noEmit -p .`, `npm run build`, `npx vitest run`) la comprueba el orquestador al integrar.
+**Valores a mano (FR-004)**: cada `expect` numérico lleva en un comentario la derivación (cuenta o fórmula); no se copia la salida del código. Si una cifra deducida a mano no coincide con el código, el agente NO ajusta el test: lo escribe en `Pendiente o riesgos` como hallazgo y deja el `expect` con el valor a mano dentro de `it.fails('HALLAZGO ...')` solo si el orquestador lo autoriza; por defecto informa `blocked`.
+**Mutantes (Constitución IV)**: el agente lista ≥ 3 mutantes DISTINTOS del módulo (operador, índice, validación quitada, constante), comprueba que el archivo de tests FALLA con cada uno, restaura con `git checkout -- src` y repite el gate. El informe dice en una línea cuáles aplicó. Un test que no detecta ningún mutante se rechaza.
+**Tests de aprendizaje robustos (lección CI)**: validar con ≥ 5 semillas y `lr` ×0.7 y ×1.3; el peor caso queda por debajo de `0.7 ×` el umbral (margen ≥ 30 %); cifras en la cabecera del test. Semilla: `seedRandom` de `tests/helpers/seed.ts` en `beforeEach` y `restoreRandom` en `afterEach`.
+**Falla antes / pasa después (solo T033–T043, que cambian `src/`)**: capturar primero un golden numérico con la base (`toEqual` o tolerancia 1e-9), escribir el test nuevo, demostrar que FALLA sin el cambio con `git stash push -- <archivos src de la tarea>`, `npx vitest run <archivo>`, `git stash pop` (un `stash` por tarea, con mensaje único), y que PASA con él.
+**Preguntas del spec que bloquean**: T003 (Q1), T036 (Q2), T034/T035 (Q5: si el usuario pide barrido total, el orquestador añade una tarea mecánica). El resto no depende de Q. Máximo 4 agentes a la vez.
+
+## Lote 1 (archivos disjuntos; en paralelo)
+
+- [ ] T001 [P] [H] [files: vitest.config.ts] FR-001: añadir `coverage: { provider: 'v8', include: ['src/**'], exclude: ['src/index.ts'] }` a la configuración. No poner umbrales (T045).
+      Mutantes: n/a (configuración); en su lugar, comprobación de efecto: el informe lista los 15 módulos de 0 % de la spec.
+      Gate: `npx vitest run --coverage --coverage.reporter=text 2>&1 | grep -E "DecisionTree|Metrics|TSNE|Tokenizer|PCA|KMeans"` muestra las 6 filas, y `npm run typecheck && git diff --quiet -- package.json package-lock.json src/index.ts`.
+
+- [ ] T002 [P] [H] [files: tests/Metrics.test.ts] Tests de `Metrics` (hoy 0 %, `src/Metrics.ts`): `confusionMatrix`, `precision`, `recall`, `f1Score` (binario con `positiveClass` y macro), `accuracy`, `rocCurve`, `auc`, `mae`, `rmse`, `r2Score`, `perplexity`, `printConfusionMatrix`, `classificationReport` (espiando `console.log`). Casos a mano: `accuracy([0,1,1,0],[0,1,0,0]) = 0.75`; `confusionMatrix([0,1,1],[0,1,0]) = [[1,0],[1,1]]`; precisión/recall binarios con TP/FP/FN contados; `mae([1,2,3],[2,2,5]) = 1`; `rmse = √(5/3)`; `r2Score` perfecto = 1 y predecir la media = 0; `auc` de un clasificador perfecto = 1 y de uno invertido = 0 (en valor absoluto, ver `Math.abs` del código: anotar el caso); `perplexity` de probabilidades uniformes 1/V = V. Fija como COMPORTAMIENTO ACTUAL (sin cambiarlo) los casos degenerados de la spec (`mae` con longitudes distintas → `NaN`) dentro de un `describe('degenerate inputs (T036 will change these)')` para que T036 los reescriba.
+      Mutantes: cambiar `/ yTrue.length` por `/ (yTrue.length + 1)` en `mae`; `i` por `j` en `confusionMatrix`; quitar `Math.abs` en `auc`; `1 - ssRes / ssTot` por `ssRes / ssTot`; `K` sin `+ 1` en `precision` macro.
+      Gate: `npx vitest run tests/Metrics.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Metrics.test.ts 2>&1 | grep Metrics` (líneas ≥ 90 %) `&& GC`.
+
+- [ ] T003 [S] [files: tests/DecisionTree.test.ts] (+ `src/DecisionTree.ts` SOLO si Q1 = (b)) US3 / FR-005: tests de `DecisionTree` (`fit`, `predict`, `predictBatch`, `maxDepth`, `minSamplesSplit`, `task: 'regression'`, errores de constructor y de `fit`/`predict` sin ajustar) con árboles deducidos a mano (AND: la raíz divide por cualquier característica con umbral 0.5; regresión: hojas = medias). XOR según Q1: (a) test que fija acierto 0.5 (`[0,0,0,0]` en `[[0,0],[0,1],[1,0],[1,1]]`), control AND y XOR con característica extra `x1·x2` (acierto 1.0), y cabecera en `src/DecisionTree.ts` que dice "limitación: división voraz de ganancia estricta (`weightedImpurity < parentImpurity`); XOR no se separa"; (b) cambio de `<` a `<=` con golden previo de AND/OR/regresión y XOR = 1.0. Sin respuesta a Q1, se aplica (a) y se informa.
+      Mutantes: `<` por `<=` en `_bestSplit` (debe romper el test XOR de la opción elegida); `<=` por `<` en `_traverse`; `maxDepth` ignorado; media sustituida por mediana en `_leafValue` regresión; `gini` sin el `1 -`.
+      Gate: `npx vitest run tests/DecisionTree.test.ts && npx vitest run --coverage --coverage.reporter=text tests/DecisionTree.test.ts 2>&1 | grep DecisionTree && GC`.
+
+- [ ] T004 [P] [H] [files: tests/KMeans.test.ts] Tests de `KMeans` (0 %, `src/KMeans.ts`): constructor (`k` entero positivo), `fit` con dos grupos separados (centroides a mano: medias de cada grupo; `seedRandom`), `predict`/`predictBatch`, `inertia` (suma de distancias² a mano), errores (`k` mayor que n, sin ajustar, X vacía), determinismo con la misma semilla, `maxIter`/convergencia si existen opciones (`KMeansOptions`, leer el archivo). "Aprende": dos blobs a distancia ≥ 5 σ → etiquetas correctas salvo permutación, margen ≥ 30 % sobre el umbral de 0.9.
+      Mutantes: `<` por `>` al elegir el centroide más cercano; media sin dividir entre el tamaño del clúster; omitir la actualización de centroides; `k` fijo.
+      Gate: `npx vitest run tests/KMeans.test.ts && npx vitest run --coverage --coverage.reporter=text tests/KMeans.test.ts 2>&1 | grep KMeans && GC`.
+
+## Lote 2
+
+- [ ] T005 [P] [H] [files: tests/PCA.test.ts] Tests de `PCA` (0 %): `fit`, `transform`, `fitTransform`, `inverseTransform`, `explainedVarianceRatio`, errores (`nComponents`, `n < 2`, sin ajustar, `nComponents` mayor que las características). A mano: puntos sobre `y = x` → primer componente `±[1/√2, 1/√2]`, ratio de varianza 1; datos con covarianza diagonal `diag(4, 1)` → componentes = ejes y ratios 0.8/0.2; reconstrucción exacta con todos los componentes (tolerancia 1e-9); con menos componentes el error es la varianza descartada. Los signos de los componentes son ambiguos: comparar `|c|` o `c·c_esperado = ±1`.
+      Mutantes: sin restar la media; ordenar los autovalores al revés; ratio dividido por otro total; `inverseTransform` sin sumar la media.
+      Gate: `npx vitest run tests/PCA.test.ts && npx vitest run --coverage --coverage.reporter=text tests/PCA.test.ts 2>&1 | grep PCA && GC`.
+
+- [ ] T006 [P] [H] [files: tests/NaiveBayes.test.ts] Tests de `GaussianNaiveBayes` (`src/NaiveBayes.ts`): `fit`, `predict`, `predictProba` (suma 1, `Map`), errores (X vacía, longitudes, sin ajustar, dimensión). A mano: dos clases en 1-D con media 0 y 4, varianza 1 → frontera en 2 y probabilidad 0.5 allí (por simetría con priors iguales); priors desiguales desplazan la frontera (calcular `ln(P1/P0)/…` a mano). Atención a la varianza mínima/suavizado: leer el código y usar el valor que tenga.
+      Mutantes: priors uniformes siempre; log-verosimilitud con `σ` en vez de `σ²`; `argmax` por `argmin`; probabilidades sin normalizar.
+      Gate: `npx vitest run tests/NaiveBayes.test.ts && npx vitest run --coverage --coverage.reporter=text tests/NaiveBayes.test.ts 2>&1 | grep NaiveBayes && GC`.
+
+- [ ] T007 [P] [H] [files: tests/Tokenizer.test.ts] Tests de `Tokenizer` (`src/Tokenizer.ts`): `fit`, `tokenize` (opciones de `TokenizerOptions`), `encode`/`encodeBatch` (padding, truncado, tokens especiales de `EncodeOptions`), `decode` (con y sin `stripSpecial`; un id desconocido → `"<UNK>"`, decisión Q3), `oneHot`, `tokenToId`/`idToToken`, `getVocabulary`, `toJSON`/`fromJSON` (ida y vuelta idéntica), error sin `fit`. Vocabulario deducido a mano de un corpus de 2 frases.
+      Mutantes: orden del vocabulario por frecuencia invertido; padding por la izquierda; `stripSpecial` ignorado; `fromJSON` sin restaurar un campo.
+      Gate: `npx vitest run tests/Tokenizer.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Tokenizer.test.ts 2>&1 | grep Tokenizer && GC`.
+
+- [ ] T008 [P] [H] [files: tests/DatasetLoader.test.ts] Tests de `DatasetLoader.fromCSV` (`src/DatasetLoader.ts`, `DatasetLoaderOptions`): cabecera, columnas de entrada y de objetivo, normalización/one-hot si existen opciones (leer el archivo), comillas y separadores, CSV vacío o solo cabecera (lanza), columna inexistente (lanza), valores no numéricos. CSV de 3 filas con salida calculada a mano.
+      Mutantes: columna de objetivo desplazada en 1; normalización con `max` en vez de `max − min`; no saltar la cabecera; separador fijo.
+      Gate: `npx vitest run tests/DatasetLoader.test.ts && npx vitest run --coverage --coverage.reporter=text tests/DatasetLoader.test.ts 2>&1 | grep DatasetLoader && GC`.
+
+## Lote 3
+
+- [ ] T009 [P] [H] [files: tests/DataAugmentation.test.ts] Tests de `DataAugmentation` (`src/DataAugmentation.ts`): `addNoise`/`jitter` (semilla; magnitud ≤ delta para `jitter`, media ≈ 0 con muchas muestras, margen ≥ 30 %), `flipHorizontal`, `normalize`/`normalizePoint` (`[[0,10],[5,20],[10,30]]` → `[[0,0],[0.5,0.5],[1,1]]`, `min`/`max` devueltos), `standardize`/`standardizePoint` (media 0, desviación 1 a mano; columna constante → ver el código y fijar lo que hace), `shuffle` (misma permutación en `X` e `y`; conserva el multiconjunto). Los casos degenerados (shuffle con longitudes distintas, `standardize([])`) se fijan como comportamiento actual; T043 los cambia.
+      Mutantes: `normalize` sin restar `min`; `standardize` con `n − 1` en vez de `n` (o al revés, según el código); `shuffle` que baraja `X` e `y` por separado; `flipHorizontal` sin invertir.
+      Gate: `npx vitest run tests/DataAugmentation.test.ts && npx vitest run --coverage --coverage.reporter=text tests/DataAugmentation.test.ts 2>&1 | grep DataAugmentation && GC`.
+
+- [ ] T010 [P] [H] [files: tests/EarlyStopping.test.ts] Tests de `EarlyStopping` (`src/EarlyStopping.ts`): `update` con `mode` 'min'/'max', `patience`, `minDelta`, `restoreBest` con pesos (`weights` copiados, no alias), `reset`. Secuencia a mano: pérdidas `[1, 0.9, 0.95, 0.96, 0.97]` con `patience 2` → para en la época 4 (cuenta); una mejora menor que `minDelta` no reinicia el contador.
+      Mutantes: `<` por `<=` en la comparación; `patience` fuera de uno; `minDelta` ignorado; `reset` sin limpiar el contador; devolver el último peso en vez del mejor.
+      Gate: `npx vitest run tests/EarlyStopping.test.ts && npx vitest run --coverage --coverage.reporter=text tests/EarlyStopping.test.ts 2>&1 | grep EarlyStopping && GC`.
+
+- [ ] T011 [P] [H] [files: tests/HopfieldNetwork.test.ts] Tests de `HopfieldNetwork` (`src/HopfieldNetwork.ts`): `store` (matriz Hebbiana a mano para un patrón de 4 bits: `W_ij = p_i p_j / n`, diagonal 0 — verificar en el código), `recall` de un patrón con 1 bit invertido (se recupera), `energy` (valor a mano para el patrón almacenado), `binarize`/`unbinarize`, errores (`n`, patrón de longitud errónea, valores distintos de ±1; `console.warn` de capacidad espiado). No estocástico.
+      Mutantes: diagonal sin poner a cero; actualización asíncrona cambiada a un solo paso; energía con signo opuesto; umbral `>=` por `>`.
+      Gate: `npx vitest run tests/HopfieldNetwork.test.ts && npx vitest run --coverage --coverage.reporter=text tests/HopfieldNetwork.test.ts 2>&1 | grep Hopfield && GC`.
+
+- [ ] T012 [P] [H] [files: tests/LossPlotter.test.ts] Tests de `LossPlotter` (`src/LossPlotter.ts`): `add`, `addMultiple`, `render` (devuelve `string`; contiene el máximo y el mínimo formateados, tantas columnas como el ancho configurado), `print` (espía `console.log` y comprueba que recibe el mismo texto que `render`), `reset`. Serie `[1, 0.5, 0.25]` → comprobar posiciones/etiquetas leyendo el algoritmo de `render`.
+      Mutantes: escala de eje invertida; `reset` sin vaciar; `addMultiple` omitiendo el primero; ancho ignorado.
+      Gate: `npx vitest run tests/LossPlotter.test.ts && npx vitest run --coverage --coverage.reporter=text tests/LossPlotter.test.ts 2>&1 | grep LossPlotter && GC`.
+
+## Lote 4
+
+- [ ] T013 [P] [H] [files: tests/WeightInspector.test.ts] Tests de `WeightInspector` (`src/WeightInspector.ts`, usa `NetworkN`): `inspect` por capa (media, desviación, min, max, nº de pesos "muertos" con `deadThreshold`), `inspectAll`, `print` (espía `console.log`), `countDeadReLUs` (activaciones a mano). Red pequeña con `setWeights` (valores fijos) para que las estadísticas se calculen a mano; sesgos incluidos según el código (`weights.push(...neuron.weights, neuron.bias)`).
+      Mutantes: umbral `<` por `<=`; excluir los sesgos; desviación con `n − 1`; `countDeadReLUs` contando positivos.
+      Gate: `npx vitest run tests/WeightInspector.test.ts && npx vitest run --coverage --coverage.reporter=text tests/WeightInspector.test.ts 2>&1 | grep WeightInspector && GC`.
+
+- [ ] T014 [P] [H] [files: tests/Flatten.test.ts, tests/oracle/Flatten.dx.oracle.test.ts] Tests de `Flatten` (`src/Flatten.ts`) y oráculo de `dx` (US4/FR-006). Forward: `[[[1,2],[3,4]],[[5,6],[7,8]]]` (2×2×2) → `[1,2,3,4,5,6,7,8]` (orden fila, columna, canal); `backward` es la inversa exacta; errores (sin `forward` previo, longitud del gradiente errónea). Oráculo: derivada por diferencias finitas de `L = Σ c_i·flat_i` respecto de cada componente, `|a − b| < 1e-6` por componente, con `c` fijo.
+      Mutantes: orden `c, w, h`; `backward` sin respetar `inputShape`; omitir la comprobación de longitud.
+      Gate: `npx vitest run tests/Flatten.test.ts tests/oracle/Flatten.dx.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Flatten.test.ts 2>&1 | grep Flatten && GC`.
+
+- [ ] T015 [P] [H] [files: tests/MaxPool2D.test.ts, tests/oracle/MaxPool2D.dx.oracle.test.ts] Tests de `MaxPool2D` (`src/MaxPool2D.ts`) y oráculo de `dx`. Forward a mano: entrada 4×4×1 con valores distintos, `poolSize 2` → los 4 máximos de cada bloque; `stride` distinto de `poolSize`; `outputShape(h, w, c)`; canales independientes. Backward: el gradiente va solo a la posición del máximo (leer cómo trata los empates en `_maxMask` y fijar eso); con ventanas solapadas (`stride 1`, `poolSize 2`) los gradientes se SUMAN en la posición compartida (valor a mano). Oráculo por diferencias finitas en puntos sin empates, `|a − b| < 1e-6`. Errores: `poolSize` no positivo, `backward` antes de `forward`; la entrada menor que `poolSize` queda como comportamiento actual (devuelve `[]`; T043 lo cambia).
+      Mutantes: enrutar el gradiente a `(0,0)` de la ventana; `>` por `>=` en la búsqueda del máximo (debe cambiar el empate); `stride` ignorado; `+=` por `=` en el backward (rompe la suma de ventanas solapadas).
+      Gate: `npx vitest run tests/MaxPool2D.test.ts tests/oracle/MaxPool2D.dx.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/MaxPool2D.test.ts 2>&1 | grep MaxPool2D && GC`.
+
+- [ ] T016 [P] [H] [files: tests/oracle/Dropout.dx.oracle.test.ts] Oráculo de `dx` de `Dropout` (`src/Dropout.ts`, ya tiene `tests/Dropout.test.ts`): con `seedRandom` y `forward(x, true)` se fija la máscara; diferencias finitas de `L = Σ c_i·y_i` evaluadas con `reuseMask(x)` (misma máscara, sin sortear) frente a `backward(c)`; `|a − b| < 1e-6` por componente; `rate 0` e inferencia: `backward` devuelve `dOut` tal cual. Además una máscara a mano con un stub de `Math.random` (`[0.0, 0.9]` con `rate 0.5` → `[0, 2]`): `backward([1,1]) = [0, 2]`.
+      Mutantes: `backward` sin multiplicar por la máscara; escala `1/(1−rate)` omitida en `backward`; `reuseMask` sorteando de nuevo.
+      Gate: `npx vitest run tests/oracle/Dropout.dx.oracle.test.ts tests/Dropout.test.ts && GC`.
+
+## Lote 5
+
+- [ ] T017 [P] [H] [files: tests/PositionalEncoding.test.ts] Tests de `PositionalEncoding` (estática y `LearnedPositionalEncoding` si es la clase de `src/PositionalEncoding.ts:140`, cobertura 34 %): `encode(pos, dModel)`: `pos 0` → `[0,1,0,1,…]`; `encode(1, 4)` con `sin(1/10000^(0/4))`, `cos(…)`, `sin(1/10000^(2/4)) = sin(0.01)`, `cos(0.01)` (a mano con la fórmula del código); `encodeSequence`; `apply(embeddings, seqLen)` suma elemento a elemento; la clase con parámetros: `getEncoding`, `apply`, `update(dWeights, lr)` (SGD a mano: `W − lr·dW` o `+` según la convención de signo del archivo; leer y anotar). Errores actuales ya presentes (`throw` del archivo). Casos inválidos (`pos` negativo, `dModel` impar) quedan fijados como comportamiento actual; T042 los cambia.
+      Mutantes: `sin` por `cos` en las posiciones pares; exponente `2i/dModel` por `i/dModel`; `apply` restando; `update` con signo opuesto.
+      Gate: `npx vitest run tests/PositionalEncoding.test.ts tests/oracle/PositionalEncoding.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/PositionalEncoding.test.ts tests/oracle/PositionalEncoding.oracle.test.ts 2>&1 | grep PositionalEncoding && GC`.
+
+- [ ] T018 [P] [H] [files: tests/losses.test.ts] Tests de `losses` (`src/losses.ts`, 10 % de líneas): `mse([1,2],[1,4]) = (0+4)/2 = 2`; `crossEntropy([0.9,0.1],[1,0]) = −ln 0.9 = 0.10536…` (y recorte en 0 y 1 con `eps`: no devuelve `Infinity`); `mseDelta(p, a) = a − p`; `crossEntropyDelta`; `crossEntropyDeltaRaw(0.8, 1) = 1/0.8 = 1.25` y `(0.5, 0) = −1/(1−0.5) = −2`; recorte de `eps` en los extremos. Coherencia: `mseDelta` es `−∂/∂p` de `(a−p)²/2` por diferencias finitas.
+      Mutantes: signo de `mseDelta` invertido; `eps` omitido; `crossEntropy` sin el `-`; `/ predicted.length` omitido.
+      Gate: `npx vitest run tests/losses.test.ts && npx vitest run --coverage --coverage.reporter=text tests/losses.test.ts 2>&1 | grep losses && GC`.
+
+- [ ] T019 [P] [H] [files: tests/Perceptron.test.ts, tests/LRScheduler.test.ts] Tests de `Perceptron` (87 % líneas; `src/Perceptron.ts`: constructor, `predict` escalón, `train` regla `w += lr·(t − y)·x`, errores de las líneas 46, 82, 87) y ampliación de `tests/LRScheduler.test.ts` (rama no cubierta en `src/LRScheduler.ts:49`; `stepDecay`, `exponentialDecay`, `cosineAnnealing` en los bordes: época 0, época = maxEpochs → `minLr`, mitad = `(lr + minLr)/2`). A mano: un paso de entrenamiento con pesos fijados (`weights`/`bias` públicos, leer el archivo) y entrada `[1, 0]`, objetivo 1, salida 0, `lr 0.5` → `Δw = [0.5, 0]`, `Δb = 0.5`; AND y OR se aprenden con 20 épocas (convergencia del perceptrón en datos separables: margen ≥ 30 % sobre el umbral de épocas); XOR NO converge (documentar: 4 puntos, acierto ≤ 0.75).
+      Mutantes: signo de la actualización; sesgo sin actualizar; escalón `>= 0` por `> 0`; `cosineAnnealing` con `1 +` por `1 −`.
+      Gate: `npx vitest run tests/Perceptron.test.ts tests/LRScheduler.test.ts tests/oracle/Perceptron.oracle.test.ts && GC`.
+
+- [ ] T020 [P] [S] [files: tests/TSNE.test.ts] Tests de `TSNE` (`src/TSNE.ts`, 0 %; estocástico, sin solución cerrada): propiedades, no coordenadas. Forma `n × nComponents`; error con `n < 2` y con perplexity inválida (los `throw` del archivo); `kl()` finita y menor tras N iteraciones que tras 5 (margen ≥ 30 %); determinismo con `seedRandom`; separación: dos clústeres a distancia ≥ 10 σ en 5-D → la distancia media entre centroides en 2-D es ≥ 3 × el diámetro intra-clúster (margen ≥ 30 % sobre el umbral elegido; validar con 5 semillas); simetría de las afinidades `P` y suma 1 si el archivo las expone (leer; si son privadas, solo vía `kl()`). Una afinidad pequeña calculada a mano (3 puntos en línea, perplexity que el código permita) solo si es alcanzable con el método público; si no, informar.
+      Mutantes: gradiente con signo opuesto; sin exageración temprana; `kl` sin el `log`; media no restada al final (centrado).
+      Gate: `npx vitest run tests/TSNE.test.ts` (5 veces con semillas distintas vía variable de entorno solo si el test lo soporta; si no, el test itera 5 semillas) `&& npx vitest run --coverage --coverage.reporter=text tests/TSNE.test.ts 2>&1 | grep TSNE && GC`.
+
+## Lote 6
+
+- [ ] T021 [P] [S] [files: tests/Word2Vec.test.ts] Tests de comportamiento de `Word2Vec` (`src/Word2Vec.ts`, 77 % / 69 %; el oráculo ya cubre el gradiente): `tokenize` estático, `buildVocab` (`minCount`, vocabulario vacío lanza, índices), `getEmbedding` (dimensión, palabra desconocida lanza), `similarity` (con sí misma = 1; coseno a mano con embeddings fijados), `mostSimilar` (orden descendente, excluye la palabra, `topK`), skip-gram y CBOW (`Word2VecOptions`: ramas 204–247 y 362–383 sin cubrir), `train` devuelve una pérdida por época. "Aprende": en un corpus pequeño con dos grupos de co-ocurrencia, la similitud intra-grupo supera a la inter-grupo con margen ≥ 30 % (5 semillas, `lr` ×0.7/×1.3; skip-gram usa `lr` 0.03 — con 0.1 el HANDOFF mide divergencia antes de 004 y mejoró; validar).
+      Mutantes: `similarity` sin normalizar; `mostSimilar` ascendente; ventana ignorada; `minCount` ignorado; CBOW promediando por la longitud equivocada.
+      Gate: `npx vitest run tests/Word2Vec.test.ts tests/oracle/Word2Vec.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Word2Vec.test.ts tests/oracle/Word2Vec.oracle.test.ts 2>&1 | grep Word2Vec && GC`.
+
+- [ ] T022 [P] [S] [files: tests/ContrastiveLearning.test.ts] Tests de la parte determinista de `ContrastiveLearning` (`src/ContrastiveLearning.ts`, 88 % / 63 %; líneas 46–77 y 152 sin cubrir; Q8: sin tests de "aprende" nuevos): `addNoise` (σ=0 → igual; semilla), `dropoutFeatures` (tasa 0 → igual; tasa → anula; escala), `augment`, `makePair` (dos vistas distintas del mismo `x`), `cosineSimilarity` con valores a mano (`[1,0]·[0,1] = 0`; `[1,2]` y `[2,4]` → `10/(√5·√20 + 1e-8)` ≈ 1 − 1e-9; vectores cero → 0), formas de `encode`/`project`, `computeLoss` con 2 pares y la cuenta de NT-Xent hecha a mano sobre proyecciones conocidas (aislar con una proyección identidad solo si el constructor lo permite; si no, comprobar invariantes: pérdida ≥ 0, `= log(2N−1)` cuando todas las proyecciones son idénticas — HANDOFF N9), `trainStep([], lr)` hoy devuelve `NaN` (fijar como actual; T041 lo cambia).
+      Mutantes: `cosineSimilarity` sin el `1e-8`; temperatura ignorada; `makePair` devolviendo dos copias idénticas; `dropoutFeatures` sin reescalar.
+      Gate: `npx vitest run tests/ContrastiveLearning.test.ts tests/oracle/ContrastiveLearning.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/ContrastiveLearning.test.ts tests/oracle/ContrastiveLearning.oracle.test.ts 2>&1 | grep Contrastive && GC`.
+
+- [ ] T023 [P] [H] [files: tests/Autoencoder.test.ts] Tests de comportamiento de `Autoencoder` (`src/Autoencoder.ts`, 76 % / 57 %; el oráculo y "aprende" de 003/004 ya existen): validaciones del constructor (`inputSize < 1`, `latentSize < 1`, la advertencia de `latentSize >= inputSize`, espiando `console.warn`), `encode`/`decode`/`reconstruct` (formas y que `decode(encode(x))` coincide con `reconstruct(x)`), error en las entradas de longitud errónea, `reconstructionError` (MSE a mano con pesos de `setWeights` fijos), ramas 206–211 (leer qué son). No repite el oráculo.
+      Mutantes: `reconstruct` sin pasar por el latente; `latentSize` ignorado; MSE sin dividir; advertencia suprimida.
+      Gate: `npx vitest run tests/Autoencoder.test.ts tests/oracle/Autoencoder.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/Autoencoder.test.ts tests/oracle/Autoencoder.oracle.test.ts 2>&1 | grep Autoencoder && GC`.
+
+- [ ] T024 [P] [H] [files: tests/SOM.test.ts] Tests de `SOM` (`src/SOM.ts`, 94 % / 85 %; líneas 68, 95, 98, 150 sin cubrir): constructor, `getBMU` (con pesos fijados, el BMU es la neurona más cercana, a mano en una rejilla 2×2), `predict`, `quantizationError` (distancia media al BMU, a mano), `train` (un paso con `lr` y radio conocidos: el BMU se mueve `lr·(x − w)`; las vecinas, `lr·h·(x − w)` con `h` según la función del archivo), errores de las líneas 68, 95, 98, 150 (X vacía, entrada de longitud errónea, …). Aprende: el error de cuantización baja al menos 30 % sobre datos agrupados (semilla; 5 semillas).
+      Mutantes: BMU por la distancia máxima; vecindad sin decaer; `lr` ignorado; `quantizationError` sin la raíz (si la lleva).
+      Gate: `npx vitest run tests/SOM.test.ts tests/oracle/SOM.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/SOM.test.ts tests/oracle/SOM.oracle.test.ts 2>&1 | grep SOM && GC`.
+
+## Lote 7
+
+- [ ] T025 [P] [H] [files: tests/LinearRegression.test.ts] Tests de `LinearRegression` (93 % / 71 %; `src/LinearRegression.ts`; ramas 141, 172, 179, 184 y otras): `fitNormal` con solución exacta a mano (`y = 2x + 1` con 3 puntos → `weights [2]`, `bias 1`), `fitGD` converge a la misma solución (margen ≥ 30 % sobre el error de referencia), `predict`, `getCoefficients`, `rSquared`/métricas si existen, errores actuales de `fitNormal` (X vacía, `XᵀX` singular). Los casos `fitNormal` con `X` irregular / `y` con `NaN` quedan como comportamiento actual (T037 los cambia).
+      Mutantes: sesgo sin sumar; `fitNormal` con `XᵀX` mal transpuesta; paso de `fitGD` con signo opuesto; división entre `n` omitida.
+      Gate: `npx vitest run tests/LinearRegression.test.ts tests/oracle/LinearRegression.oracle.test.ts tests/api/Regression.handWeights.test.ts tests/api/Regression.incremental.test.ts && GC`.
+
+- [ ] T026 [P] [H] [files: tests/LogisticRegression.test.ts] Tests de `LogisticRegression` y `SoftmaxRegression` (94 % / 84 %; líneas 60, 93, 100, 224, 231): `predictProba` en un punto con pesos a mano (`σ(w·x + b)`, p. ej. `σ(0.5·2 − 1) = 0.5`), `predict` umbral 0.5, softmax de 3 clases a mano (`[1,2,3]` → `e^i / Σ`), el modelo aprende AND/OR y 3 blobs lineales con margen ≥ 30 %, errores de las líneas no cubiertas. No repite el oráculo ni `tests/api/Regression.*`.
+      Mutantes: sigmoide sin el signo; softmax sin restar el máximo (no cambia el valor: debe ser un test de estabilidad con logits 1000, que lo detecte); umbral `>` por `>=` en 0.5 exacto; `lr` ignorado.
+      Gate: `npx vitest run tests/LogisticRegression.test.ts tests/oracle/LogisticRegression.oracle.test.ts tests/api/Regression.handWeights.test.ts tests/api/Regression.incremental.test.ts && GC`.
+
+- [ ] T027 [P] [H] [files: tests/RNN.test.ts] Tests de `RNN` (`src/RNN.ts`, rama 85 y 70 % de ramas): `forward` con pesos fijados a mano (`h_t = tanh(Wx·x + Wh·h + b)`, secuencia de 2 pasos, valores `tanh(0.5)` etc.), `reset`, `backward` devuelve la pérdida y reduce (un paso con `lr` pequeño baja la pérdida, margen ≥ 30 % acumulando 50 pasos con 5 semillas), forma de salida, error de la línea 85. El oráculo de 002/003 ya cubre el gradiente.
+      Mutantes: `tanh` por `sigmoid`; `h` inicial no reiniciado en `reset`; `Wh` ignorada; pérdida sin promediar.
+      Gate: `npx vitest run tests/RNN.test.ts tests/oracle/RNN.oracle.test.ts && GC`.
+
+- [ ] T028 [P] [H] [files: tests/TCN.test.ts] Tests de `TCN` y `CausalConv1D` (`src/TCN.ts`, ramas 73 %; líneas 69, 135, 265, 289): causalidad (la salida en `t` no depende de `x[t+1]`: cambiar la entrada futura no altera salidas pasadas), dilatación (campo receptivo a mano: `1 + (k−1)·Σ dilations`), `forward` con pesos fijados y entrada impulso (la respuesta es el kernel desplazado), residual (si existe), errores de las líneas no cubiertas, `train` baja la pérdida (margen ≥ 30 %, 5 semillas).
+      Mutantes: relleno por la derecha (rompe la causalidad); dilatación ignorada; residual omitido; kernel sin invertir (si procede).
+      Gate: `npx vitest run tests/TCN.test.ts tests/oracle/TCN.oracle.test.ts && GC`.
+
+## Lote 8
+
+- [ ] T029 [P] [H] [files: tests/Seq2Seq.test.ts] Tests de `Seq2Seq` (`src/Seq2Seq.ts`, línea 68 y 77 % de ramas): `encode` (devuelve `h` y `c` de tamaño `hidden`), `decode(ctx, steps)` (nº de pasos y dimensión), `trainStep` (pérdida finita; baja ≥ 30 % invirtiendo una secuencia corta, 5 semillas), errores de la línea 68. No repite el oráculo.
+      Mutantes: `decode` ignorando el contexto; `steps` fijo; encoder sin pasar `c`; `lr` ignorado.
+      Gate: `npx vitest run tests/Seq2Seq.test.ts tests/oracle/Seq2Seq.oracle.test.ts && GC`.
+
+- [ ] T030 [P] [H] [files: tests/GAN.test.ts] Tests de `GAN` (`src/GAN.ts`, ramas 75 %): constructor (formas de G y D; `D` debe terminar en sigmoide, ver 004/T007), `generate`/muestreo (forma, determinismo con semilla), `trainStep` devuelve las dos pérdidas finitas y modifica G (y D) o no según el diseño (leer: el discriminador congelado en el paso de G: sus pesos NO cambian durante el cálculo del gradiente de G), ramas 77–167 sin cubrir. No repite el oráculo ni el "aprende contra D fijo" de 004.
+      Mutantes: actualizar D durante el paso de G; ruido `z` sin renovar; pérdida de G con `log(D)` por `log(1−D)` sin signo; etiquetas reales/falsas intercambiadas.
+      Gate: `npx vitest run tests/GAN.test.ts tests/oracle/GAN.oracle.test.ts && GC`.
+
+- [ ] T031 [P] [H] [files: tests/VAE.test.ts] Tests de `VAE` (`src/VAE.ts`, línea 78 y ramas 92 %): `forward` devuelve `mu`, `logVar`, `eps`, `z = mu + exp(logVar/2)·eps` (a mano con `eps` fijado por semilla o stub), KL para `mu 0, logVar 0` = 0 y para `mu 1, logVar 0` = `0.5` por dimensión (fórmula `−½(1 + logVar − mu² − e^logVar)`), `klWeight` escala el término, `train` finito, línea 78. No repite el oráculo ni el "reconstruye mejor que la media".
+      Mutantes: KL sin el factor ½; `exp(logVar)` en vez de `exp(logVar/2)`; `klWeight` ignorado; `eps` reutilizado.
+      Gate: `npx vitest run tests/VAE.test.ts tests/oracle/VAE.oracle.test.ts && GC`.
+
+- [ ] T032 [P] [H] [files: tests/Conv2D.test.ts] Tests de comportamiento de `Conv2D` (`src/Conv2D.ts`, 96 % / 87 %; líneas 71, 74, 166, 169, 206; no existe `tests/Conv2D.test.ts`): `forward` con un kernel de 2×2 fijado y entrada 3×3 de 1 canal calculada a mano (suma de productos por ventana), `valid` vs `same` (formas por la fórmula de `outputShape`), `stride 2`, varios canales de entrada/salida, `getWeights`/`setWeights` ida y vuelta, errores de las líneas no cubiertas. Los oráculos de pesos y `dInput` (005) ya existen; no se repiten.
+      Mutantes: correlación por convolución (kernel invertido); relleno asimétrico invertido; `stride` ignorado; sesgo omitido.
+      Gate: `npx vitest run tests/Conv2D.test.ts tests/oracle/Conv2D.oracle.test.ts tests/api/Conv2D.padding.test.ts && GC`.
+
+## Lote 9 (valida entradas y `getWeights`; dependen de los tests de comportamiento de los lotes 1–8)
+
+- [ ] T033 [P] [S] [files: src/Validation.ts, tests/Validation.test.ts] FR-009 / Q6: helper `validateDataset(X, y, name, opts)` en `src/Validation.ts`: X no vacía, filas del mismo ancho y finitas, `y` (opcional) de la misma longitud y finita, `opts.labels` ('integer' ≥ 0, 'unit' en [0,1], 'finite'), devuelve `nFeatures`. Pruebas a mano de cada rama (y las ramas sin cubrir de `Validation`: líneas 36, 45, 59, 77). NO refactoriza aún los modelos (T037). Mensajes con `name` y el índice de la fila.
+      Mutantes: omitir el control de ancho de fila; aceptar `NaN`; `labels: 'integer'` aceptando 1.5; `y` de longitud distinta aceptada.
+      Gate: `npx vitest run tests/Validation.test.ts && GC` y `git diff --quiet -- src/index.ts`.
+
+- [ ] T034 [P] [H] [files: src/MatMul.ts, src/AttentionHead.ts, src/MultiHeadAttention.ts, src/TransformerBlock.ts, tests/api/getWeights.large.matrix.test.ts] FR-008 / US6: sustituir `w.push(...fila)` / `push(...array)` por un bucle en `WeightMatrix.getWeights` (`:106`), `EmbeddingMatrix.getWeights` (`:180`) y `getWeightsFlat` si existe, `AttentionHead` (`:190-192`), `MultiHeadAttention` (`:123-127`), `TransformerBlock` (`:213-219`); mismo orden. Golden previo (antes de tocar `src/`): `getWeights()` de cada clase con semilla fija a tamaño pequeño, `toEqual` tras el cambio. Test grande: `new WeightMatrix(1, 200000).getWeights().length === 200000` (hoy `RangeError`), igual para `EmbeddingMatrix(1, 200000)`; `set(get())` identidad.
+      Mutantes: devolver al `push(...)`; orden de filas invertido; omitir `Wo`; omitir sesgos.
+      Gate: `npx vitest run tests/api/getWeights.large.matrix.test.ts tests/MatMul.test.ts tests/AttentionHead.test.ts tests/MultiHeadAttention.test.ts tests/TransformerBlock.test.ts && GC`.
+
+- [ ] T035 [P] [H] [files: src/LSTMLayer.ts, src/GRU.ts, src/NetworkLSTM.ts, src/NetworkTransformer.ts, src/NetworkTransformerRL.ts, tests/api/getWeights.large.recurrent.test.ts] FR-008 / US6: lo mismo en `LSTMLayer` (`:343-350`), `GRULayer` (`:256-261`), `NetworkLSTM` (`:251`), `NetworkTransformer` (`:196-200`) y `NetworkTransformerRL` (`:180-183`); en los transformers el argumento es `block.getWeights()`. Golden con semilla a tamaño pequeño; test grande con `LSTMLayer(1, 200)` o la dimensión que supere ~120 000 pesos (cuatro puertas: `4·h·(in + h) > 120000`), `NetworkTransformer` con `dModel` y bloques suficientes para superar el límite (hoy `RangeError` en el argumento `block.getWeights()`; el agente mide el límite en su worktree y deja las dimensiones en la cabecera). No toca `getWeights()` estructurado (objeto) de LSTM/GRU.
+      Mutantes: volver al `push(...)`; permutar el orden de puertas; omitir la cabeza densa de `NetworkLSTM`; omitir `outputBias`.
+      Gate: `npx vitest run tests/api/getWeights.large.recurrent.test.ts tests/api/weights.recurrent.test.ts tests/api/setWeights.transformer.test.ts tests/LSTMLayer.test.ts tests/GRU.test.ts tests/NetworkLSTM.test.ts tests/NetworkTransformer.test.ts tests/NetworkTransformerRL.test.ts && GC`.
+
+- [ ] T036 [P] [H] [files: src/Metrics.ts, tests/api/Metrics.validation.test.ts, tests/Metrics.test.ts] US5 / Q2 (bloquea: Q2): `Metrics` lanza `Error` con `Metrics.<función>` ante longitudes distintas, vectores vacíos, etiquetas negativas o no enteras (`confusionMatrix`, `precision`, `recall`, `f1Score`) y `auc` con una sola clase; `Math.max(...yTrue, ...yPred)` y similares pasan a bucle (200 000 etiquetas no desbordan); `r2Score` con `yTrue` constante devuelve 1 solo si `ssRes === 0` y 0 si no (según la respuesta a Q2; comentario "trivial case" corregido). Actualiza el `describe('degenerate inputs')` de T002 (único archivo existente que se toca). Golden previo de los casos válidos.
+      Mutantes: quitar cada validación (una por una); `r2Score` volviendo a 1; volver a `Math.max(...)`.
+      Gate: `npx vitest run tests/api/Metrics.validation.test.ts tests/Metrics.test.ts && GC`.
+
+## Lote 10 (usan el helper de T033)
+
+- [ ] T037 [P] [H] [files: src/LogisticRegression.ts, src/LinearRegression.ts, tests/api/Regression.validation.test.ts, tests/LinearRegression.test.ts] FR-009 / US5: `LogisticRegression.train`, `SoftmaxRegression.train`, `LinearRegression.fitGD` y `fitNormal` usan `validateDataset` (se elimina la validación duplicada); `fitNormal` valida `X` rectangular y finita e `y` finita y de la misma longitud (hoy no lanza con filas irregulares ni con `NaN`; sondeado). Los mensajes existentes se conservan (los tests de 005 los fijan y se ejecutan en el gate). Validación ANTES de modificar pesos (se compara `weights`/`bias` antes y después).
+      Mutantes: quitar `validateDataset` de `fitNormal`; de `Softmax.train`; de `Logistic.train`; de `fitGD`.
+      Gate: `npx vitest run tests/api/Regression.validation.test.ts tests/api/Regression.handWeights.test.ts tests/api/Regression.incremental.test.ts tests/oracle/LinearRegression.oracle.test.ts tests/oracle/LogisticRegression.oracle.test.ts tests/LinearRegression.test.ts tests/LogisticRegression.test.ts && GC`.
+
+- [ ] T038 [P] [H] [files: src/KMeans.ts, src/PCA.ts, src/SOM.ts, tests/api/Unsupervised.validation.test.ts] US5: `KMeans.fit`, `PCA.fit` y `SOM.train` validan `X` rectangular y finita (`validateDataset`); `KMeans.predict`, `PCA.transform` y `SOM.getBMU` validan la dimensión (`KMeans.predict([1])` con modelo 2-D hoy devuelve 0 sin error); `SOM.train(X, epochs)` lanza con `epochs` no entero o < 1 (hoy no hace nada). Golden previo; conservar los mensajes que ya existen.
+      Mutantes: quitar cada validación (6 mutantes); aceptar `epochs 0`.
+      Gate: `npx vitest run tests/api/Unsupervised.validation.test.ts tests/KMeans.test.ts tests/PCA.test.ts tests/SOM.test.ts tests/oracle/SOM.oracle.test.ts && GC`.
+
+- [ ] T039 [P] [H] [files: src/NaiveBayes.ts, src/DecisionTree.ts, tests/api/Classifier.validation.test.ts] US5: `GaussianNaiveBayes.fit` y `DecisionTree.fit` validan filas irregulares y finitud (hoy no lanzan), `DecisionTree.predict` valida la dimensión (con `[]` devuelve una clase), el constructor de `DecisionTree` exige `maxDepth` entero ≥ 1 y `minSamplesSplit` entero ≥ 2 (hoy acepta 1.5), y las etiquetas de `GaussianNaiveBayes` son finitas. Si Q1 = (b) hubo un cambio en `DecisionTree.ts` en T003: rebasar. Golden previo.
+      Mutantes: quitar cada validación; aceptar `maxDepth 1.5`.
+      Gate: `npx vitest run tests/api/Classifier.validation.test.ts tests/NaiveBayes.test.ts tests/DecisionTree.test.ts && GC`.
+
+- [ ] T040 [P] [H] [files: src/RNN.ts, src/TCN.ts, src/Seq2Seq.ts, tests/api/Sequence.validation.test.ts] US5: `RNN.forward`/`backward`, `TCN.forward`/`train`/`backward` y `Seq2Seq.encode`/`decode`/`trainStep` lanzan `Error` con `Clase.método` ante filas del ancho incorrecto, `sequence` vacía, `targets` de longitud distinta de la secuencia (hoy `TypeError: Cannot read properties of undefined`) y `lr` no finito o ≤ 0; `RNN.forward` con ancho incorrecto hoy devuelve `NaN`. Un error NO deja la trayectoria a medias (para `RNN`, el estado `h` se conserva). Golden previo con semilla.
+      Mutantes: quitar cada validación (una por método); aceptar `lr = NaN`.
+      Gate: `npx vitest run tests/api/Sequence.validation.test.ts tests/RNN.test.ts tests/TCN.test.ts tests/Seq2Seq.test.ts tests/oracle/RNN.oracle.test.ts tests/oracle/TCN.oracle.test.ts tests/oracle/Seq2Seq.oracle.test.ts && GC`.
+
+## Lote 11
+
+- [ ] T041 [P] [H] [files: src/Autoencoder.ts, src/VAE.ts, src/GAN.ts, src/ContrastiveLearning.ts, tests/api/Generative.validation.test.ts, tests/ContrastiveLearning.test.ts] US5: `Autoencoder.train`, `VAE.train`, `GAN.trainStep` y `ContrastiveLearning.trainStep` validan longitudes de entrada, `lr` finito > 0 y listas vacías (`trainStep([], lr)` devuelve `NaN` hoy). Primero MEDIR con un script `t041_*` qué lanza ya cada uno (el sondeo de la spec no cubrió bien los constructores de `Autoencoder`/`VAE`: el primer intento falló por firma) y solo añadir lo que falta. Golden previo con semilla; no cambiar los gradientes (los oráculos deben seguir > 0.999).
+      Mutantes: quitar cada validación; aceptar `lr = 0`.
+      Gate: `npx vitest run tests/api/Generative.validation.test.ts tests/Autoencoder.test.ts tests/VAE.test.ts tests/GAN.test.ts tests/ContrastiveLearning.test.ts tests/oracle/Autoencoder.oracle.test.ts tests/oracle/VAE.oracle.test.ts tests/oracle/GAN.oracle.test.ts tests/oracle/ContrastiveLearning.oracle.test.ts && GC`.
+
+- [ ] T042 [P] [H] [files: src/EarlyStopping.ts, src/LRScheduler.ts, src/DataLoader.ts, src/PositionalEncoding.ts, src/Word2Vec.ts, tests/api/Misc.validation.test.ts, tests/PositionalEncoding.test.ts] US5: `EarlyStopping` (`patience` entero ≥ 0 o ≥ 1 según el código —decidir leyendo el uso— `minDelta` finito ≥ 0, `update` con `NaN` lanza), `LRScheduler` (`epochsDrop > 0`, `maxEpochs > 0`, `decayRate` finito: hoy `NaN`), `DataLoader` (`batchSize` entero ≥ 1; hoy acepta 0), `PositionalEncoding.encode`/`encodeSequence` (`pos` entero ≥ 0, `dModel` par), `Word2Vec.train` (`lr` > 0 finito, `epochs` entero ≥ 1). Primero golden con valores válidos. `Word2Vec.getEmbedding` de palabra desconocida ya lanza.
+      Mutantes: quitar cada validación (una por clase); aceptar `batchSize 0`.
+      Gate: `npx vitest run tests/api/Misc.validation.test.ts tests/EarlyStopping.test.ts tests/LRScheduler.test.ts tests/DataLoader.test.ts tests/PositionalEncoding.test.ts tests/Word2Vec.test.ts && GC`.
+
+- [ ] T043 [P] [H] [files: src/DataAugmentation.ts, src/MaxPool2D.ts, src/Flatten.ts, src/Tokenizer.ts, tests/api/Preprocessing.validation.test.ts, tests/DataAugmentation.test.ts, tests/MaxPool2D.test.ts, tests/Flatten.test.ts] US5: `DataAugmentation.shuffle` lanza con `X`/`y` de longitud distinta, `standardize`/`normalize` con `X` vacía lanzan, `MaxPool2D.forward` con entrada menor que `poolSize` lanza (hoy devuelve `[]`; también `backward` con forma de gradiente errónea), `Flatten.forward` con entrada vacía o irregular lanza con mensaje claro (hoy `TypeError`), y `Tokenizer.decode` con un id desconocido sigue devolviendo `"<UNK>"` (Q3; test que lo fija). Actualiza en `tests/DataAugmentation.test.ts` y `tests/MaxPool2D.test.ts` los fragmentos de T009/T015 que fijaban el comportamiento anterior (`describe` marcado como actual); no toca nada más de esos archivos.
+      Mutantes: quitar cada validación (4 mutantes); `<UNK>` sustituido por una excepción.
+      Gate: `npx vitest run tests/api/Preprocessing.validation.test.ts tests/DataAugmentation.test.ts tests/MaxPool2D.test.ts tests/Flatten.test.ts tests/Tokenizer.test.ts && GC`.
+
+- [ ] T044 [P] [H] [files: tests/coverage.modules.test.ts] FR-011: meta-test que lee `src/` como texto (como `tests/oracle/coverage.test.ts`, que carga `node:fs` con un tipo mínimo propio; el proyecto no declara `@types/node`) y falla si algún módulo (excepto `index.ts` y una lista de excepciones con motivo en el propio archivo: `activations`, `optimizers`, `Tape`, `Layer` si se cubren con otro nombre; el agente construye la lista leyendo qué módulos tienen `tests/<Módulo>*.test.ts` o `tests/oracle/<Módulo>*.test.ts` o `tests/api/<Módulo>*.test.ts`) no tiene ningún archivo de test con su nombre.
+      Mutantes: renombrar un archivo de test (el meta-test falla); añadir un módulo vacío `src/Foo.ts` (falla); quitar una excepción.
+      Gate: `npx vitest run tests/coverage.modules.test.ts && GC`.
+
+## Lote 12 (serie, tras integrar todo)
+
+- [ ] T045 [H] [files: vitest.config.ts] Umbral de cobertura: ejecutar `npx vitest run --coverage` en la rama integrada, leer los valores globales (líneas, ramas, funciones, sentencias) y fijar `coverage.thresholds` en el valor medido menos 2 puntos (redondeado hacia abajo). Informar los valores medidos y los fijados.
+      Mutantes: n/a; comprobación: `npm run coverage` pasa, y con un umbral temporal de 100 falla.
+      Gate: `npm run coverage && npm run typecheck && git diff --quiet -- package.json package-lock.json src/index.ts`.
+
+- [ ] T046 [S] [files: ninguno (revisión; el agente `math-reviewer` no edita)] Revisión de una muestra por Sonnet: repite los mutantes de T002 (`Metrics`), T003 (`DecisionTree`), T005 (`PCA`) y T020 (`TSNE`) y comprueba que las cifras esperadas están deducidas a mano (recalcula 3 por archivo) y que las tareas de validación (T036–T043) no cambiaron números de entradas válidas. Informe: lista de mutantes no detectados y de cifras copiadas de la salida.
+      Gate: informe con 0 mutantes no detectados y 0 cifras sin derivación; si hay alguno, se reabre la tarea correspondiente.
+
+- [ ] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
+      Gate: las 20 ejecuciones verdes y el CI de GitHub verde (ci x2, CodeQL, GitGuardian).
+
+## Dependencias y orden
+
+- Lote 1 → 12 en serie; dentro de un lote, 4 agentes en paralelo (`[P]` con archivos disjuntos). El orquestador integra una rama cada vez (`merge --no-ff`, typecheck, suite 3 veces).
+- T003 espera a Q1 (por defecto (a)); T036 espera a Q2.
+- T033 antes de T037–T039 (helper). T002 antes de T036; T009 y T015 antes de T043; T017, T021, T042 comparten módulos pero no archivos; T025/T026 antes de T037; T004/T005/T024 antes de T038; T006/T003 antes de T039; T027–T029 antes de T040; T022/T023/T030/T031 antes de T041; T010/T019/T017/T021 antes de T042; T034/T035 independientes de los demás.
+- Q5 (barrido total de `push(...)`) y Q7 (aplazados a 007) no añaden tareas aquí.
+- Cada módulo tiene como máximo dos tareas (comportamiento y validación), más T034/T035 para `getWeights`. Las tareas de validación pueden reescribir en el archivo de comportamiento SOLO el `describe` que fijaba el caso degenerado (T036, T037, T042, T041, T043), y lo declaran en `[files: ...]`.
