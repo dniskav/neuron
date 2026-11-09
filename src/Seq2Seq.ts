@@ -39,6 +39,30 @@
 import { LSTMLayer } from "./LSTMLayer";
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 
+// ── Input checks (T040). Run before any LSTM state or weight is touched.
+function checkLr(where: string, lr: number): void {
+  if (!Number.isFinite(lr) || lr < 0) {
+    throw new Error(`${where}: lr must be a finite number >= 0`);
+  }
+}
+
+function checkRows(where: string, name: string, rows: unknown, width: number): void {
+  if (!Array.isArray(rows)) {
+    throw new Error(`${where}: ${name} must be an array of rows`);
+  }
+  rows.forEach((row, t) => {
+    if (!Array.isArray(row) || row.length !== width) {
+      throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
+    }
+  });
+}
+
+function checkVector(where: string, name: string, v: unknown, width: number): void {
+  if (!Array.isArray(v) || v.length !== width) {
+    throw new Error(`${where}: ${name} must be an array of length ${width}`);
+  }
+}
+
 export class Seq2Seq {
   readonly encoder: LSTMLayer;
   readonly decoder: LSTMLayer;
@@ -64,8 +88,10 @@ export class Seq2Seq {
       optimizerFactory?: OptimizerFactory;
     }
   ) {
-    if (inputSize <= 0 || hiddenSize <= 0 || outputSize <= 0) {
-      throw new Error('Seq2Seq: all sizes must be positive');
+    // Number.isInteger rejects NaN, ±Infinity and fractions (a fraction would be truncated silently).
+    const isSize = (n: number): boolean => Number.isInteger(n) && n > 0;
+    if (!isSize(inputSize) || !isSize(hiddenSize) || !isSize(outputSize)) {
+      throw new Error('Seq2Seq: all sizes must be positive integers');
     }
 
     this.inputSize  = inputSize;
@@ -103,6 +129,7 @@ export class Seq2Seq {
   // Runs the encoder over inputSequence and returns the final (h, c) pair.
   // The context vector summarizes the full input sequence.
   encode(inputSequence: number[][]): { h: number[], c: number[] } {
+    checkRows('Seq2Seq.encode', 'inputSequence', inputSequence, this.inputSize);
     this.encoder.reset();
     for (const x of inputSequence) {
       this.encoder.predict(x);
@@ -118,6 +145,8 @@ export class Seq2Seq {
   // The decoder starts from contextVector and uses its own previous output
   // as input at each step (greedy / free-running decoding).
   decode(contextVector: { h: number[], c: number[] }, steps: number): number[][] {
+    checkVector('Seq2Seq.decode', 'context.h', contextVector.h, this.hiddenSize);
+    checkVector('Seq2Seq.decode', 'context.c', contextVector.c, this.hiddenSize);
     this.decoder.reset();
     this.decoder.h = [...contextVector.h];
     this.decoder.c = [...contextVector.c];
@@ -140,8 +169,17 @@ export class Seq2Seq {
   // targetSeq: number[][] of shape [T_out][outputSize]
   // Returns the MSE loss for this step.
   trainStep(inputSeq: number[][], targetSeq: number[][], lr: number): number {
+    checkLr('Seq2Seq.trainStep', lr);
+    if (inputSeq.length === 0) {
+      throw new Error('Seq2Seq.trainStep: inputSeq must not be empty');
+    }
+    checkRows('Seq2Seq.trainStep', 'inputSeq', inputSeq, this.inputSize);
+    // T = 0 used to return 0 silently without training: it is an error now.
+    if (targetSeq.length === 0) {
+      throw new Error('Seq2Seq.trainStep: targetSeq must not be empty');
+    }
+    checkRows('Seq2Seq.trainStep', 'targetSeq', targetSeq, this.outputSize);
     const T = targetSeq.length;
-    if (T === 0) return 0;
 
     // ── Encoder forward ───────────────────────────────────────────────────
     this.encoder.reset();
@@ -223,13 +261,11 @@ export class Seq2Seq {
     // step's h and dc0 as the final cell gradient. Each LSTMLayer divides its
     // update by its own T, so the encoder lr is lr * T_in / T_out to make the
     // total gradient that of the loss averaged over T_out * outputSize.
-    const Tin = inputSeq.length;
-    if (Tin > 0) {
-      const encoderDhSeq: number[][] = inputSeq.map((_, t) =>
-        t === Tin - 1 ? [...dh0] : new Array(this.hiddenSize).fill(0)
-      );
-      this.encoder.backprop(encoderDhSeq, (lr * Tin) / T, dc0);
-    }
+    const Tin = inputSeq.length;  // ≥ 1: an empty inputSeq is rejected above
+    const encoderDhSeq: number[][] = inputSeq.map((_, t) =>
+      t === Tin - 1 ? [...dh0] : new Array(this.hiddenSize).fill(0)
+    );
+    this.encoder.backprop(encoderDhSeq, (lr * Tin) / T, dc0);
 
     return loss;
   }

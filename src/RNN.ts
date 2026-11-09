@@ -37,6 +37,25 @@ function tanh(x: number): number {
   return Math.tanh(x);
 }
 
+// ── Input checks (T040). They run before any state is touched, so a rejected call
+// leaves the weights and the hidden state h exactly as they were.
+function checkLr(where: string, lr: number): void {
+  if (!Number.isFinite(lr) || lr < 0) {
+    throw new Error(`${where}: lr must be a finite number >= 0`);
+  }
+}
+
+function checkRows(where: string, name: string, rows: unknown, width: number): void {
+  if (!Array.isArray(rows)) {
+    throw new Error(`${where}: ${name} must be an array of rows`);
+  }
+  rows.forEach((row, t) => {
+    if (!Array.isArray(row) || row.length !== width) {
+      throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
+    }
+  });
+}
+
 // ─── Step record (stored for BPTT) ───────────────────────────────────────────
 
 interface RNNStep {
@@ -135,6 +154,11 @@ export class RNN {
   // sequence: number[][] of shape [T][inputSize]
   // Returns outputs and hidden states for all timesteps.
   forward(sequence: number[][]): { outputs: number[][], hiddens: number[][] } {
+    if (sequence.length === 0) {
+      throw new Error('RNN.forward: sequence must not be empty');
+    }
+    checkRows('RNN.forward', 'sequence', sequence, this.inputSize);
+
     this._traj    = [];
     this._outputs = [];
 
@@ -173,12 +197,22 @@ export class RNN {
   // targets: number[][] of shape [T][outputSize], paired with the last forward call.
   // Returns the mean squared error loss.
   backward(sequence: number[][], targets: number[][], lr: number): number {
+    checkLr('RNN.backward', lr);
+    checkRows('RNN.backward', 'sequence', sequence, this.inputSize);
+    checkRows('RNN.backward', 'targets', targets, this.outputSize);
+    if (targets.length !== sequence.length) {
+      throw new Error(
+        `RNN.backward: targets must have one row per time step (${sequence.length})`
+      );
+    }
+
     // Run forward to populate trajectory (discards previous state so sequence is fresh)
     this.reset();
+    // An empty sequence has nothing to learn: returns 0 with the state reset (pinned by RNN.test.ts).
+    if (sequence.length === 0) return 0;
     const { outputs } = this.forward(sequence);
 
     const T = this._traj.length;
-    if (T === 0) return 0;
 
     // ── Compute MSE loss ──────────────────────────────────────────────────
     let loss = 0;
