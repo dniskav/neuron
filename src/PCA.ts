@@ -26,7 +26,9 @@
 //   X̂ = Z · V + μ     invert the projection (approximate — not lossless)
 //
 // ─── EXPLAINED VARIANCE RATIO ────────────────────────────────────────────────
-//   rₖ = λₖ / Σⱼ λⱼ   fraction of total variance captured by component k
+//   rₖ = λₖ / Σⱼ λⱼ   fraction of total variance captured by component k;
+//                     the sum runs over ALL p eigenvalues (= trace Σ), not only
+//                     the retained ones
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,8 @@ export class PCA {
   mean: number[];
 
   private readonly _nComponents: number;
+  /** Total variance of the training data (trace of the covariance matrix). */
+  private _totalVariance = 0;
 
   constructor(nComponents: number) {
     if (!Number.isInteger(nComponents) || nComponents < 1) {
@@ -73,13 +77,16 @@ export class PCA {
     // ── 3. Covariance matrix: Σ = (1/n) · Xc^T · Xc ─────────────────────
     // Shape [p × p]. We only need to compute Σ once and then deflate it.
     let cov = this._covMatrix(Xc, n, p);
+    // Total variance = trace(Σ), kept for explainedVarianceRatio (denominator over ALL variance)
+    this._totalVariance = 0;
+    for (let i = 0; i < p; i++) this._totalVariance += cov[i][i];
 
     // ── 4. Power iteration + Hotelling deflation ──────────────────────────
     this.components = [];
     this.explainedVariance = [];
 
     for (let c = 0; c < this._nComponents; c++) {
-      const { eigenvector, eigenvalue } = this._powerIteration(cov, p);
+      const { eigenvector, eigenvalue } = this._powerIteration(cov, p, this.components);
       this.components.push(eigenvector);
       this.explainedVariance.push(eigenvalue);
 
@@ -133,9 +140,10 @@ export class PCA {
 
   // ── explainedVarianceRatio ─────────────────────────────────────────────────
   //   rₖ = λₖ / Σⱼ λⱼ
-  // Sum of all ratios ≤ 1. If you chose nComponents = p, the sum is exactly 1.
+  // The denominator is the total variance saved by fit() (trace of Σ), so with
+  // nComponents < p the ratios sum to < 1; with nComponents = p they sum to 1.
   explainedVarianceRatio(): number[] {
-    const total = this.explainedVariance.reduce((s, v) => s + v, 0);
+    const total = this._totalVariance;
     if (total === 0) return this.explainedVariance.map(() => 0);
     return this.explainedVariance.map(v => v / total);
   }
@@ -163,27 +171,35 @@ export class PCA {
   }
 
   // Power iteration: find the dominant eigenvector of a symmetric matrix.
-  //   v ← M·v / ‖M·v‖   (repeated until ‖v_new - v_old‖ < tol)
+  //   v ← M·v / ‖M·v‖   (repeated until ‖v_new − v_old‖ < tol, sign-aligned)
+  // Each step is re-orthogonalized against the components already found (`prev`),
+  // so deflation round-off cannot leak earlier directions back in and the basis
+  // stays orthonormal even when trailing eigenvalues are 0 (rank-deficient data).
+  // Stopping on the change of the vector (not on |dot| − 1, which is quadratic in
+  // the angle) leaves the axis ~1e-13 from exact instead of ~1e-5.
   // Returns both the eigenvector (unit length) and its eigenvalue λ = vᵀ·M·v.
   private _powerIteration(
     M: number[][],
     p: number,
-    maxIter = 1000,
-    tol = 1e-10
+    prev: number[][],
+    maxIter = 10000,
+    tol = 1e-14
   ): { eigenvector: number[]; eigenvalue: number } {
-    // Initialize with a random unit vector
-    let v = Array.from({ length: p }, () => Math.random() - 0.5);
-    v = this._normalize(v);
+    // Initialize with a random unit vector orthogonal to the previous components
+    let v = this._normalize(this._orthogonalize(
+      Array.from({ length: p }, () => Math.random() - 0.5), prev));
 
     for (let iter = 0; iter < maxIter; iter++) {
-      // Mv = M · v
       const Mv = this._matvec(M, v);
-      const vNew = this._normalize(Mv);
+      const vNew = this._normalize(this._orthogonalize(Mv, prev));
 
-      // Check convergence: |dot(v, vNew)| → 1 when they align
+      // Distance between unit vectors, ignoring the sign flip of negative eigenvalues
       const dot = v.reduce((s, vi, i) => s + vi * vNew[i], 0);
+      const sign = dot < 0 ? -1 : 1;
+      let diff = 0;
+      for (let i = 0; i < p; i++) diff += (vNew[i] * sign - v[i]) ** 2;
       v = vNew;
-      if (Math.abs(Math.abs(dot) - 1) < tol) break;
+      if (Math.sqrt(diff) < tol) break;
     }
 
     // Eigenvalue: λ = vᵀ · M · v  (Rayleigh quotient)
@@ -191,6 +207,19 @@ export class PCA {
     const eigenvalue = v.reduce((s, vi, i) => s + vi * Mv[i], 0);
 
     return { eigenvector: v, eigenvalue: Math.max(0, eigenvalue) };
+  }
+
+  // Remove from v its components along each (orthonormal) vector in `basis`,
+  // twice (Gram–Schmidt with re-orthogonalization) for numerical stability.
+  private _orthogonalize(v: number[], basis: number[][]): number[] {
+    let w = v.slice();
+    for (let pass = 0; pass < 2; pass++) {
+      for (const u of basis) {
+        const d = w.reduce((s, wi, i) => s + wi * u[i], 0);
+        w = w.map((wi, i) => wi - d * u[i]);
+      }
+    }
+    return w;
   }
 
   private _matvec(M: number[][], v: number[]): number[] {
