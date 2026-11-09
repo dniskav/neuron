@@ -120,11 +120,11 @@ export class MultiHeadAttention {
   getWeights(): number[] {
     const w: number[] = [];
     for (const head of this.heads) {
-      for (const row of head.Wq.W) w.push(...row);
-      for (const row of head.Wk.W) w.push(...row);
-      for (const row of head.Wv.W) w.push(...row);
+      for (const row of head.Wq.W) for (const v of row) w.push(v);
+      for (const row of head.Wk.W) for (const v of row) w.push(v);
+      for (const row of head.Wv.W) for (const v of row) w.push(v);
     }
-    for (const row of this.Wo.W) w.push(...row);
+    for (const row of this.Wo.W) for (const v of row) w.push(v);
     return w;
   }
 
