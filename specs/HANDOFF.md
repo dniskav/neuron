@@ -34,7 +34,7 @@
 | 003 `sign-fix` | **Hecha y fusionada** (PR #6; 13/13 tareas) |
 | 004 `models-fix` | **Hecha y fusionada** (PR #7; 13/13 tareas; CI de GitHub en verde) |
 | 005 `api-hardening` | **Hecha y fusionada** (PR #8; T001–T023; CI en verde) |
-| 006 `coverage` | En curso: spec hecha (48 tareas); Lote 1 (T001–T004) integrado en `fix/v0.4` local, 1377 tests; siguiente lote T005–T008. Decisiones: Q1 `<=` en DecisionTree, Q2 `Metrics` lanza, Q5 barrido `push(...)` (T048). Pendiente de decidir: convención de `f1Score` macro (ver notas en `specs/006-coverage/tasks.md`) |
+| 006 `coverage` | En curso: spec hecha (48 tareas); Lote 1 (T001–T004) integrado en `fix/v0.4` local, 1377 tests; siguiente lote T005–T008. Decisiones: Q1 `<=` en DecisionTree, Q2 `Metrics` lanza, Q5 barrido `push(...)` (T048). `f1Score` macro se alinea con sklearn (media de F1 por clase; entra en T036, cambio incompatible para el changelog). Lote 2 (T005–T008) lanzado |
 | 007 `docs` | Pendiente |
 | 008 `release-app` | Pendiente |
 
