@@ -10,7 +10,7 @@
 
 ## Dónde estamos
 
-- **`master` (en GitHub) contiene las features 001–004**, fusionadas por los PR #4, #5, #6 y #7. La versión sigue en **0.3.2** (la ya publicada): los cuatro merges saltaron el paso `Publish` de `publish.yml`. `master` está protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos).
+- **`master` (en GitHub) contiene las features 001–005**, fusionadas por los PR #4–#8 (el #8 el 2026-11-09, autorizado por el usuario). La versión sigue en **0.3.2** (la ya publicada): los cuatro merges saltaron el paso `Publish` de `publish.yml`. `master` está protegida (PR + check `ci`, sin exigir aprobaciones, admins exentos).
 - **Rama de trabajo:** `fix/v0.4`, LOCAL por delante de `origin/master` con el trabajo de la **feature 005** (aún sin subir). `origin/fix/v0.4` apunta al último commit de la 004 (ya fusionado).
 - **Feature 005 `api-hardening`:** TODAS las tareas hechas (T001–T023), integradas en `fix/v0.4` local (sin subir). 1316 tests, 81 archivos, 0 `it.fails`, 0 `it.todo`, typecheck y build limpios. T018 aprobada; Lote 7 integrado; T019 PASS (20 ejecuciones, 5 shuffle, 3+1 bajo Node 20.19, todas verdes). **Rama subida y PR #8 abierto contra `master` (https://github.com/dniskav/neuron/pull/8); CI de GitHub en VERDE (ci x2, CodeQL, GitGuardian). Pendiente: que el usuario autorice el merge (pedir confirmación; el merge NO publica porque la versión sigue en 0.3.2).** Después: `git checkout master && git pull`, rebasar/recrear `fix/v0.4` desde `master` para la 006. Notas para el changelog del Lote 7: `NetworkLSTM` con `denseStructure` vacío lanza en el constructor; `setWeightsStructured` atómico con errores por matriz; `Trainer` valida `minDelta` y validación vacía con `earlyStopping`; `Conv1D`/`Conv2D` validan `stride` y `valid` con k > H. Huecos aplazados: `WeightMatrix.getWeights`, `EmbeddingMatrix.getWeights` y `getWeightsFlat` usan `push(...row)` (desborda con filas enormes); comprobar si `neuron_app` usa `NetworkLSTM` con `[]` antes de la 008.
 - **Reglas de ejecución aprendidas (obligatorias):** (1) el CI de GitHub (Node 20, Linux) es el árbitro: un test de entrenamiento que pasa N veces en local puede fallar allí (pasó con `ContrastiveLearning` en el PR #5); valida tests de aprendizaje con perturbaciones de lr/semilla y margen ≥ 30 %. (2) Los worktrees de los agentes parten de `master`, sin `node_modules`: cada prompt debe pedir `git rebase fix/v0.4` y `npm ci`, y los archivos de la spec deben estar COMMITEADOS antes de lanzar agentes. (3) El scratchpad es compartido: scripts temporales con nombre único (prefijo por tarea). (4) Mientras `math-reviewer` aplica mutantes en el directorio principal, no ejecutar nada ahí. (5) Verificar siempre yo mismo cada rama antes de integrar (merge `--no-ff`, typecheck, suite 3 veces, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts`). (6) Los agentes no editan `tasks.md`, `package*.json`, `src/index.ts` ni el changelog; los marca el orquestador. (7) Los comandos git compuestos con `&&` o `cd` los rechaza el wrapper del entorno a algunos agentes: pedir comandos sueltos.
@@ -33,8 +33,8 @@
 | 002 `gradient-oracle` | **Hecha y fusionada** (PR #5; 41/41 tareas) |
 | 003 `sign-fix` | **Hecha y fusionada** (PR #6; 13/13 tareas) |
 | 004 `models-fix` | **Hecha y fusionada** (PR #7; 13/13 tareas; CI de GitHub en verde) |
-| 005 `api-hardening` | **PR #8 abierto, CI en verde**; falta el merge autorizado por el usuario |
-| 006 `coverage` | Pendiente |
+| 005 `api-hardening` | **Hecha y fusionada** (PR #8; T001–T023; CI en verde) |
+| 006 `coverage` | En curso: `fix/v0.4` recreada desde `master`; falta la spec (`spec-author`) |
 | 007 `docs` | Pendiente |
 | 008 `release-app` | Pendiente |
 
