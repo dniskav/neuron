@@ -23,9 +23,8 @@
 // 0.49. Cifra medida en la validación (no es un expect): peor ratio 0.169, con
 // QE_inicial ≈ 8.4 y QE_final ≈ 1.41.
 //
-// Excluido a propósito: entradas con NaN y QE de una X vacía (ver el informe de
-// T024). No se fija aquí el comportamiento actual porque la constitución (V) exige
-// lanzar error en esos casos.
+// Entradas inválidas (NaN, QE de una X vacía, tamaños no enteros, filas posteriores
+// erróneas) lanzan error y se prueban en tests/api/SOM.validation.test.ts (T056).
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SOM } from '../src/SOM'
