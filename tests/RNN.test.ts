@@ -152,6 +152,34 @@ describe('RNN forward (valores a mano)', () => {
   })
 })
 
+describe('RNN tanh estable con preactivaciones grandes (T057)', () => {
+  // Wxh = 1, Whh = 0, Why = 1, bh = by = 0: hRaw = x, h = tanh(x), o = h.
+  // tanh satura: tanh(±355) = ±1 (en doble precisión 1 − 2e^{−710} = 1), igual para ±1000.
+  // La fórmula antigua (e^{2x} − 1)/(e^{2x} + 1) daba Infinity/Infinity = NaN con x ≥ 355.
+  it.each([354, 355, 400, 1000, -354, -355, -400, -1000])('x = %d gives h = o = sign(x), not NaN', (x) => {
+    const net = net111(1, 0, 1)
+    const { hiddens, outputs } = net.forward([[x]])
+    const expected = x > 0 ? 1 : -1
+    expect(hiddens[0][0]).toBe(expected)
+    expect(outputs[0][0]).toBe(expected)
+  })
+
+  it('saturated state keeps propagating through the recurrence (no NaN in later steps)', () => {
+    // Wxh = 1, Whh = 1, Why = 1: h_1 = tanh(355) = 1; h_2 = tanh(0 + 1·1) = tanh(1).
+    const net = net111(1, 1, 1)
+    const { hiddens } = net.forward([[355], [0]])
+    expect(hiddens[0][0]).toBe(1)
+    expect(hiddens[1][0]).toBeCloseTo(Math.tanh(1), 12)
+  })
+
+  it('moderate values are unchanged: tanh(0.6) and tanh(−1) at 1e-12', () => {
+    const net = net111(1, 0, 1)
+    expect(net.forward([[0.6]]).hiddens[0][0]).toBeCloseTo(Math.tanh(0.6), 12)
+    net.reset()
+    expect(net.forward([[-1]]).hiddens[0][0]).toBeCloseTo(-Math.tanh(1), 12)
+  })
+})
+
 describe('RNN backward (valores a mano)', () => {
   it('returns the MSE over T·outputSize: L = (1 + tanh²(1)) / 2', () => {
     // Wxh = 1, Whh = 0, Why = 1, b = 0; x = [0, 1]:
