@@ -47,12 +47,31 @@
 
 // Builds a K×K confusion matrix.
 // C[i][j] = # samples with true label i predicted as label j.
+// Throws if the labels are not non-negative integers, or if numClasses is given
+// and a label is ≥ numClasses (the matrix would have no row/column for it).
 export function confusionMatrix(
   yTrue: number[],
   yPred: number[],
   numClasses?: number,
 ): number[][] {
-  const K = numClasses ?? Math.max(...yTrue, ...yPred) + 1;
+  _assertPair('confusionMatrix', yTrue, yPred);
+  _assertLabels('confusionMatrix', yTrue, yPred);
+  let K: number;
+  if (numClasses === undefined) {
+    K = _maxLabel(yTrue, yPred) + 1;
+  } else {
+    if (!Number.isInteger(numClasses) || numClasses < 1) {
+      throw new Error(`Metrics.confusionMatrix: numClasses must be a positive integer (got ${numClasses})`);
+    }
+    for (let i = 0; i < yTrue.length; i++) {
+      if (yTrue[i] >= numClasses || yPred[i] >= numClasses) {
+        throw new Error(
+          `Metrics.confusionMatrix: label at index ${i} is >= numClasses (${numClasses})`,
+        );
+      }
+    }
+    K = numClasses;
+  }
   const matrix: number[][] = Array.from({ length: K }, () => new Array(K).fill(0));
   for (let i = 0; i < yTrue.length; i++) {
     matrix[yTrue[i]][yPred[i]]++;
@@ -67,10 +86,13 @@ export function precision(
   yPred: number[],
   positiveClass?: number,
 ): number {
+  _assertPair('precision', yTrue, yPred);
+  _assertLabels('precision', yTrue, yPred);
   if (positiveClass !== undefined) {
+    _assertPositiveClass('precision', positiveClass);
     return _binaryPrecision(yTrue, yPred, positiveClass);
   }
-  const K = Math.max(...yTrue, ...yPred) + 1;
+  const K = _maxLabel(yTrue, yPred) + 1;
   let sum = 0;
   for (let c = 0; c < K; c++) sum += _binaryPrecision(yTrue, yPred, c);
   return sum / K;
@@ -83,30 +105,47 @@ export function recall(
   yPred: number[],
   positiveClass?: number,
 ): number {
+  _assertPair('recall', yTrue, yPred);
+  _assertLabels('recall', yTrue, yPred);
   if (positiveClass !== undefined) {
+    _assertPositiveClass('recall', positiveClass);
     return _binaryRecall(yTrue, yPred, positiveClass);
   }
-  const K = Math.max(...yTrue, ...yPred) + 1;
+  const K = _maxLabel(yTrue, yPred) + 1;
   let sum = 0;
   for (let c = 0; c < K; c++) sum += _binaryRecall(yTrue, yPred, c);
   return sum / K;
 }
 
 // F1 = 2·P·R / (P+R) — harmonic mean of precision and recall.
+// With positiveClass: F1 of that class.
+// Without it (macro): the MEAN of the per-class F1 values, as in sklearn
+// average='macro'. Note this is NOT 2·P_macro·R_macro / (P_macro+R_macro).
 export function f1Score(
   yTrue: number[],
   yPred: number[],
   positiveClass?: number,
 ): number {
-  const p = precision(yTrue, yPred, positiveClass);
-  const r = recall(yTrue, yPred, positiveClass);
-  if (p + r === 0) return 0;
-  return (2 * p * r) / (p + r);
+  _assertPair('f1Score', yTrue, yPred);
+  _assertLabels('f1Score', yTrue, yPred);
+  if (positiveClass !== undefined) {
+    _assertPositiveClass('f1Score', positiveClass);
+    return _harmonicMean(
+      _binaryPrecision(yTrue, yPred, positiveClass),
+      _binaryRecall(yTrue, yPred, positiveClass),
+    );
+  }
+  const K = _maxLabel(yTrue, yPred) + 1;
+  let sum = 0;
+  for (let c = 0; c < K; c++) {
+    sum += _harmonicMean(_binaryPrecision(yTrue, yPred, c), _binaryRecall(yTrue, yPred, c));
+  }
+  return sum / K;
 }
 
 // Accuracy = fraction of correct predictions.
 export function accuracy(yTrue: number[], yPred: number[]): number {
-  if (yTrue.length === 0) return 0;
+  _assertPair('accuracy', yTrue, yPred);
   const correct = yTrue.filter((y, i) => y === yPred[i]).length;
   return correct / yTrue.length;
 }
@@ -118,6 +157,7 @@ export function rocCurve(
   yTrue: number[],
   yScores: number[],
 ): { fpr: number; tpr: number; threshold: number }[] {
+  _assertPair('rocCurve', yTrue, yScores, 'yScores');
   // Collect unique thresholds, sorted descending so we sweep from strict to loose
   const thresholds = [...new Set(yScores)].sort((a, b) => b - a);
   // Add a threshold above max so the first point is (0, 0)
@@ -147,7 +187,12 @@ export function rocCurve(
 
 // AUC — area under the ROC curve via the trapezoidal rule.
 // AUC = Σ (fpr[k+1] - fpr[k]) · (tpr[k+1] + tpr[k]) / 2
+// Throws if yTrue has a single class: the ROC curve is undefined then (no positives or no negatives).
 export function auc(yTrue: number[], yScores: number[]): number {
+  _assertPair('auc', yTrue, yScores, 'yScores');
+  if (yTrue.every((y) => y === yTrue[0])) {
+    throw new Error('Metrics.auc: yTrue contains a single class; AUC needs both classes');
+  }
   const curve = rocCurve(yTrue, yScores);
   let area = 0;
   for (let i = 1; i < curve.length; i++) {
@@ -162,11 +207,13 @@ export function auc(yTrue: number[], yScores: number[]): number {
 
 // Mean Absolute Error: (1/n) Σ |yᵢ - ŷᵢ|
 export function mae(yTrue: number[], yPred: number[]): number {
+  _assertPair('mae', yTrue, yPred);
   return yTrue.reduce((s, y, i) => s + Math.abs(y - yPred[i]), 0) / yTrue.length;
 }
 
 // Root Mean Squared Error: √[ (1/n) Σ (yᵢ - ŷᵢ)² ]
 export function rmse(yTrue: number[], yPred: number[]): number {
+  _assertPair('rmse', yTrue, yPred);
   const mseVal = yTrue.reduce((s, y, i) => s + (y - yPred[i]) ** 2, 0) / yTrue.length;
   return Math.sqrt(mseVal);
 }
@@ -174,11 +221,14 @@ export function rmse(yTrue: number[], yPred: number[]): number {
 // R² coefficient of determination.
 // R² = 1 − SS_res / SS_tot
 // SS_res = Σ(yᵢ - ŷᵢ)²,  SS_tot = Σ(yᵢ - ȳ)²
+// When yTrue is constant, SS_tot = 0 and R² is undefined. Convention (sklearn):
+// 1 if the prediction is perfect (SS_res = 0), 0 otherwise.
 export function r2Score(yTrue: number[], yPred: number[]): number {
+  _assertPair('r2Score', yTrue, yPred);
   const mean = yTrue.reduce((s, y) => s + y, 0) / yTrue.length;
   const ssTot = yTrue.reduce((s, y) => s + (y - mean) ** 2, 0);
   const ssRes = yTrue.reduce((s, y, i) => s + (y - yPred[i]) ** 2, 0);
-  if (ssTot === 0) return 1;  // all targets are identical — trivial case
+  if (ssTot === 0) return ssRes === 0 ? 1 : 0;
   return 1 - ssRes / ssTot;
 }
 
@@ -228,7 +278,9 @@ export function classificationReport(
   yPred: number[],
   labels?: string[],
 ): void {
-  const K = Math.max(...yTrue, ...yPred) + 1;
+  _assertPair('classificationReport', yTrue, yPred);
+  _assertLabels('classificationReport', yTrue, yPred);
+  const K = _maxLabel(yTrue, yPred) + 1;
   const lbs = labels ?? Array.from({ length: K }, (_, i) => `class_${i}`);
 
   const rows: string[] = [];
@@ -265,6 +317,53 @@ export function classificationReport(
 }
 
 // ─── Private Helpers ──────────────────────────────────────────────────────────
+
+// Constitution V: invalid inputs throw with "Metrics.<function>: <reason>".
+// Paired inputs (yTrue with yPred, or with yScores) must be non-empty and of equal length.
+function _assertPair(fn: string, a: number[], b: number[], nameB = 'yPred'): void {
+  if (a.length === 0) {
+    throw new Error(`Metrics.${fn}: inputs must not be empty`);
+  }
+  if (a.length !== b.length) {
+    throw new Error(`Metrics.${fn}: yTrue and ${nameB} must have the same length (${a.length} vs ${b.length})`);
+  }
+}
+
+// Class labels must be non-negative integers (they index matrix rows and columns).
+function _assertLabels(fn: string, yTrue: number[], yPred: number[]): void {
+  _assertLabelArray(fn, 'yTrue', yTrue);
+  _assertLabelArray(fn, 'yPred', yPred);
+}
+
+function _assertLabelArray(fn: string, name: string, labels: number[]): void {
+  for (let i = 0; i < labels.length; i++) {
+    const v = labels[i];
+    if (!Number.isInteger(v) || v < 0) {
+      throw new Error(`Metrics.${fn}: ${name}[${i}] = ${v} is not a non-negative integer label`);
+    }
+  }
+}
+
+function _assertPositiveClass(fn: string, positiveClass: number): void {
+  if (!Number.isInteger(positiveClass) || positiveClass < 0) {
+    throw new Error(`Metrics.${fn}: positiveClass must be a non-negative integer (got ${positiveClass})`);
+  }
+}
+
+// Largest label over both arrays. A loop, not Math.max(...arr): spreading 200 000
+// elements as arguments overflows the call stack.
+function _maxLabel(yTrue: number[], yPred: number[]): number {
+  let max = 0;
+  for (let i = 0; i < yTrue.length; i++) if (yTrue[i] > max) max = yTrue[i];
+  for (let i = 0; i < yPred.length; i++) if (yPred[i] > max) max = yPred[i];
+  return max;
+}
+
+// F1 from precision and recall; 0 when both are 0 (avoids 0/0).
+function _harmonicMean(p: number, r: number): number {
+  if (p + r === 0) return 0;
+  return (2 * p * r) / (p + r);
+}
 
 function _binaryPrecision(yTrue: number[], yPred: number[], pos: number): number {
   let tp = 0, fp = 0;
