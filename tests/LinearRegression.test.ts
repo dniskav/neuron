@@ -201,27 +201,29 @@ describe('fitNormal: solución exacta a mano', () => {
   })
 })
 
-// Comportamiento ACTUAL de fitNormal en entradas inválidas. T037 (validateDataset) lo cambiará:
-// entonces estos casos deben pasar a lanzar y este bloque se reescribe.
-describe('fitNormal con entradas inválidas: comportamiento actual (T037 lo cambia)', () => {
-  it('X con filas irregulares no lanza y deja los pesos en NaN', () => {
+// Entradas inválidas de fitNormal: lanzan con validateDataset (T037) antes de tocar el modelo.
+// Antes de T037 no lanzaban y dejaban los pesos en NaN.
+describe('fitNormal con entradas inválidas lanza (T037)', () => {
+  it('X con filas irregulares lanza indicando la fila', () => {
     const m = new LinearRegression()
-    m.fitNormal(
-      [
+    expect(() =>
+      m.fitNormal(
+        [
+          [1, 2],
+          [3],
+        ],
         [1, 2],
-        [3],
-      ],
-      [1, 2],
-    )
-    expect(m.weights).toHaveLength(3)
-    expect(m.weights.every((w) => Number.isNaN(w))).toBe(true)
+      ),
+    ).toThrow(/LinearRegression\.fitNormal: X\[1\]: expected array of length 2, got 1/)
+    expect(m.weights).toEqual([])
   })
 
-  it('y con NaN no lanza y deja los pesos en NaN', () => {
+  it('y con NaN lanza indicando la posición', () => {
     const m = new LinearRegression()
-    m.fitNormal([[0], [1], [2]], [1, NaN, 5])
-    expect(m.weights).toHaveLength(2)
-    expect(m.weights.every((w) => Number.isNaN(w))).toBe(true)
+    expect(() => m.fitNormal([[0], [1], [2]], [1, NaN, 5])).toThrow(
+      /LinearRegression\.fitNormal: y: invalid value at index 1: NaN/,
+    )
+    expect(m.weights).toEqual([])
   })
 })
 
