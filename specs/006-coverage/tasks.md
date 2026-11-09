@@ -138,19 +138,19 @@
 
 ## Lote 8
 
-- [ ] T029 [P] [H] [files: tests/Seq2Seq.test.ts] Tests de `Seq2Seq` (`src/Seq2Seq.ts`, línea 68 y 77 % de ramas): `encode` (devuelve `h` y `c` de tamaño `hidden`), `decode(ctx, steps)` (nº de pasos y dimensión), `trainStep` (pérdida finita; baja ≥ 30 % invirtiendo una secuencia corta, 5 semillas), errores de la línea 68. No repite el oráculo.
+- [x] T029 [P] [H] [files: tests/Seq2Seq.test.ts] Tests de `Seq2Seq` (`src/Seq2Seq.ts`, línea 68 y 77 % de ramas): `encode` (devuelve `h` y `c` de tamaño `hidden`), `decode(ctx, steps)` (nº de pasos y dimensión), `trainStep` (pérdida finita; baja ≥ 30 % invirtiendo una secuencia corta, 5 semillas), errores de la línea 68. No repite el oráculo.
       Mutantes: `decode` ignorando el contexto; `steps` fijo; encoder sin pasar `c`; `lr` ignorado.
       Gate: `npx vitest run tests/Seq2Seq.test.ts tests/oracle/Seq2Seq.oracle.test.ts && GC`.
 
-- [ ] T030 [P] [H] [files: tests/GAN.test.ts] Tests de `GAN` (`src/GAN.ts`, ramas 75 %): constructor (formas de G y D; `D` debe terminar en sigmoide, ver 004/T007), `generate`/muestreo (forma, determinismo con semilla), `trainStep` devuelve las dos pérdidas finitas y modifica G (y D) o no según el diseño (leer: el discriminador congelado en el paso de G: sus pesos NO cambian durante el cálculo del gradiente de G), ramas 77–167 sin cubrir. No repite el oráculo ni el "aprende contra D fijo" de 004.
+- [x] T030 [P] [H] [files: tests/GAN.test.ts] Tests de `GAN` (`src/GAN.ts`, ramas 75 %): constructor (formas de G y D; `D` debe terminar en sigmoide, ver 004/T007), `generate`/muestreo (forma, determinismo con semilla), `trainStep` devuelve las dos pérdidas finitas y modifica G (y D) o no según el diseño (leer: el discriminador congelado en el paso de G: sus pesos NO cambian durante el cálculo del gradiente de G), ramas 77–167 sin cubrir. No repite el oráculo ni el "aprende contra D fijo" de 004.
       Mutantes: actualizar D durante el paso de G; ruido `z` sin renovar; pérdida de G con `log(D)` por `log(1−D)` sin signo; etiquetas reales/falsas intercambiadas.
       Gate: `npx vitest run tests/GAN.test.ts tests/oracle/GAN.oracle.test.ts && GC`.
 
-- [ ] T031 [P] [H] [files: tests/VAE.test.ts] Tests de `VAE` (`src/VAE.ts`, línea 78 y ramas 92 %): `forward` devuelve `mu`, `logVar`, `eps`, `z = mu + exp(logVar/2)·eps` (a mano con `eps` fijado por semilla o stub), KL para `mu 0, logVar 0` = 0 y para `mu 1, logVar 0` = `0.5` por dimensión (fórmula `−½(1 + logVar − mu² − e^logVar)`), `klWeight` escala el término, `train` finito, línea 78. No repite el oráculo ni el "reconstruye mejor que la media".
+- [x] T031 [P] [H] [files: tests/VAE.test.ts] Tests de `VAE` (`src/VAE.ts`, línea 78 y ramas 92 %): `forward` devuelve `mu`, `logVar`, `eps`, `z = mu + exp(logVar/2)·eps` (a mano con `eps` fijado por semilla o stub), KL para `mu 0, logVar 0` = 0 y para `mu 1, logVar 0` = `0.5` por dimensión (fórmula `−½(1 + logVar − mu² − e^logVar)`), `klWeight` escala el término, `train` finito, línea 78. No repite el oráculo ni el "reconstruye mejor que la media".
       Mutantes: KL sin el factor ½; `exp(logVar)` en vez de `exp(logVar/2)`; `klWeight` ignorado; `eps` reutilizado.
       Gate: `npx vitest run tests/VAE.test.ts tests/oracle/VAE.oracle.test.ts && GC`.
 
-- [ ] T032 [P] [H] [files: tests/Conv2D.test.ts] Tests de comportamiento de `Conv2D` (`src/Conv2D.ts`, 96 % / 87 %; líneas 71, 74, 166, 169, 206; no existe `tests/Conv2D.test.ts`): `forward` con un kernel de 2×2 fijado y entrada 3×3 de 1 canal calculada a mano (suma de productos por ventana), `valid` vs `same` (formas por la fórmula de `outputShape`), `stride 2`, varios canales de entrada/salida, `getWeights`/`setWeights` ida y vuelta, errores de las líneas no cubiertas. Los oráculos de pesos y `dInput` (005) ya existen; no se repiten.
+- [x] T032 [P] [H] [files: tests/Conv2D.test.ts] Tests de comportamiento de `Conv2D` (`src/Conv2D.ts`, 96 % / 87 %; líneas 71, 74, 166, 169, 206; no existe `tests/Conv2D.test.ts`): `forward` con un kernel de 2×2 fijado y entrada 3×3 de 1 canal calculada a mano (suma de productos por ventana), `valid` vs `same` (formas por la fórmula de `outputShape`), `stride 2`, varios canales de entrada/salida, `getWeights`/`setWeights` ida y vuelta, errores de las líneas no cubiertas. Los oráculos de pesos y `dInput` (005) ya existen; no se repiten.
       Mutantes: correlación por convolución (kernel invertido); relleno asimétrico invertido; `stride` ignorado; sesgo omitido.
       Gate: `npx vitest run tests/Conv2D.test.ts tests/oracle/Conv2D.oracle.test.ts tests/api/Conv2D.padding.test.ts && GC`.
 
@@ -300,3 +300,12 @@
 
 - [ ] T057 [S] [files: src/RNN.ts, tests/RNN.test.ts] Hallazgo de T027 (entrada válida produce NaN, principio V). La `tanh` local de `src/RNN.ts` (líneas 35–38) calcula `(e^{2x}−1)/(e^{2x}+1)`: con `x ≳ 355`, `e^{2x}` = `Infinity` y el cociente da `NaN` (`new RNN(1,1,1)` con `Wxh=[[1]]`, `Whh=[[0]]`, `Why=[[1]]`, `bh=[0]`, `by=[0]`; `forward([[355]])` → `NaN`; con 354 da 1). Usar `Math.tanh` o una forma estable. Falla antes / pasa después con la reproducción y con −355; comprobar que los valores previos no cambian (golden, tolerancia 1e-12). Buscar el mismo patrón en otros archivos de `src/` (`grep "Math.exp(2"`). Mutante: volver a la fórmula original.
 - [ ] T058 [H] [files: src/TCN.ts] Hallazgo de T028 (documentación, principio VI). El comentario de las líneas 201–203 dice que el residual se suma «antes de la activación», pero el código lo suma DESPUÉS de la ReLU (líneas 283–287) y `backward` es coherente con el código. Corregir el comentario (no el código). Reproducción: `TCN(1,1,1,1,1)` con kernel 0, sesgo 0 y proyección W=1, b=0: `forward([[-2]])` → `[[-2]]`. Añadir ese caso a `tests/TCN.test.ts` como prueba del orden real.
+
+### Lote 9 (integrado: T029–T032)
+
+- T029 (`Seq2Seq`, 19 tests, 6 mutantes): el agente informó `blocked` solo por defectos de `src` fuera de T029; tests integrados. Hallazgos para T040: `new Seq2Seq(NaN, 2, 1)` no lanza (la guarda `<= 0` deja pasar NaN) y `trainStep(X, [], lr)` devuelve 0 en silencio sin tocar pesos. Peor caso de «aprende» 0.091 frente a umbral 0.7.
+- T030 (`GAN`, 15 tests, 5 mutantes): sin defectos. Hallazgos para T041: `trainStep([], lr)` devuelve `{dLoss: NaN, gLoss: NaN}` sin lanzar; el contrato «D con salida sigmoide» está documentado pero no validado. Cobertura sin medir (medir en T045).
+- T031 (`VAE`, 14 tests, 5 mutantes): sin defectos. Observación para T041: `options.activations` se pasa tal cual al decoder (`src/VAE.ts:86`); con distinto nº de capas `NetworkN` lanza «Expected N activations».
+- T032 (`Conv2D`, 14 tests, 4 mutantes): sin defectos. Para T043: `forward` valida dimensiones pero no valores (NaN pasa en silencio).
+- Atribución: los agentes Haiku firmaron `Co-Authored-By: Claude Haiku 5.5` (su modelo real); se deja así.
+- Estado: 2074 tests, 119 archivos.
