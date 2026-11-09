@@ -127,6 +127,20 @@ describe('TCN', () => {
     expect(net.forward(x)).toEqual(x)
   })
 
+  it('residual se suma DESPUÉS de la ReLU (orden real, T058): TCN(1,1,1,1,1) con x = -2 → -2', () => {
+    // Derivación a mano, un solo nivel (K = 1, d = 1), kernel 0, sesgo 0, proyección W = 1, b = 0:
+    //   conv     = 0·(-2) + 0          = 0
+    //   relu     = relu(0)             = 0
+    //   residual = relu + x            = 0 + (-2) = -2   (suma después de la ReLU)
+    //   proyección = 1·(-2) + 0        = -2
+    // Si el residual se sumara ANTES de la ReLU: relu(0 + (-2)) = 0 → salida 0, y el test fallaría.
+    const net = new TCN(1, 1, 1, 1, 1)
+    net.layers[0].kernels = [[[0]]]
+    net.layers[0].biases = [0]
+    setOutput(net, [[1]], [0])
+    expect(net.forward([[-2]])).toEqual([[-2]])
+  })
+
   it('sin residual en el primer nivel (inputChannels ≠ channels): la entrada no llega a la salida', () => {
     // TCN(2, 3, 1, 1, 1): 2 ≠ 3 → no hay residual. Convolución a cero → relu(0) = 0 → y = b = 0.5.
     const net = new TCN(2, 3, 1, 1, 1)
