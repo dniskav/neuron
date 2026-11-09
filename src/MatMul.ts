@@ -103,7 +103,7 @@ export class WeightMatrix {
   // ── Flat weight serialization ─────────────────────────────────────────────
   getWeights(): number[] {
     const w: number[] = [];
-    for (const row of this.W) w.push(...row);
+    for (const row of this.W) for (const v of row) w.push(v);
     return w;
   }
 
@@ -177,7 +177,7 @@ export class EmbeddingMatrix {
 
   getWeights(): number[] {
     const w: number[] = []
-    for (const row of this.W) w.push(...row)
+    for (const row of this.W) for (const v of row) w.push(v)
     return w
   }
 

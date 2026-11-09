@@ -210,13 +210,15 @@ export class TransformerBlock {
   // Order: attn (MHA), norm1 (gamma, beta), ff1, b1, ff2, b2, norm2 (gamma, beta).
   getWeights(): number[] {
     const w: number[] = [];
-    w.push(...this.attn.getWeights());
-    w.push(...this.norm1.gamma, ...this.norm1.beta);
-    for (const row of this.ff1.W) w.push(...row);
-    w.push(...this.b1.values);
-    for (const row of this.ff2.W) w.push(...row);
-    w.push(...this.b2.values);
-    w.push(...this.norm2.gamma, ...this.norm2.beta);
+    for (const v of this.attn.getWeights()) w.push(v);
+    for (const v of this.norm1.gamma) w.push(v);
+    for (const v of this.norm1.beta) w.push(v);
+    for (const row of this.ff1.W) for (const v of row) w.push(v);
+    for (const v of this.b1.values) w.push(v);
+    for (const row of this.ff2.W) for (const v of row) w.push(v);
+    for (const v of this.b2.values) w.push(v);
+    for (const v of this.norm2.gamma) w.push(v);
+    for (const v of this.norm2.beta) w.push(v);
     return w;
   }
 
