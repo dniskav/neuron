@@ -23,18 +23,26 @@
 // ─── Transformada de un punto ────────────────────────────────────────────────
 //   (12, −2) − (10, −3) = (2, 1): en la base de ejes, z = (±2, ±1).
 //
-// ─── Tolerancias ─────────────────────────────────────────────────────────────
-//   El criterio de parada de la iteración es |dot| − 1 < 1e-10, que deja los
-//   vectores a ~1e-5 del eje exacto (medido, 5 semillas). Por eso:
-//   - autovalores y ratios (cociente de Rayleigh, error O(θ²)): precisión 1e-6;
-//   - ejes y componentes: |·| dentro de 1e-4 (cota ~7× por encima del error medido).
+// ─── Tolerancias y mediciones (T051) ──────────────────────────────────────────
+//   Antes de T051 el criterio de parada era |dot| − 1 < 1e-10, que deja los vectores a
+//   ~1e-5 rad (el error del dot es cuadrático en el ángulo). Ahora se itera hasta
+//   ‖v_nuevo − v‖ < 1e-14 y cada paso se re-ortogonaliza contra los componentes ya
+//   hallados. Error máximo de reconstrucción con TODOS los componentes, |x − x̂|∞:
 //
-// ─── Afirmaciones NO incluidas (HALLAZGOS, ver informe de T005) ────────────────
-//   - Reconstrucción exacta con todos los componentes con tolerancia 1e-9: el código
-//     da un error máximo de ~2e-5 sobre DS. No se fija aquí.
-//   - explainedVarianceRatio con nComponents < p: el código divide por la suma de los
-//     autovalores retenidos (siempre suma 1). La fórmula documentada, λₖ / Σⱼ λⱼ sobre
-//     toda la varianza, daría 0.8 para DS con un componente. No se fija aquí.
+//     semilla        1        2        3        4        5      (conjunto DS)
+//     antes     2.2e-5   1.7e-5   1.2e-5   9.0e-6   8.2e-6
+//     después        0        0        0        0        0     (≤ 1.8e-15 en 18 ajustes)
+//
+//   También se midió en un conjunto 4-D de rango 3 (antes 2.06 por un cuarto eje no
+//   ortogonal) y uno 3-D (antes ≤ 3.4e-5): después ≤ 1.8e-15 en 6 semillas. Se llega a
+//   1e-9 con margen de ≥ 6 órdenes, así que ejes, componentes y reconstrucción se fijan
+//   a 1e-9. Autovalores y ratios: 1e-9 (diferencia medida antes/después ≤ 4e-10).
+//
+// ─── Ratio con menos componentes que dimensiones (H2) ──────────────────────────
+//   PCA(1) sobre DS: λ₁ = 4, varianza total = traza Σ = 4 + 1 = 5 ⇒ r₁ = 4/5 = 0.8
+//   (antes el código dividía por la suma retenida 4 y daba 1). Si la traza se calculara
+//   sin centrar sería (12²+12²+8²+8²)/4 + ((−2)²+(−4)²+(−2)²+(−4)²)/4 = 104 + 10 = 114
+//   ⇒ r₁ = 4/114, distinto de 0.8. Con 2 componentes sobre DS la suma sigue siendo 1.
 //
 // Semilla: seedRandom en beforeEach y restoreRandom en afterEach.
 
@@ -46,8 +54,8 @@ const D = [[2, 1], [2, -1], [-2, 1], [-2, -1]]
 const DS = D.map(([x, y]) => [x + 10, y - 3])
 const L = [[1, 1], [2, 2], [3, 3]]
 
-const TOL_EIG = 6 // cifras de precisión de toBeCloseTo para autovalores y ratios
-const TOL_AXIS = 1e-4 // tolerancia absoluta para componentes frente a ejes
+const TOL_EIG = 9 // cifras de precisión de toBeCloseTo para autovalores y ratios
+const TOL_AXIS = 1e-9 // tolerancia absoluta para componentes frente a ejes
 
 /** Comprueba |actual − expected| < tol para cada elemento de un vector. */
 function expectNearVec(actual: number[], expected: number[], tol: number): void {
@@ -167,6 +175,27 @@ describe('PCA', () => {
       R.forEach(row => expect(row.length).toBe(2))
     })
 
+    it('reconstrucción con TODOS los componentes: error ≤ 1e-9 en 5 semillas (H1)', () => {
+      // x̂ = Z·V + μ con V ortonormal 2×2 ⇒ x̂ = x. Antes de T051 el error era ~1e-5.
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const pca = new PCA(2)
+        pca.fit(DS)
+        const R = pca.inverseTransform(pca.transform(DS))
+        DS.forEach((row, i) => expectNearVec(R[i], row, 1e-9))
+      }
+    })
+
+    it('reconstrucción exacta también con datos de rango deficiente (4 columnas, rango 2)', () => {
+      // Columnas (a, b, a+b, 2a−b): rango 2 ⇒ autovalores 3 y 4 son 0 y sus ejes
+      // deben seguir siendo ortonormales para que x̂ = x.
+      const X = [[0, 0], [1, 0], [0, 1], [2, 1], [1, 3]].map(([a, b]) => [a, b, a + b, 2 * a - b])
+      const pca = new PCA(4)
+      pca.fit(X)
+      const R = pca.inverseTransform(pca.transform(X))
+      X.forEach((row, i) => expectNearVec(R[i], row, 1e-9))
+    })
+
     it('reconstrucción con 1 componente: error cuadrático medio = λ₂ = 1', () => {
       // Ver cabecera: x − x̂ = (y centrada)·e2, y² = 1 en cada punto.
       const pca = new PCA(1)
@@ -190,6 +219,15 @@ describe('PCA', () => {
   describe('explainedVarianceRatio', () => {
     it('sin ajustar devuelve []', () => {
       expect(new PCA(1).explainedVarianceRatio()).toEqual([])
+    })
+
+    it('con menos componentes que dimensiones el ratio usa la varianza TOTAL: 0.8 (H2)', () => {
+      // Ver cabecera: λ₁ = 4, traza Σ = 5 ⇒ r₁ = 4/5. Dividir por la suma retenida daría 1.
+      const pca = new PCA(1)
+      pca.fit(DS)
+      const r = pca.explainedVarianceRatio()
+      expect(r.length).toBe(1)
+      expect(r[0]).toBeCloseTo(0.8, TOL_EIG)
     })
 
     it('datos sin varianza: ratio 0 (convención del código cuando el total es 0)', () => {
