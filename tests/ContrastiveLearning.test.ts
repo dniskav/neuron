@@ -327,11 +327,12 @@ describe('ContrastiveLearning.trainStep (comportamiento determinista)', () => {
     expect(params(c)).toEqual(p0)
   })
 
-  it('trainStep([], lr) devuelve NaN (0/0 en la media de 0 anclas): comportamiento ACTUAL', () => {
-    // Caso degenerado fijado tal cual hoy. La tarea T041 (validación) lo cambia (lanzar error); al
-    // hacerlo, reescribir este test. Los pesos además quedan NaN tras el paso (gradientes NaN).
+  it('trainStep([], lr) y computeLoss([]) lanzan y no tocan los pesos (T041; antes NaN y pesos NaN)', () => {
+    // Sin pares no hay anclas: la media de 0 anclas era 0/0. Ahora se rechaza antes de calcular.
     const c = new ContrastiveLearning(4, [6, 4], 3)
-    expect(c.computeLoss([])).toBeNaN()
-    expect(c.trainStep([], 1e-3)).toBeNaN()
+    const p0 = params(c)
+    expect(() => c.computeLoss([])).toThrow(/pairs must be a non-empty array/)
+    expect(() => c.trainStep([], 1e-3)).toThrow(/pairs must be a non-empty array/)
+    expect(params(c)).toEqual(p0)
   })
 })
