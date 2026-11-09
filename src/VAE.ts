@@ -41,6 +41,7 @@
 
 import { NetworkN, NetworkNOptions } from "./NetworkN";
 import { linear, sigmoid } from "./activations";
+import { validateArray } from "./Validation";
 
 // ─── VAE ─────────────────────────────────────────────────────────────────────
 
@@ -70,11 +71,21 @@ export class VAE {
     // Encoder outputs 2·latentDim values: first half = μ, second half = logVar.
     // The output layer is ALWAYS linear: μ and logVar must be unbounded (with a
     // sigmoid, μ ∈ (0,1) and σ ≥ 1, and the VAE cannot beat predicting the mean).
-    // If `options.activations` is given it applies to the encoder hidden layers
-    // (its first `encoderHidden.length` entries) and to the whole decoder.
+    // If `options.activations` is given, it must have one entry per decoder layer
+    // (decoderHidden.length + 1): the decoder receives it as-is. Its first
+    // `encoderHidden.length` entries apply to the encoder hidden layers.
     const encoderStructure = [inputSize, ...encoderHidden, latentDim * 2];
     const encoderOptions: NetworkNOptions = { ...(options ?? {}) };
     if (options?.activations) {
+      const nDecoderLayers = decoderHidden.length + 1;
+      const nActivations = options.activations.length;
+      if (nActivations !== nDecoderLayers || encoderHidden.length > nActivations) {
+        throw new Error(
+          `VAE: options.activations needs ${nDecoderLayers} entries (one per decoder layer, ` +
+          `passed to the decoder as-is) and must cover the ${encoderHidden.length} encoder ` +
+          `hidden layers; got ${nActivations}`,
+        );
+      }
       encoderOptions.activations = [...options.activations.slice(0, encoderHidden.length), linear];
     } else {
       encoderOptions.activations = [...encoderHidden.map(() => sigmoid), linear];
@@ -143,6 +154,13 @@ export class VAE {
     reconLoss: number;
     klLoss: number;
   } {
+    // Validated before any Math.random draw or weight change: input width and finiteness, and
+    // lr finite and >= 0 (lr = 0 is a valid no-op).
+    validateArray(x, this.encoder.structure[0], 'VAE.train: x');
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`VAE.train: lr must be a finite number >= 0, got ${lr}`);
+    }
+
     // Training forward (dropout ACTIVE, one mask per sub-network, reused below; Q9). Same
     // Math.random order as forward(): encoder masks, eps, decoder masks. With dropoutRate = 0
     // it is exactly forward().

@@ -156,6 +156,10 @@ export class Autoencoder {
         `Autoencoder.train: expected input of length ${this._inputSize}, got ${x.length}`
       );
     }
+    // lr must be finite and >= 0 (lr = 0 is a valid no-op). Checked before any weight changes.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`Autoencoder.train: lr must be a finite number >= 0, got ${lr}`);
+    }
 
     // ── Forward pass ──────────────────────────────────────────────────────
     const z    = this.encoder.predict(x, true);       // latent code
