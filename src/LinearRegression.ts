@@ -27,7 +27,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { validateArray, validateNumber } from "./Validation";
+import { validateDataset, validateNumber } from "./Validation";
 
 // ─── Internal matrix utilities ────────────────────────────────────────────────
 // Pure arithmetic on number[][]; no external dependencies.
@@ -131,6 +131,8 @@ export class LinearRegression {
       );
     }
 
+    // Validates X (rectangular, finite) and y (finite) before any state is touched.
+    validateDataset(X, y, "LinearRegression.fitNormal");
     this._nFeatures = X[0].length;
     const Xa = augment(X);                          // [m × (n+1)]
     const XaT = transpose(Xa);                      // [(n+1) × m]
@@ -180,16 +182,7 @@ export class LinearRegression {
     }
 
     // Validate the data before touching any state
-    if (!Array.isArray(X[0])) {
-      throw new Error(`LinearRegression.fitGD: X[0]: expected array, got ${typeof X[0]}`);
-    }
-    if (X[0].length === 0) {
-      throw new Error("LinearRegression.fitGD: X rows need at least 1 feature");
-    }
-    for (let i = 0; i < X.length; i++) {
-      validateArray(X[i], X[0].length, `LinearRegression.fitGD: X[${i}]`);
-    }
-    validateArray(y, X.length, "LinearRegression.fitGD: y");
+    validateDataset(X, y, "LinearRegression.fitGD");
 
     this._nFeatures = X[0].length;
     const m = X.length;

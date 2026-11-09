@@ -36,7 +36,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { validateArray, validateNumber } from "./Validation";
+import { validateArray, validateDataset, validateNumber } from "./Validation";
 
 // ─── Internal sigmoid ─────────────────────────────────────────────────────────
 function sigmoid(z: number): number {
@@ -50,21 +50,6 @@ function bce(target: number, pred: number): number {
   const eps = 1e-15;
   const p = Math.max(eps, Math.min(1 - eps, pred));
   return -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
-}
-
-// ─── Training-data validation ─────────────────────────────────────────────────
-// Rows of X must be arrays of the same length as X[0] (at least 1 feature) with
-// finite numbers, and y must be finite. Runs BEFORE any weight or Math.random use.
-function validateTrainingData(X: number[][], y: number[], method: string): void {
-  if (!Array.isArray(X[0])) {
-    throw new Error(`${method}: X[0]: expected array, got ${typeof X[0]}`);
-  }
-  const nFeatures = X[0].length;
-  if (nFeatures === 0) throw new Error(`${method}: X rows need at least 1 feature`);
-  for (let i = 0; i < X.length; i++) {
-    validateArray(X[i], nFeatures, `${method}: X[${i}]`);
-  }
-  validateArray(y, X.length, `${method}: y`);
 }
 
 // ─── LogisticRegression ───────────────────────────────────────────────────────
@@ -100,14 +85,8 @@ export class LogisticRegression {
       throw new Error("LogisticRegression.train: epochs must be a positive integer");
     }
 
-    validateTrainingData(X, y, "LogisticRegression.train");
-    for (let i = 0; i < y.length; i++) {
-      if (y[i] < 0 || y[i] > 1) {
-        throw new Error(
-          `LogisticRegression.train: y[${i}] = ${y[i]} is outside [0, 1]`
-        );
-      }
-    }
+    // Validates X (rectangular, finite), y (finite) and y in [0, 1]; runs before any weight change.
+    validateDataset(X, y, "LogisticRegression.train", { labels: "unit" });
 
     this._nFeatures = X[0].length;
     // Continue from the existing weights if their length matches; otherwise
@@ -231,14 +210,10 @@ export class SoftmaxRegression {
       throw new Error("SoftmaxRegression.train: epochs must be a positive integer");
     }
 
-    validateTrainingData(X, y, "SoftmaxRegression.train");
+    // Validates X, y (finite) and the labels (integers >= 0); runs before any weight change.
+    validateDataset(X, y, "SoftmaxRegression.train", { labels: "integer" });
     let maxLabel = 0;
     for (let i = 0; i < y.length; i++) {
-      if (!Number.isInteger(y[i]) || y[i] < 0) {
-        throw new Error(
-          `SoftmaxRegression.train: label y[${i}] = ${y[i]} must be an integer >= 0`
-        );
-      }
       if (y[i] > maxLabel) maxLabel = y[i];
     }
 
