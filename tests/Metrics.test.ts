@@ -99,11 +99,13 @@ describe('precision / recall / f1 binarios', () => {
     expect(recall(yT, yP)).toBeCloseTo(17 / 30, 12)
   })
 
-  it('sin positiveClass: f1 = 2PR/(P+R) sobre las medias macro (convención del código)', () => {
-    // 2 · (7/12) · (17/30) / ((7/12) + (17/30)) = (119/180) / (23/20) = 119/207.
-    // HALLAZGO (no bloquea): la media de F1 por clase daría (8/11 + 2/5)/2 = 31/55 ≈ 0.5636,
-    // distinto de 119/207 ≈ 0.5749. El código usa la F1 de las medias macro; ver informe.
-    expect(f1Score(yT, yP)).toBeCloseTo(119 / 207, 12)
+  it('sin positiveClass: f1 macro = media de las F1 por clase (convención sklearn average="macro")', () => {
+    // Clase 0: TP=4 (i4..i7), FP=2 (i1,i2), FN=1 (i3). P0 = 4/6 = 2/3, R0 = 4/5.
+    //   F1_0 = 2·(2/3)·(4/5) / ((2/3)+(4/5)) = (16/15) / (22/15) = 8/11.
+    // Clase 1: P1 = 1/2, R1 = 1/3, F1_1 = 2/5 (como en el caso binario de arriba).
+    // Macro F1 = (8/11 + 2/5) / 2 = ((40 + 22)/55) / 2 = 62/110 = 31/55 ≈ 0.5636.
+    // Cambio decidido (T036, Q2 del usuario): antes se calculaba 2PR/(P+R) con P y R macro (119/207).
+    expect(f1Score(yT, yP)).toBeCloseTo(31 / 55, 12)
   })
 
   it('f1 vale 0 cuando precision + recall = 0', () => {
@@ -257,11 +259,11 @@ describe('classificationReport', () => {
   })
 })
 
-// ─── Degenerate inputs (T036 will change these) ───────────────────────────────
+// ─── Degenerate inputs (T036: lanzan en vez de devolver NaN) ──────────────────
 
-describe('degenerate inputs (T036 will change these)', () => {
-  it('mae con longitudes distintas devuelve NaN (comportamiento actual)', () => {
-    // yTrue tiene 2 elementos; yPred[1] es undefined → |2 − undefined| = NaN → suma NaN.
-    expect(mae([1, 2], [1])).toBeNaN()
+describe('degenerate inputs', () => {
+  it('mae con longitudes distintas lanza Metrics.mae (antes devolvía NaN)', () => {
+    // yTrue tiene 2 elementos e yPred 1: se rechaza antes de sumar (ver tests/api/Metrics.validation.test.ts).
+    expect(() => mae([1, 2], [1])).toThrow(/^Metrics\.mae:/)
   })
 })
