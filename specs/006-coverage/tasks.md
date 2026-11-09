@@ -78,7 +78,7 @@
       Mutantes: enrutar el gradiente a `(0,0)` de la ventana; `>` por `>=` en la búsqueda del máximo (debe cambiar el empate); `stride` ignorado; `+=` por `=` en el backward (rompe la suma de ventanas solapadas).
       Gate: `npx vitest run tests/MaxPool2D.test.ts tests/oracle/MaxPool2D.dx.oracle.test.ts && npx vitest run --coverage --coverage.reporter=text tests/MaxPool2D.test.ts 2>&1 | grep MaxPool2D && GC`.
 
-- [ ] T016 [P] [H] [files: tests/oracle/Dropout.dx.oracle.test.ts] Oráculo de `dx` de `Dropout` (`src/Dropout.ts`, ya tiene `tests/Dropout.test.ts`): con `seedRandom` y `forward(x, true)` se fija la máscara; diferencias finitas de `L = Σ c_i·y_i` evaluadas con `reuseMask(x)` (misma máscara, sin sortear) frente a `backward(c)`; `|a − b| < 1e-6` por componente; `rate 0` e inferencia: `backward` devuelve `dOut` tal cual. Además una máscara a mano con un stub de `Math.random` (`[0.0, 0.9]` con `rate 0.5` → `[0, 2]`): `backward([1,1]) = [0, 2]`.
+- [x] T016 [P] [H] [files: tests/oracle/Dropout.dx.oracle.test.ts] Oráculo de `dx` de `Dropout` (`src/Dropout.ts`, ya tiene `tests/Dropout.test.ts`): con `seedRandom` y `forward(x, true)` se fija la máscara; diferencias finitas de `L = Σ c_i·y_i` evaluadas con `reuseMask(x)` (misma máscara, sin sortear) frente a `backward(c)`; `|a − b| < 1e-6` por componente; `rate 0` e inferencia: `backward` devuelve `dOut` tal cual. Además una máscara a mano con un stub de `Math.random` (`[0.0, 0.9]` con `rate 0.5` → `[0, 2]`): `backward([1,1]) = [0, 2]`.
       Mutantes: `backward` sin multiplicar por la máscara; escala `1/(1−rate)` omitida en `backward`; `reuseMask` sorteando de nuevo.
       Gate: `npx vitest run tests/oracle/Dropout.dx.oracle.test.ts tests/Dropout.test.ts && GC`.
 
