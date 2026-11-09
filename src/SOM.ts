@@ -108,6 +108,10 @@ export class SOM {
     // Validate every row (width and finiteness) before any weight is touched,
     // so a bad row cannot leave the map half-trained.
     validateDataset(X, undefined, 'SOM.train', { nFeatures: this._inputSize });
+    // A non-integer epochs silently ran a fractional number of passes; 0 did nothing.
+    if (!Number.isInteger(epochs) || epochs < 1) {
+      throw new Error(`SOM.train: epochs must be an integer >= 1, got ${epochs}`);
+    }
 
     const totalSteps = epochs * X.length;
     let step = 0;

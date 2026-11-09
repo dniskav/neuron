@@ -32,6 +32,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateArray, validateDataset } from './Validation'
+
 export class PCA {
   /** Eigenvectors (principal components), shape [nComponents][nFeatures]. */
   components: number[][];
@@ -59,6 +61,8 @@ export class PCA {
   fit(X: number[][]): void {
     const n = X.length;
     if (n < 2) throw new Error("PCA.fit: need at least 2 samples");
+    // Rectangular, finite X: checked before mean/components are touched.
+    validateDataset(X, undefined, 'PCA.fit');
     const p = X[0].length;
     if (this._nComponents > p) {
       throw new Error(
@@ -104,6 +108,10 @@ export class PCA {
   transform(X: number[][]): number[][] {
     if (this.components.length === 0) {
       throw new Error("PCA.transform: call fit() before transform()");
+    }
+    // Every row must have the fitted width (a short row would silently use undefined).
+    for (let i = 0; i < X.length; i++) {
+      validateArray(X[i], this.mean.length, `PCA.transform: X[${i}]`);
     }
     return X.map(row => {
       const centered = row.map((v, j) => v - this.mean[j]);
