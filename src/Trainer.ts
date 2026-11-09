@@ -2,7 +2,34 @@
 //
 // High-level training loop for feedforward + recurrent networks.
 // Handles epoch iteration, shuffling, learning rate decay, loss history,
-// weight decay (L2), early stopping, classification metrics, and gradient clipping.
+// weight decay (L2), early stopping, optional restoration of the best weights,
+// and classification metrics.
+//
+// Gradient clipping is NOT a Trainer option: Trainer only sees `train()`, so it
+// cannot clip the gradient. Configure it where the gradient lives, in the
+// optimizer (see ClippedOptimizerFactory).
+//
+// Options that cannot take effect THROW (they are never ignored silently):
+// earlyStopping without setValidationData(), weightDecay/earlyStopping/
+// restoreBestWeights on a network without getWeights/setWeights/predict,
+// computeMetrics without predict(), an empty dataset, and invalid epochs
+// (integer > 0), lr (finite > 0), lrDecay (in (0, 1]), weightDecay (finite >= 0),
+// patience (integer >= 1) or minDelta (finite >= 0), and empty or mismatched
+// validation data when earlyStopping is set. Errors are thrown before any
+// network.train call.
+// The only remaining console.warn is computeMetrics with targets that do not
+// look like classification (a heuristic over the data).
+//
+// Notes:
+//  - weightDecay multiplies EVERY weight returned by getWeights(), biases
+//    included, by (1 - lr * weightDecay) before each sample.
+//  - restoreBestWeights (default false) keeps getWeights() at each validation
+//    improvement and restores it when training ends, by early stopping or by
+//    reaching epochs. Optimizer state (Adam moments, etc.) is NOT restored, only
+//    the weights. Restoring goes through setWeights(), which validates: a best
+//    snapshot containing NaN/Infinity is not restored and setWeights' error
+//    propagates (the network keeps its last-epoch weights). A model that
+//    diverges to NaN AFTER its best epoch is restored normally.
 //
 // Usage:
 //   const trainer = new Trainer(network, { epochs: 1000, lr: 0.1 })
@@ -46,9 +73,8 @@ export interface TrainerOptions {
     minDelta: number;     // minimum improvement required
   };
   computeMetrics?: boolean; // compute classification metrics each epoch
-  clipValue?: number;       // gradient clipping value — stored for reference;
-                            // actual clipping must be configured at network level
-                            // via ClippedOptimizerFactory or WeightMatrix clipValue
+  restoreBestWeights?: boolean; // default false. Requires earlyStopping + validation data:
+                                // on finish, restore the weights of the best validation epoch
 }
 
 export interface TrainDataset {
@@ -77,7 +103,7 @@ export class Trainer {
   readonly lrDecay: number;
   readonly verbose: boolean;
   readonly weightDecay: number;
-  readonly clipValue: number;
+  readonly restoreBestWeights: boolean;
 
   private _history: number[] = [];
 
@@ -101,7 +127,7 @@ export class Trainer {
     this.weightDecay = options.weightDecay ?? 0;
     this._earlyStopping = options.earlyStopping;
     this._computeMetrics = options.computeMetrics ?? false;
-    this.clipValue = options.clipValue ?? 0;
+    this.restoreBestWeights = options.restoreBestWeights ?? false;
   }
 
   // ── Set external validation data (for early stopping) ────────────────────
@@ -138,6 +164,8 @@ export class Trainer {
       );
     }
 
+    this._validateOptions(inputs.length);
+
     const n = inputs.length;
     let lr = this.lrInitial;
     this._history = [];
@@ -146,30 +174,16 @@ export class Trainer {
     this._stopReason = 'maxEpochs';
     this._metrics = [];
 
-    // ── Feature gating: check if network supports extended API ────────────
+    // ── Feature gating (options were validated above; these cannot be null) ──
     const netExt = this._hasWeights(this.network);
 
-    if (this.weightDecay > 0 && !netExt) {
-      console.warn(
-        'Trainer: weightDecay requires a network with getWeights/setWeights/predict. Skipping weight decay.'
-      );
-    }
-    if (this._earlyStopping && !netExt) {
-      console.warn(
-        'Trainer: earlyStopping requires a network with predict(). Skipping early stopping.'
-      );
-    }
-    if (this._computeMetrics && !netExt) {
-      console.warn(
-        'Trainer: computeMetrics requires a network with predict(). Skipping metrics.'
-      );
-    }
-
-    const canDecay = this.weightDecay > 0 && netExt;
+    const canDecay = this.weightDecay > 0 && !!netExt;
     const canValidate =
-      !!this._earlyStopping && netExt && !!this._validationData;
-    const canMetric = this._computeMetrics && netExt;
+      !!this._earlyStopping && !!netExt && !!this._validationData;
+    const canMetric = this._computeMetrics;
     const isClass = canMetric && this._isClassification(targets);
+    const predictor = this.network as unknown as { predict(i: number[]): number[] };
+    let bestWeights: number[] | null = null;
 
     if (canMetric && !isClass) {
       console.warn(
@@ -192,11 +206,11 @@ export class Trainer {
       for (const i of indices) {
         // Apply weight decay before each training step (L2 equivalent)
         if (canDecay) {
-          const w = netExt.getWeights();
+          const w = netExt!.getWeights();
           for (let j = 0; j < w.length; j++) {
             w[j] *= 1 - lr * this.weightDecay;
           }
-          netExt.setWeights(w);
+          netExt!.setWeights(w);
         }
         epochLoss += this.network.train(inputs[i], targets[i], lr);
       }
@@ -205,17 +219,18 @@ export class Trainer {
 
       // Compute classification metrics on training data
       if (canMetric && isClass) {
-        this._metrics.push(this._computeMetricsArray(netExt, inputs, targets));
+        this._metrics.push(this._computeMetricsArray(predictor, inputs, targets));
       }
 
       // Early stopping: evaluate on validation set
       if (canValidate && this._validationData) {
-        const valLoss = this._computeLoss(netExt, this._validationData);
+        const valLoss = this._computeLoss(netExt!, this._validationData);
         const minDelta = this._earlyStopping!.minDelta;
 
         if (valLoss < this._bestLoss - minDelta) {
           this._bestLoss = valLoss;
           this._patienceCounter = 0;
+          if (this.restoreBestWeights) bestWeights = [...netExt!.getWeights()];
         } else {
           this._patienceCounter++;
         }
@@ -236,6 +251,11 @@ export class Trainer {
       }
     }
 
+    // Restore the best weights (also when the loop ended by maxEpochs)
+    if (this.restoreBestWeights && bestWeights) {
+      netExt!.setWeights(bestWeights);
+    }
+
     return this._history;
   }
 
@@ -245,6 +265,65 @@ export class Trainer {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** Validates options + dataset. Throws before any network.train call. */
+  private _validateOptions(nSamples: number): void {
+    if (nSamples === 0) {
+      throw new Error('Trainer.train: dataset is empty (inputs and targets have length 0)');
+    }
+    const fail = (msg: string): never => {
+      throw new Error(`Trainer.train: ${msg}`);
+    };
+    const finite = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v);
+
+    if (!(Number.isInteger(this.epochs) && this.epochs > 0)) {
+      fail(`epochs must be an integer > 0, got ${this.epochs}`);
+    }
+    if (!(finite(this.lrInitial) && this.lrInitial > 0)) {
+      fail(`lr must be a finite number > 0, got ${this.lrInitial}`);
+    }
+    if (!(finite(this.lrDecay) && this.lrDecay > 0 && this.lrDecay <= 1)) {
+      fail(`lrDecay must be in (0, 1], got ${this.lrDecay}`);
+    }
+    if (!(finite(this.weightDecay) && this.weightDecay >= 0)) {
+      fail(`weightDecay must be a finite number >= 0, got ${this.weightDecay}`);
+    }
+    const es = this._earlyStopping;
+    if (es && !(Number.isInteger(es.patience) && es.patience >= 1)) {
+      fail(`earlyStopping.patience must be an integer >= 1, got ${es.patience}`);
+    }
+    if (es && !(finite(es.minDelta) && es.minDelta >= 0)) {
+      fail(`earlyStopping.minDelta must be a finite number >= 0, got ${es.minDelta}`);
+    }
+
+    const netExt = this._hasWeights(this.network);
+    const needs = 'requires a network with getWeights/setWeights/predict';
+    if (this.weightDecay > 0 && !netExt) {
+      fail(`weightDecay ${needs}`);
+    }
+    if (es && !netExt) {
+      fail(`earlyStopping ${needs}`);
+    }
+    if (es && !this._validationData) {
+      fail('earlyStopping requires validation data: call setValidationData() before train()');
+    }
+    // Checked here, not in setValidationData, so that a validation set given to a
+    // Trainer without earlyStopping keeps its current behaviour. (Mismatched
+    // lengths are already rejected by setValidationData itself.)
+    if (es && this._validationData && this._validationData.inputs.length === 0) {
+      fail('earlyStopping validation data is empty: setValidationData() needs at least one sample');
+    }
+    if (this.restoreBestWeights && !es) {
+      fail('restoreBestWeights requires earlyStopping (and validation data)');
+    }
+    if (
+      this._computeMetrics &&
+      typeof (this.network as { predict?: unknown }).predict !== 'function'
+    ) {
+      fail('computeMetrics requires a network with predict()');
+    }
+  }
 
   /** Type guard: does this network support getWeights/setWeights/predict? */
   private _hasWeights(
@@ -305,7 +384,7 @@ export class Trainer {
 
   /** Compute classification metrics from predictions vs targets. */
   private _computeMetricsArray(
-    net: TrainableNetworkWithWeights,
+    net: { predict(inputs: number[]): number[] },
     inputs: number[][],
     targets: number[][]
   ): TrainMetrics {

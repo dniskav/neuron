@@ -27,7 +27,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { validateNumber } from "./Validation";
+import { validateArray, validateNumber } from "./Validation";
 
 // ─── Internal matrix utilities ────────────────────────────────────────────────
 // Pure arithmetic on number[][]; no external dependencies.
@@ -158,6 +158,7 @@ export class LinearRegression {
   //   dW = (2/m) · Xaᵀ · (ŷ − y)
   //   W  ← W − lr · dW
   //
+  // Continues from the existing weights when weights.length === nFeatures + 1.
   // Returns the loss (MSE) at every epoch for convergence diagnostics.
 
   fitGD(
@@ -178,12 +179,27 @@ export class LinearRegression {
       throw new Error("LinearRegression.fitGD: epochs must be a positive integer");
     }
 
+    // Validate the data before touching any state
+    if (!Array.isArray(X[0])) {
+      throw new Error(`LinearRegression.fitGD: X[0]: expected array, got ${typeof X[0]}`);
+    }
+    if (X[0].length === 0) {
+      throw new Error("LinearRegression.fitGD: X rows need at least 1 feature");
+    }
+    for (let i = 0; i < X.length; i++) {
+      validateArray(X[i], X[0].length, `LinearRegression.fitGD: X[${i}]`);
+    }
+    validateArray(y, X.length, "LinearRegression.fitGD: y");
+
     this._nFeatures = X[0].length;
     const m = X.length;
     const Xa = augment(X);                          // [m × (n+1)]
 
-    // Initialise weights to zero
-    this.weights = new Array(this._nFeatures + 1).fill(0);
+    // Continue from the existing weights if their length is nFeatures + 1;
+    // otherwise initialise to zero
+    if (this.weights.length !== this._nFeatures + 1) {
+      this.weights = new Array(this._nFeatures + 1).fill(0);
+    }
 
     const lossHistory: number[] = [];
 
@@ -217,17 +233,20 @@ export class LinearRegression {
   // ─── Inference ─────────────────────────────────────────────────────────────
   // ŷ = Σ wᵢ·xᵢ + bias    (bias = weights[last])
 
+  // The number of features is derived from `weights` (length nFeatures + 1),
+  // so weights assigned by hand without fitGD work.
   predict(x: number[]): number {
     if (this.weights.length === 0) {
       throw new Error("LinearRegression.predict: model has not been fitted yet");
     }
-    if (x.length !== this._nFeatures) {
+    const nFeatures = this.weights.length - 1;
+    if (x.length !== nFeatures) {
       throw new Error(
-        `LinearRegression.predict: expected ${this._nFeatures} features, got ${x.length}`
+        `LinearRegression.predict: expected ${nFeatures} features, got ${x.length}`
       );
     }
-    let out = this.weights[this._nFeatures]; // bias
-    for (let i = 0; i < this._nFeatures; i++) {
+    let out = this.weights[nFeatures]; // bias
+    for (let i = 0; i < nFeatures; i++) {
       out += this.weights[i] * x[i];
     }
     return out;
@@ -240,9 +259,10 @@ export class LinearRegression {
         "LinearRegression.getCoefficients: model has not been fitted yet"
       );
     }
+    const nFeatures = this.weights.length - 1;
     return {
-      weights: this.weights.slice(0, this._nFeatures),
-      bias: this.weights[this._nFeatures],
+      weights: this.weights.slice(0, nFeatures),
+      bias: this.weights[nFeatures],
     };
   }
 }

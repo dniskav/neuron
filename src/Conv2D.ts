@@ -9,18 +9,27 @@
 // Kernels: number[][][][] of shape [filters][kH][kW][channels]
 //
 // Output size formula:
-//   outH = floor((H - kH + 2·padH) / stride) + 1
-//   outW = floor((W - kW + 2·padW) / stride) + 1
+//   outH = floor((H - kH + padTop + padBottom) / stride) + 1
+//   outW = floor((W - kW + padLeft + padRight) / stride) + 1
 //
-// Padding 'valid': no padding  → padH = padW = 0
-// Padding 'same':  zero-pad so output ≈ input size (when stride = 1)
-//                  padH = floor(kH / 2),  padW = floor(kW / 2)
+// Padding 'valid': no padding  → all four pads are 0
+// Padding 'same':  zero-pad so that outH = ceil(H / stride), outW = ceil(W / stride)
+//                  (independent per axis). Total padding per axis is k − 1, split
+//                  asymmetrically (not exactly TensorFlow: the output size ceil(L / stride)
+//                  matches, but with stride > 1 the windows are shifted differently,
+//                  since TF uses total = max((ceil(L/s) − 1)·s + k − L, 0)):
+//                    top  = left   = floor((k − 1) / 2)
+//                    bottom = right = (k − 1) − top      (the extra row/column, if any,
+//                                                         goes to bottom/right)
+//                  With odd k this equals the symmetric floor(k / 2) on both sides;
+//                  with even k the output now keeps the input size (4×4, k=4 → 4×4).
 //
 // Xavier initialization:  limit = sqrt(2 / (kH · kW · channels))
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validateArray } from "./Validation";
 
 export class Conv2D {
   readonly inputHeight: number;
@@ -64,6 +73,15 @@ export class Conv2D {
     if (kH <= 0 || kW <= 0) {
       throw new Error('Conv2D: kernelSize must be positive');
     }
+    const stride = options?.stride ?? 1;
+    if (!Number.isInteger(stride) || stride < 1) {
+      throw new Error(`Conv2D: stride must be a finite integer >= 1, got ${stride}`);
+    }
+    if ((options?.padding ?? 'valid') === 'valid' && (kH > inputHeight || kW > inputWidth)) {
+      throw new Error(
+        `Conv2D: kernel ${kH}x${kW} cannot exceed input ${inputHeight}x${inputWidth} with valid padding`
+      );
+    }
 
     this.inputHeight = inputHeight;
     this.inputWidth  = inputWidth;
@@ -98,18 +116,25 @@ export class Conv2D {
     this._bOpts = Array.from({ length: filters }, () => optimizerFactory());
   }
 
+  // ── Padding amounts (per axis, asymmetric for even kernels) ──────────────
+  private _pads(): { top: number; bottom: number; left: number; right: number } {
+    if (this.padding === 'valid') return { top: 0, bottom: 0, left: 0, right: 0 };
+    const top  = Math.floor((this.kH - 1) / 2);
+    const left = Math.floor((this.kW - 1) / 2);
+    return { top, bottom: this.kH - 1 - top, left, right: this.kW - 1 - left };
+  }
+
   // ── Padding helper ────────────────────────────────────────────────────────
   private _pad(input: number[][][]): number[][][] {
     if (this.padding === 'valid') return input;
 
-    const padH = Math.floor(this.kH / 2);
-    const padW = Math.floor(this.kW / 2);
+    const { top, bottom, left, right } = this._pads();
     const H    = input.length;
     const W    = input[0].length;
     const C    = this.channels;
 
-    const paddedH = H + 2 * padH;
-    const paddedW = W + 2 * padW;
+    const paddedH = H + top + bottom;
+    const paddedW = W + left + right;
 
     const out: number[][][] = Array.from({ length: paddedH }, () =>
       Array.from({ length: paddedW }, () => new Array(C).fill(0))
@@ -118,7 +143,7 @@ export class Conv2D {
     for (let h = 0; h < H; h++) {
       for (let w = 0; w < W; w++) {
         for (let c = 0; c < C; c++) {
-          out[h + padH][w + padW][c] = input[h][w][c];
+          out[h + top][w + left][c] = input[h][w][c];
         }
       }
     }
@@ -128,10 +153,9 @@ export class Conv2D {
 
   // ── Output shape ──────────────────────────────────────────────────────────
   outputShape(): [number, number, number] {
-    const padH = this.padding === 'same' ? Math.floor(this.kH / 2) : 0;
-    const padW = this.padding === 'same' ? Math.floor(this.kW / 2) : 0;
-    const outH = Math.floor((this.inputHeight - this.kH + 2 * padH) / this.stride) + 1;
-    const outW = Math.floor((this.inputWidth  - this.kW + 2 * padW) / this.stride) + 1;
+    const { top, bottom, left, right } = this._pads();
+    const outH = Math.floor((this.inputHeight - this.kH + top + bottom) / this.stride) + 1;
+    const outW = Math.floor((this.inputWidth  - this.kW + left + right) / this.stride) + 1;
     return [outH, outW, this.filters];
   }
 
@@ -149,10 +173,7 @@ export class Conv2D {
     this._padded = this._pad(input);
     const padded = this._padded;
 
-    const padH = this.padding === 'same' ? Math.floor(this.kH / 2) : 0;
-    const padW = this.padding === 'same' ? Math.floor(this.kW / 2) : 0;
-    const outH = Math.floor((this.inputHeight - this.kH + 2 * padH) / this.stride) + 1;
-    const outW = Math.floor((this.inputWidth  - this.kW + 2 * padW) / this.stride) + 1;
+    const [outH, outW] = this.outputShape();
 
     const output: number[][][] = Array.from({ length: outH }, () =>
       Array.from({ length: outW }, () => new Array(this.filters).fill(0))
@@ -185,9 +206,25 @@ export class Conv2D {
       throw new Error('Conv2D.backward: call forward() first');
     }
 
+    const [outH, outW] = this.outputShape();
+    if (!Array.isArray(dOutput) || dOutput.length !== outH) {
+      throw new Error(
+        `Conv2D.backward: expected dOutput height ${outH}, got ${Array.isArray(dOutput) ? dOutput.length : typeof dOutput}`
+      );
+    }
+    for (let h = 0; h < outH; h++) {
+      const row = dOutput[h];
+      if (!Array.isArray(row) || row.length !== outW) {
+        throw new Error(
+          `Conv2D.backward: expected dOutput[${h}] width ${outW}, got ${Array.isArray(row) ? row.length : typeof row}`
+        );
+      }
+      for (let w = 0; w < outW; w++) {
+        validateArray(row[w], this.filters, `Conv2D.backward dOutput[${h}][${w}]`);
+      }
+    }
+
     const padded = this._padded;
-    const outH   = dOutput.length;
-    const outW   = dOutput[0].length;
 
     // Gradient accumulators
     const dKernels: number[][][][] = Array.from({ length: this.filters }, () =>
@@ -236,16 +273,10 @@ export class Conv2D {
     }
 
     // Strip padding to recover dInput
-    if (this.padding === 'same') {
-      const padH = Math.floor(this.kH / 2);
-      const padW = Math.floor(this.kW / 2);
-      return dPadded
-        .slice(padH, padH + this.inputHeight)
-        .map(row => row.slice(padW, padW + this.inputWidth));
-    }
+    const { top, left } = this._pads();
     return dPadded
-      .slice(0, this.inputHeight)
-      .map(row => row.slice(0, this.inputWidth));
+      .slice(top, top + this.inputHeight)
+      .map(row => row.slice(left, left + this.inputWidth));
   }
 
   // ── Weight serialization ──────────────────────────────────────────────────
@@ -261,6 +292,11 @@ export class Conv2D {
   }
 
   setWeights(weights: number[]): void {
+    validateArray(
+      weights,
+      this.filters * this.kH * this.kW * this.channels + this.filters,
+      'Conv2D.setWeights'
+    );
     let idx = 0;
     for (let f = 0; f < this.filters; f++)
       for (let kh = 0; kh < this.kH; kh++)

@@ -21,6 +21,7 @@
 
 import { TransformerBlock } from './TransformerBlock'
 import { WeightMatrix, BiasVector } from './MatMul'
+import { validateArray, validate2DArray } from './Validation'
 
 export interface NetworkTransformerRLOptions {
   d_model?:  number    // dimensión del modelo (default: 32)
@@ -183,7 +184,17 @@ export class NetworkTransformerRL {
     return w;
   }
 
+  // Longitud total de la estructura, en el orden de getWeightsFlat.
+  private _expectedFlatLength(): number {
+    return this.inputProj.getWeights().length
+      + this.blocks.reduce((n, block) => n + block.getWeights().length, 0)
+      + this.outputProj.getWeights().length
+      + this.outputBias.values.length;
+  }
+
   setWeightsFlat(weights: number[]): void {
+    // Validar antes de escribir: un error no deja el modelo a medias.
+    validateArray(weights, this._expectedFlatLength(), 'NetworkTransformerRL.setWeightsFlat');
     let idx = 0;
     const inputProjLen = this.inputProj.getWeights().length;
     this.inputProj.setWeights(weights.slice(idx, idx + inputProjLen));
@@ -223,7 +234,57 @@ export class NetworkTransformerRL {
     }
   }
 
+  // Valida la FORMA de cada matriz/vector contra el modelo actual, sin escribir nada.
+  private _validateStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): void {
+    const m = 'NetworkTransformerRL.setWeightsStructured';
+    const mat = (arr: unknown, w: WeightMatrix, name: string) =>
+      validate2DArray(arr, w.W.length, w.W[0]?.length ?? 0, `${m}(${name})`);
+    const vec = (arr: unknown, len: number, name: string) =>
+      validateArray(arr, len, `${m}(${name})`);
+
+    if (data === null || typeof data !== 'object') {
+      throw new Error(`${m}: expected object, got ${data === null ? 'null' : typeof data}`);
+    }
+    mat(data.inputProj, this.inputProj, 'inputProj');
+    if (!Array.isArray(data.blocks) || data.blocks.length !== this.blocks.length) {
+      throw new Error(
+        `${m}: expected ${this.blocks.length} blocks, got ${Array.isArray(data.blocks) ? data.blocks.length : typeof data.blocks}`
+      );
+    }
+    data.blocks.forEach((bd, b) => {
+      const blk = this.blocks[b];
+      const p = `blocks[${b}]`;
+      if (bd === null || typeof bd !== 'object' || bd.attn === null || typeof bd.attn !== 'object') {
+        throw new Error(`${m}: ${p} is malformed`);
+      }
+      if (!Array.isArray(bd.attn.heads) || bd.attn.heads.length !== blk.attn.heads.length) {
+        throw new Error(
+          `${m}: expected ${blk.attn.heads.length} heads in ${p}, got ${Array.isArray(bd.attn.heads) ? bd.attn.heads.length : typeof bd.attn.heads}`
+        );
+      }
+      bd.attn.heads.forEach((hd, h) => {
+        const hp = `${p}.heads[${h}]`;
+        mat(hd?.Wq, blk.attn.heads[h].Wq, `${hp}.Wq`);
+        mat(hd?.Wk, blk.attn.heads[h].Wk, `${hp}.Wk`);
+        mat(hd?.Wv, blk.attn.heads[h].Wv, `${hp}.Wv`);
+      });
+      mat(bd.attn.Wo, blk.attn.Wo, `${p}.attn.Wo`);
+      vec(bd.norm1?.gamma, blk.norm1.gamma.length, `${p}.norm1.gamma`);
+      vec(bd.norm1?.beta, blk.norm1.beta.length, `${p}.norm1.beta`);
+      vec(bd.norm2?.gamma, blk.norm2.gamma.length, `${p}.norm2.gamma`);
+      vec(bd.norm2?.beta, blk.norm2.beta.length, `${p}.norm2.beta`);
+      mat(bd.ff1, blk.ff1, `${p}.ff1`);
+      mat(bd.ff2, blk.ff2, `${p}.ff2`);
+      vec(bd.b1, blk.b1.values.length, `${p}.b1`);
+      vec(bd.b2, blk.b2.values.length, `${p}.b2`);
+    });
+    mat(data.outputProj, this.outputProj, 'outputProj');
+    vec(data.outputBias, this.outputBias.values.length, 'outputBias');
+  }
+
   setWeightsStructured(data: ReturnType<NetworkTransformerRL['getWeightsStructured']>): void {
+    // Validar la forma de TODO antes de escribir: un error deja el modelo intacto.
+    this._validateStructured(data);
     this.inputProj.setWeights(data.inputProj.flat())
     data.blocks.forEach((bd, b) => {
       const blk = this.blocks[b]
@@ -255,6 +316,8 @@ export class NetworkTransformerRL {
   }
 
   setWeights(weights: number[]): void {
+    // Valida con el nombre del método que llama el usuario; setWeightsFlat valida de nuevo.
+    validateArray(weights, this._expectedFlatLength(), 'NetworkTransformerRL.setWeights')
     this.setWeightsFlat(weights)
   }
 

@@ -11,12 +11,17 @@
 //   kernelSize: size of the sliding window
 //   filters: number of output channels
 //   stride: step size (default 1)
-//   padding: 'valid' (no padding) or 'same' (pad to keep output length)
+//   padding: 'valid' (no padding) or 'same' (output length = ceil(L / stride)).
+//     'same' pads total = k - 1 zeros: left = floor(total / 2), right = total - left
+//     (asymmetric for even k, the extra zero goes to the right; symmetric for odd k).
+//     The output length ceil(L / stride) matches TensorFlow, but with stride > 1
+//     the windows are shifted differently (TF uses total = max((ceil(L/s)-1)*s + k - L, 0)).
 //   inputChannels: number of input channels (default 1)
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validateArray } from "./Validation";
 
 export class Conv1D {
   readonly inputLength: number
@@ -53,6 +58,9 @@ export class Conv1D {
     }
     if (inputChannels < 1) {
       throw new Error('Conv1D: inputChannels must be >= 1')
+    }
+    if (!Number.isInteger(stride) || stride < 1) {
+      throw new Error(`Conv1D: stride must be a finite integer >= 1, got ${stride}`)
     }
 
     this.inputLength = inputLength
@@ -91,11 +99,11 @@ export class Conv1D {
     // Apply padding if needed
     let padded: number[][]
     if (this.padding === 'same') {
-      const padSize = Math.floor((this.kernelSize - 1) / 2)
+      const { left, right } = this._samePadding()
       const padRow = new Array(this.inputChannels).fill(0)
-      padded = new Array(padSize).fill(null).map(() => [...padRow])
+      padded = new Array(left).fill(null).map(() => [...padRow])
         .concat(input2D)
-        .concat(new Array(padSize).fill(null).map(() => [...padRow]))
+        .concat(new Array(right).fill(null).map(() => [...padRow]))
     } else {
       padded = input2D
     }
@@ -131,7 +139,17 @@ export class Conv1D {
     }
 
     const padded = this._paddedInput
-    const outputLength = dOut[0].length
+    const outputLength = Math.floor((padded.length - this.kernelSize) / this.stride) + 1
+
+    // Validate dOut shape [filters][outputLength] before touching any state
+    if (!Array.isArray(dOut) || dOut.length !== this.filters) {
+      throw new Error(
+        `Conv1D.backward: expected dOut with ${this.filters} filters, got ${Array.isArray(dOut) ? dOut.length : typeof dOut}`
+      )
+    }
+    for (let f = 0; f < this.filters; f++) {
+      validateArray(dOut[f], outputLength, 'Conv1D.backward')
+    }
 
     // Gradient w.r.t. kernels and biases
     const dKernels: number[][][] = Array.from({ length: this.filters }, () =>
@@ -169,8 +187,8 @@ export class Conv1D {
 
     // Remove padding from gradient
     if (this.padding === 'same') {
-      const padSize = Math.floor((this.kernelSize - 1) / 2)
-      return dPadded.slice(padSize, padSize + this.inputLength)
+      const { left } = this._samePadding()
+      return dPadded.slice(left, left + this.inputLength)
     }
     return dPadded.slice(0, this.inputLength)
   }
@@ -196,6 +214,11 @@ export class Conv1D {
   }
 
   setWeights(weights: number[]): void {
+    validateArray(
+      weights,
+      this.filters * this.kernelSize * this.inputChannels + this.filters,
+      'Conv1D.setWeights',
+    )
     let idx = 0
     for (let f = 0; f < this.filters; f++)
       for (let k = 0; k < this.kernelSize; k++)
@@ -203,6 +226,15 @@ export class Conv1D {
           this.kernels[f][k][c] = weights[idx++]
     for (let f = 0; f < this.filters; f++)
       this.biases[f] = weights[idx++]
+  }
+
+  // 'same' padding: total = k - 1, left = floor(total / 2), right = total - left
+  // (asymmetric: the extra zero goes to the right). With odd k, left === right.
+  // Not identical to TensorFlow for stride > 1 (TF: total = max((ceil(L/s)-1)*s + k - L, 0)).
+  private _samePadding(): { left: number; right: number } {
+    const total = this.kernelSize - 1
+    const left = Math.floor(total / 2)
+    return { left, right: total - left }
   }
 
   // ── Normalize input to 2D format ─────────────────────────────────────────

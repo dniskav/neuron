@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validate2DArray, validateArray } from "./Validation";
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -55,6 +56,11 @@ class Gate {
       row.reduce((s, w, j) => s + w * combined[j], this.b[i])
     );
   }
+}
+
+// Copia profunda de una puerta (matrices y sesgos nuevos).
+function copyGate(g: Gate): { W: number[][]; b: number[] } {
+  return { W: g.W.map(row => [...row]), b: [...g.b] };
 }
 
 // ─── Step record (stored for BPTT) ────────────────────────────────────────────
@@ -178,13 +184,29 @@ export class LSTMLayer {
   // returned { dh0, dc0 } is the gradient with respect to the initial state
   // (h_{-1}, c_{-1}) in the same negated convention, UNSCALED (not divided by T),
   // so a caller that chains layers (Seq2Seq) can feed it to the previous layer.
+  //
+  // Throws (and leaves the trajectory intact) when dh_seq does not match the
+  // trajectory, a row does not measure hiddenSize, or dcFinal does not measure
+  // hiddenSize. An empty trajectory with an empty dh_seq returns zeros as before.
   backprop(
     dh_seq: number[][],
     lr: number,
     dcFinal?: number[],
   ): { dh0: number[]; dc0: number[] } {
     const T = this._traj.length;
-    if (T === 0 || dh_seq.length !== T) {
+    if (!Array.isArray(dh_seq)) {
+      throw new Error(`LSTMLayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
+    }
+    if (dh_seq.length !== T) {
+      throw new Error(`LSTMLayer.backprop: expected dh_seq of length ${T}, got ${dh_seq.length}`);
+    }
+    for (let t = 0; t < T; t++) {
+      validateArray(dh_seq[t], this.hSize, `LSTMLayer.backprop(dh_seq[${t}])`);
+    }
+    if (dcFinal !== undefined) {
+      validateArray(dcFinal, this.hSize, "LSTMLayer.backprop(dcFinal)");
+    }
+    if (T === 0) {
       return { dh0: new Array(this.hSize).fill(0), dc0: new Array(this.hSize).fill(0) };
     }
 
@@ -203,7 +225,7 @@ export class LSTMLayer {
 
     let dh_next: number[] = new Array(hSize).fill(0);
     let dc_next: number[] =
-      dcFinal && dcFinal.length === hSize ? [...dcFinal] : new Array(hSize).fill(0);
+      dcFinal !== undefined ? [...dcFinal] : new Array(hSize).fill(0);
 
     for (let t = T - 1; t >= 0; t--) {
       const s  = this._traj[t];
@@ -278,24 +300,40 @@ export class LSTMLayer {
   }
 
   // ── Serialization ─────────────────────────────────────────────────────────
+  // Returns DEEP COPIES: mutating the result never moves the layer's weights.
   getWeights() {
     return {
-      forgetGate: { W: this.forgetGate.W, b: this.forgetGate.b },
-      inputGate:  { W: this.inputGate.W,  b: this.inputGate.b  },
-      cellGate:   { W: this.cellGate.W,   b: this.cellGate.b   },
-      outputGate: { W: this.outputGate.W, b: this.outputGate.b },
+      forgetGate: copyGate(this.forgetGate),
+      inputGate:  copyGate(this.inputGate),
+      cellGate:   copyGate(this.cellGate),
+      outputGate: copyGate(this.outputGate),
     };
   }
 
+  // Validates every gate's shape (W: hSize × (inputSize + hSize), b: hSize)
+  // BEFORE writing, then copies element by element into the existing arrays.
   setWeights(data: ReturnType<LSTMLayer["getWeights"]>): void {
-    this.forgetGate.W = data.forgetGate.W;
-    this.forgetGate.b = data.forgetGate.b;
-    this.inputGate.W  = data.inputGate.W;
-    this.inputGate.b  = data.inputGate.b;
-    this.cellGate.W   = data.cellGate.W;
-    this.cellGate.b   = data.cellGate.b;
-    this.outputGate.W = data.outputGate.W;
-    this.outputGate.b = data.outputGate.b;
+    const combSize = this.inputSize + this.hSize;
+    const gateNames = ["forgetGate", "inputGate", "cellGate", "outputGate"] as const;
+    if (data === null || typeof data !== "object") {
+      throw new Error("LSTMLayer.setWeights: expected object with forgetGate, inputGate, cellGate and outputGate");
+    }
+    for (const name of gateNames) {
+      const g = data[name];
+      if (g === null || typeof g !== "object") {
+        throw new Error(`LSTMLayer.setWeights: missing gate ${name}`);
+      }
+      validate2DArray(g.W, this.hSize, combSize, `LSTMLayer.setWeights(${name}.W)`);
+      validateArray(g.b, this.hSize, `LSTMLayer.setWeights(${name}.b)`);
+    }
+    for (const name of gateNames) {
+      const dst = this[name];
+      const src = data[name];
+      for (let i = 0; i < this.hSize; i++) {
+        for (let j = 0; j < combSize; j++) dst.W[i][j] = src.W[i][j];
+        dst.b[i] = src.b[i];
+      }
+    }
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
@@ -314,6 +352,8 @@ export class LSTMLayer {
   }
 
   setWeightsFlat(weights: number[]): void {
+    const total = 4 * (this.hSize * (this.inputSize + this.hSize) + this.hSize);
+    validateArray(weights, total, "LSTMLayer.setWeightsFlat");
     let idx = 0;
     for (let i = 0; i < this.forgetGate.W.length; i++)
       for (let j = 0; j < this.forgetGate.W[i].length; j++) this.forgetGate.W[i][j] = weights[idx++];

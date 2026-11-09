@@ -52,6 +52,21 @@ function bce(target: number, pred: number): number {
   return -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
 }
 
+// ─── Training-data validation ─────────────────────────────────────────────────
+// Rows of X must be arrays of the same length as X[0] (at least 1 feature) with
+// finite numbers, and y must be finite. Runs BEFORE any weight or Math.random use.
+function validateTrainingData(X: number[][], y: number[], method: string): void {
+  if (!Array.isArray(X[0])) {
+    throw new Error(`${method}: X[0]: expected array, got ${typeof X[0]}`);
+  }
+  const nFeatures = X[0].length;
+  if (nFeatures === 0) throw new Error(`${method}: X rows need at least 1 feature`);
+  for (let i = 0; i < X.length; i++) {
+    validateArray(X[i], nFeatures, `${method}: X[${i}]`);
+  }
+  validateArray(y, X.length, `${method}: y`);
+}
+
 // ─── LogisticRegression ───────────────────────────────────────────────────────
 
 export class LogisticRegression {
@@ -63,6 +78,7 @@ export class LogisticRegression {
   // ─── Train ────────────────────────────────────────────────────────────────
   // Online SGD over the full dataset for `epochs` passes.
   // Updates are applied after each sample (stochastic gradient descent).
+  // Continues from the existing weights if their length matches the data.
   //
   // Returns the mean BCE loss per epoch for convergence monitoring.
 
@@ -84,8 +100,18 @@ export class LogisticRegression {
       throw new Error("LogisticRegression.train: epochs must be a positive integer");
     }
 
+    validateTrainingData(X, y, "LogisticRegression.train");
+    for (let i = 0; i < y.length; i++) {
+      if (y[i] < 0 || y[i] > 1) {
+        throw new Error(
+          `LogisticRegression.train: y[${i}] = ${y[i]} is outside [0, 1]`
+        );
+      }
+    }
+
     this._nFeatures = X[0].length;
-    // Initialise weights to small random values for symmetry breaking
+    // Continue from the existing weights if their length matches; otherwise
+    // initialise to small random values for symmetry breaking
     if (this.weights.length !== this._nFeatures) {
       const limit = Math.sqrt(2 / this._nFeatures);
       this.weights = Array.from(
@@ -127,16 +153,17 @@ export class LogisticRegression {
   }
 
   // ─── Predict (probability) ────────────────────────────────────────────────
-  // Returns P(y=1|x) ∈ [0, 1].
+  // Returns P(y=1|x) ∈ [0, 1]. The number of features is read from `weights`
+  // (the public field), so weights assigned by hand without train() work.
 
   predict(x: number[]): number {
     if (this.weights.length === 0) {
       throw new Error("LogisticRegression.predict: model has not been trained yet");
     }
-    validateArray(x, this._nFeatures, "LogisticRegression.predict");
+    validateArray(x, this.weights.length, "LogisticRegression.predict");
 
     let z = this.bias;
-    for (let j = 0; j < this._nFeatures; j++) z += this.weights[j] * x[j];
+    for (let j = 0; j < this.weights.length; j++) z += this.weights[j] * x[j];
     return sigmoid(z);
   }
 
@@ -181,7 +208,9 @@ export class SoftmaxRegression {
   }
 
   // ─── Train ────────────────────────────────────────────────────────────────
-  // y must contain integer class labels 0..K-1.
+  // y must contain integer class labels 0..K-1. Continues from the existing
+  // weights when their shape matches the data (a label >= K then throws);
+  // otherwise initialises with K = max(y) + 1.
   // Returns mean cross-entropy loss per epoch.
 
   train(
@@ -202,19 +231,52 @@ export class SoftmaxRegression {
       throw new Error("SoftmaxRegression.train: epochs must be a positive integer");
     }
 
-    this._nFeatures = X[0].length;
-    this._nClasses = Math.max(...y) + 1;
-
-    if (this._nClasses < 2) {
-      throw new Error("SoftmaxRegression.train: need at least 2 classes in y");
+    validateTrainingData(X, y, "SoftmaxRegression.train");
+    let maxLabel = 0;
+    for (let i = 0; i < y.length; i++) {
+      if (!Number.isInteger(y[i]) || y[i] < 0) {
+        throw new Error(
+          `SoftmaxRegression.train: label y[${i}] = ${y[i]} must be an integer >= 0`
+        );
+      }
+      if (y[i] > maxLabel) maxLabel = y[i];
     }
 
-    // Initialise weights to small random values
-    const limit = Math.sqrt(2 / this._nFeatures);
-    this.weights = Array.from({ length: this._nClasses }, () =>
-      Array.from({ length: this._nFeatures }, () => (Math.random() * 2 - 1) * limit)
-    );
-    this.biases = new Array(this._nClasses).fill(0);
+    const nFeatures = X[0].length;
+    // The existing model is continued when its shape matches the data:
+    // K rows of nFeatures weights and K biases.
+    const K = this.weights.length;
+    const shapeMatches =
+      K > 0 &&
+      this.biases.length === K &&
+      this.weights.every(wk => wk.length === nFeatures);
+
+    if (shapeMatches) {
+      // The labels cannot grow an existing model
+      for (let i = 0; i < y.length; i++) {
+        if (y[i] >= K) {
+          throw new Error(
+            `SoftmaxRegression.train: label y[${i}] = ${y[i]} is >= ${K} classes of the existing model`
+          );
+        }
+      }
+      this._nFeatures = nFeatures;
+      this._nClasses = K;
+    } else {
+      this._nFeatures = nFeatures;
+      this._nClasses = maxLabel + 1;
+
+      if (this._nClasses < 2) {
+        throw new Error("SoftmaxRegression.train: need at least 2 classes in y");
+      }
+
+      // Initialise weights to small random values
+      const limit = Math.sqrt(2 / this._nFeatures);
+      this.weights = Array.from({ length: this._nClasses }, () =>
+        Array.from({ length: this._nFeatures }, () => (Math.random() * 2 - 1) * limit)
+      );
+      this.biases = new Array(this._nClasses).fill(0);
+    }
 
     const lossHistory: number[] = [];
 
@@ -253,15 +315,30 @@ export class SoftmaxRegression {
   }
 
   // ─── Predict (class probabilities) ───────────────────────────────────────
+  // The shape is read from the public `weights` / `biases` (K rows of nFeatures,
+  // K biases), so weights assigned by hand without train() work.
   predictProba(x: number[]): number[] {
     if (this.weights.length === 0) {
       throw new Error("SoftmaxRegression.predictProba: model has not been trained yet");
     }
-    validateArray(x, this._nFeatures, "SoftmaxRegression.predictProba");
+    const nFeatures = this.weights[0].length;
+    if (this.biases.length !== this.weights.length) {
+      throw new Error(
+        `SoftmaxRegression.predictProba: expected ${this.weights.length} biases, got ${this.biases.length}`
+      );
+    }
+    this.weights.forEach((wk, k) => {
+      if (wk.length !== nFeatures) {
+        throw new Error(
+          `SoftmaxRegression.predictProba: weights row ${k} has length ${wk.length}, expected ${nFeatures}`
+        );
+      }
+    });
+    validateArray(x, nFeatures, "SoftmaxRegression.predictProba");
 
     const scores = this.weights.map((wk, k) => {
       let s = this.biases[k];
-      for (let j = 0; j < this._nFeatures; j++) s += wk[j] * x[j];
+      for (let j = 0; j < nFeatures; j++) s += wk[j] * x[j];
       return s;
     });
     return this._softmax(scores);

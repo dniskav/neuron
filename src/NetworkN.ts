@@ -102,16 +102,19 @@ export class NetworkN {
   }
 
   // Generalized backpropagation across L layers.
-  // Returns the mean squared error for the example.
+  // Returns the mean squared error for the example, L = (1/n) sum (t - p)^2, and the step is
+  // the gradient of THAT loss: g = -dL/d(output) = (2/n)(t - p) (N10, Q8). With n = 1 the step
+  // is twice the one of versions before 0.4.0 (which trained 0.5 sum (t - p)^2).
+  // trainWithDeltas / inputGradient take deltas computed by the caller and do not rescale.
   train(inputs: number[], targets: number[], lr: number): number {
     validateArray(inputs, this.structure[0], 'NetworkN.train');
     validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
 
     const { act, pre } = this._forwardAll(inputs, true);
     const pred = act[act.length - 1];
-    // g_L = -dL/d(output) for L = 0.5 * sum (t - p)^2. The output derivative
-    // is applied inside _backward, on the output of f (before any residual).
-    const g = pred.map((p, i) => targets[i] - p);
+    // g_L = -dL/d(output) for L = (1/n) * sum (t - p)^2, i.e. (2/n)(t - p). The output
+    // derivative is applied inside _backward, on the output of f (before any residual).
+    const g = pred.map((p, i) => (2 / pred.length) * (targets[i] - p));
     this._backward(act, pre, g, null, lr);
 
     return pred.reduce((s, p, i) => s + (targets[i] - p) ** 2, 0) / pred.length;
@@ -122,9 +125,19 @@ export class NetworkN {
   // Deltas are already multiplied by the output activation derivative, so a
   // residual skip on the LAST layer (which needs dL/d(output)) cannot be
   // propagated: that case throws instead of training with a wrong gradient.
-  trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number): void {
+  // Lengths and values are validated before any Math.random draw (dropout) or weight write.
+  //
+  // reuseMasks (default false): with dropoutRate > 0 the internal forward normally draws a
+  // FRESH dropout mask. With reuseMasks = true it re-applies the masks saved by the last
+  // predict(x, true) and draws nothing, so the update belongs to the very network that
+  // produced the loss (Q9). Throws if dropoutRate > 0 and no masks are saved. With
+  // dropoutRate = 0 the flag changes nothing.
+  trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number, reuseMasks = false): void {
+    validateArray(inputs, this.structure[0], 'NetworkN.trainWithDeltas');
+    validateArray(outputDeltas, this.structure[this.structure.length - 1], 'NetworkN.trainWithDeltas');
     this._assertDeltasSupported('trainWithDeltas');
-    const { act, pre } = this._forwardAll(inputs, true);
+    if (reuseMasks) this._assertMasksSaved('trainWithDeltas');
+    const { act, pre } = this._forwardAll(inputs, true, reuseMasks);
     this._backward(act, pre, null, outputDeltas, lr);
   }
 
@@ -141,14 +154,18 @@ export class NetworkN {
   // generator's own dfn, then call trainWithDeltas on the generator.
   //
   // Throws if the last layer has a residual skip (it would need dL/d(output),
-  // not deltas; Q2). With dropoutRate > 0 a fresh mask is drawn (training
-  // mode, consuming Math.random exactly like trainWithDeltas) and applied in
-  // the backward pass; reseed Math.random for a fixed mask.
-  inputGradient(inputs: number[], outputDeltas: number[]): number[] {
+  // not deltas; Q2). With dropoutRate > 0 and reuseMasks = false (default) a
+  // fresh mask is drawn (training mode, consuming Math.random exactly like
+  // trainWithDeltas) and applied in the backward pass; reseed Math.random for
+  // a fixed mask. With reuseMasks = true it re-applies the masks of the last
+  // predict(x, true), draws nothing, and the result is the exact gradient of
+  // THAT forward pass (Q9); it throws if dropoutRate > 0 and no masks are saved.
+  inputGradient(inputs: number[], outputDeltas: number[], reuseMasks = false): number[] {
     this._assertDeltasSupported('inputGradient');
     validateArray(inputs, this.structure[0], 'NetworkN.inputGradient');
     validateArray(outputDeltas, this.structure[this.structure.length - 1], 'NetworkN.inputGradient');
-    const { act, pre } = this._forwardAll(inputs, true);
+    if (reuseMasks) this._assertMasksSaved('inputGradient');
+    const { act, pre } = this._forwardAll(inputs, true, reuseMasks);
     return this._backward(act, pre, null, outputDeltas, null);
   }
 
@@ -166,7 +183,10 @@ export class NetworkN {
     return w;
   }
 
+  // Validates the total length BEFORE resetting dropout masks or writing, so a
+  // rejected call leaves the network exactly as it was (T010, I2).
   setWeights(weights: number[]): void {
+    validateArray(weights, this._weightCount(), 'NetworkN.setWeights');
     // Reset dropout masks to avoid stale state
     for (const d of this._dropouts) d.resetMask();
     let idx = 0;
@@ -180,6 +200,16 @@ export class NetworkN {
 
   // ── Private helpers ──────────────────────────────────────────────────────
 
+  // Flat weight count: each neuron of layer i has structure[i] weights and one bias,
+  // and layer i has structure[i + 1] neurons.
+  private _weightCount(): number {
+    let total = 0;
+    for (let i = 0; i < this.structure.length - 1; i++) {
+      total += (this.structure[i] + 1) * this.structure[i + 1];
+    }
+    return total;
+  }
+
   private _shouldResidual(layerIndex: number): boolean {
     if (typeof this._residual === 'function') return this._residual(layerIndex);
     return this._residual;
@@ -188,6 +218,18 @@ export class NetworkN {
   private _lastHasResidual(): boolean {
     const last = this.layers.length - 1;
     return this._shouldResidual(last) && this.structure[last] === this.structure[last + 1];
+  }
+
+  // reuseMasks needs the masks of a previous predict(x, true) in EVERY dropout layer. Checked
+  // before the forward pass so a failing call draws nothing and writes nothing.
+  private _assertMasksSaved(method: string): void {
+    if (this._dropouts.some(d => !d.hasMask())) {
+      throw new Error(
+        `NetworkN.${method}: reuseMasks = true needs the dropout masks of a previous ` +
+        `predict(x, true), but none are saved (an inference predict or setWeights/getWeights ` +
+        `clears them). Call predict(x, true) first, or use reuseMasks = false.`
+      );
+    }
   }
 
   private _assertDeltasSupported(method: string): void {
@@ -204,7 +246,10 @@ export class NetworkN {
   //   act[l]  = input of layer l (after residual and dropout of layer l-1)
   //   pre[l]  = output of f in layer l, BEFORE residual and dropout
   // The activation derivative must be evaluated on pre[l], not on act[l+1].
-  private _forwardAll(inputs: number[], training: boolean): { act: number[][]; pre: number[][] } {
+  // With reuseMasks the dropout layers re-apply their saved masks instead of drawing new ones.
+  private _forwardAll(
+    inputs: number[], training: boolean, reuseMasks = false,
+  ): { act: number[][]; pre: number[][] } {
     const act: number[][] = [inputs];
     const pre: number[][] = [];
     for (let i = 0; i < this.layers.length; i++) {
@@ -218,7 +263,9 @@ export class NetworkN {
         current = layerOutput;
       }
       if (i < this._dropouts.length) {
-        current = this._dropouts[i].forward(current, training);
+        current = reuseMasks
+          ? this._dropouts[i].reuseMask(current)
+          : this._dropouts[i].forward(current, training);
       }
       act.push(current);
     }

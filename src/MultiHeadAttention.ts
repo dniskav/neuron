@@ -20,6 +20,7 @@
 
 import { AttentionHead } from './AttentionHead'
 import { WeightMatrix }  from './MatMul'
+import { validateArray } from './Validation'
 
 export class MultiHeadAttention {
   readonly nHeads:  number
@@ -128,6 +129,11 @@ export class MultiHeadAttention {
   }
 
   setWeights(weights: number[]): void {
+    // Longitud total (todas las cabezas + Wo), comprobada ANTES de escribir.
+    const expected =
+      this.heads.reduce((s, head) => s + head.getWeights().length, 0) +
+      this.Wo.W.reduce((s, row) => s + row.length, 0);
+    validateArray(weights, expected, 'MultiHeadAttention.setWeights');
     let idx = 0;
     for (const head of this.heads) {
       for (let i = 0; i < head.Wq.W.length; i++)

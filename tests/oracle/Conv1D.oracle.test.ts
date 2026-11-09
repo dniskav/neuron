@@ -1,4 +1,4 @@
-// Gradient-oracle test for Conv1D (feature 002, T010).
+// Gradient-oracle test for Conv1D.
 //
 // Same template as tests/oracle/NetworkN.oracle.test.ts:
 //   1. smoke   - forward/backward finitos, forma de la salida y numero de pesos.
@@ -116,4 +116,63 @@ describe('Conv1D oraculo', () => {
     const m = setup('valid')
     expectLearns({ loss: m.loss, step: () => m.step(0.05), steps: 200 })
   })
+})
+
+// ── Oraculo de dInput por componente ────────────────────────────────────────
+// L = 1/2 * sum (y - t)^2 sobre la ENTRADA. Conv1D es lineal en la entrada, asi que
+// la diferencia central con h = 1e-4 es exacta salvo redondeo (~1e-11): el umbral
+// 1e-6 deja cinco ordenes de margen. Pesos, entrada y objetivo salen de formulas
+// deterministas (sin semilla). backward(dOut = y - t) devuelve dL/dx; lr = 0 no
+// modifica los pesos.
+// Limite: el oraculo compara backward con forward del mismo codigo, asi que un
+// intercambio de left/right aplicado a los dos no se detecta aqui; lo cubre el caso
+// calculado a mano (k = 4, L = 6, same) de tests/api/Conv1D.padding.test.ts.
+describe('Conv1D oraculo de dInput (diferencias finitas)', () => {
+  const val = (i: number, salt: number) => Math.sin(1.9 * i + salt) * 0.8 + 0.1
+
+  const configs: Array<[string, number, 'valid' | 'same', number]> = [
+    ['valid k=3 stride 1', 3, 'valid', 1],
+    ['valid k=4 stride 1', 4, 'valid', 1],
+    ['same k=3 (impar)', 3, 'same', 1],
+    ['same k=5 (impar)', 5, 'same', 1],
+    ['same k=2 (par)', 2, 'same', 1],
+    ['same k=4 (par)', 4, 'same', 1],
+    ['same k=6 (par)', 6, 'same', 1],
+    ['valid k=3 stride 2', 3, 'valid', 2],
+    ['same k=3 stride 2', 3, 'same', 2],
+    ['same k=4 stride 2', 4, 'same', 2],
+    ['same k=4 stride 3', 4, 'same', 3],
+  ]
+
+  for (const ch of [1, 2]) {
+    for (const [label, k, padding, stride] of configs) {
+      it(`${label}, ${ch} canal(es)`, () => {
+        const L = 9
+        const filters = 2
+        const conv = new Conv1D(L, k, filters, stride, padding, () => new SGD(), ch)
+        conv.setWeights(Array.from({ length: filters * k * ch + filters }, (_, i) => val(i, 0.2)))
+        const x0 = Array.from({ length: L }, (_, p) => Array.from({ length: ch }, (_, c) => val(p * ch + c, 1.3)))
+        const outLen = conv.getOutputLength()
+        const t = Array.from({ length: filters }, (_, f) =>
+          Array.from({ length: outLen }, (_, p) => val(f * outLen + p, 2.1)))
+        const loss = (x: number[][]) => {
+          const y = conv.forward(x)
+          let s = 0
+          for (let f = 0; f < filters; f++)
+            for (let p = 0; p < outLen; p++) s += 0.5 * (y[f][p] - t[f][p]) ** 2
+          return s
+        }
+        const y = conv.forward(x0)
+        const analytic = conv.backward(y.map((row, f) => row.map((v, p) => v - t[f][p])), 0)
+        const h = 1e-4
+        for (let p = 0; p < L; p++)
+          for (let c = 0; c < ch; c++) {
+            const xp = x0.map((r) => [...r]); xp[p][c] += h
+            const xm = x0.map((r) => [...r]); xm[p][c] -= h
+            const numeric = (loss(xp) - loss(xm)) / (2 * h)
+            expect(Math.abs(analytic[p][c] - numeric), `x[${p}][${c}]`).toBeLessThan(1e-6)
+          }
+      })
+    }
+  }
 })

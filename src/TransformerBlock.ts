@@ -22,6 +22,7 @@
 import { MultiHeadAttention } from './MultiHeadAttention'
 import { LayerNorm }          from './LayerNorm'
 import { WeightMatrix, BiasVector } from './MatMul'
+import { validateArray } from './Validation'
 
 export interface TransformerBlockOptions {
   d_model: number
@@ -220,6 +221,9 @@ export class TransformerBlock {
   }
 
   setWeights(weights: number[]): void {
+    // Validación en el nivel exterior: la longitud total de la estructura, ANTES
+    // de trocear. Si solo validaran los hijos, un array largo se recortaría en silencio.
+    validateArray(weights, this.getWeights().length, 'TransformerBlock.setWeights');
     let idx = 0;
     const attnLen = this.attn.getWeights().length;
     this.attn.setWeights(weights.slice(idx, idx + attnLen));

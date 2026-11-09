@@ -1,3 +1,5 @@
+import { validateArray } from './Validation';
+
 // ─── Layer Normalization ──────────────────────────────────────────────────────
 //
 // Normalizes each token's feature vector independently:
@@ -101,6 +103,7 @@ export class LayerNorm {
 
   setWeights(weights: number[]): void {
     const dim = this.gamma.length;
+    validateArray(weights, 2 * dim, 'LayerNorm.setWeights');
     for (let i = 0; i < dim; i++) this.gamma[i] = weights[i];
     for (let i = 0; i < dim; i++) this.beta[i] = weights[dim + i];
   }

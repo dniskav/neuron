@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validate2DArray, validateArray } from "./Validation";
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -45,6 +46,11 @@ class Gate {
       row.reduce((s, w, j) => s + w * combined[j], this.b[i])
     );
   }
+}
+
+// Copia profunda de una puerta (matrices y sesgos nuevos).
+function copyGate(g: Gate): { W: number[][]; b: number[] } {
+  return { W: g.W.map(row => [...row]), b: [...g.b] };
 }
 
 interface Step {
@@ -143,9 +149,21 @@ export class GRULayer {
     return h;
   }
 
+  // Throws (and leaves the trajectory intact) when dh_seq does not match the
+  // trajectory or a row does not measure hiddenSize. An empty trajectory with an
+  // empty dh_seq is a no-op, as before.
   backprop(dh_seq: number[][], lr: number): void {
     const T = this._traj.length;
-    if (T === 0 || dh_seq.length !== T) return;
+    if (!Array.isArray(dh_seq)) {
+      throw new Error(`GRULayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
+    }
+    if (dh_seq.length !== T) {
+      throw new Error(`GRULayer.backprop: expected dh_seq of length ${T}, got ${dh_seq.length}`);
+    }
+    for (let t = 0; t < T; t++) {
+      validateArray(dh_seq[t], this.hSize, `GRULayer.backprop(dh_seq[${t}])`);
+    }
+    if (T === 0) return;
 
     const hSize = this.hSize;
     const combSize = this.inputSize + hSize;
@@ -245,6 +263,8 @@ export class GRULayer {
   }
 
   setWeightsFlat(weights: number[]): void {
+    const total = 3 * (this.hSize * (this.inputSize + this.hSize) + this.hSize);
+    validateArray(weights, total, "GRULayer.setWeightsFlat");
     let idx = 0;
     for (let i = 0; i < this.resetGate.W.length; i++)
       for (let j = 0; j < this.resetGate.W[i].length; j++) this.resetGate.W[i][j] = weights[idx++];
@@ -257,20 +277,38 @@ export class GRULayer {
     for (let i = 0; i < this.newGate.b.length; i++) this.newGate.b[i] = weights[idx++];
   }
 
+  // Returns DEEP COPIES: mutating the result never moves the layer's weights.
   getWeights() {
     return {
-      resetGate: { W: this.resetGate.W, b: this.resetGate.b },
-      updateGate: { W: this.updateGate.W, b: this.updateGate.b },
-      newGate: { W: this.newGate.W, b: this.newGate.b },
+      resetGate: copyGate(this.resetGate),
+      updateGate: copyGate(this.updateGate),
+      newGate: copyGate(this.newGate),
     };
   }
 
+  // Validates every gate's shape (W: hSize × (inputSize + hSize), b: hSize)
+  // BEFORE writing, then copies element by element into the existing arrays.
   setWeights(data: ReturnType<GRULayer["getWeights"]>): void {
-    this.resetGate.W = data.resetGate.W;
-    this.resetGate.b = data.resetGate.b;
-    this.updateGate.W = data.updateGate.W;
-    this.updateGate.b = data.updateGate.b;
-    this.newGate.W = data.newGate.W;
-    this.newGate.b = data.newGate.b;
+    const combSize = this.inputSize + this.hSize;
+    const gateNames = ["resetGate", "updateGate", "newGate"] as const;
+    if (data === null || typeof data !== "object") {
+      throw new Error("GRULayer.setWeights: expected object with resetGate, updateGate and newGate");
+    }
+    for (const name of gateNames) {
+      const g = data[name];
+      if (g === null || typeof g !== "object") {
+        throw new Error(`GRULayer.setWeights: missing gate ${name}`);
+      }
+      validate2DArray(g.W, this.hSize, combSize, `GRULayer.setWeights(${name}.W)`);
+      validateArray(g.b, this.hSize, `GRULayer.setWeights(${name}.b)`);
+    }
+    for (const name of gateNames) {
+      const dst = this[name];
+      const src = data[name];
+      for (let i = 0; i < this.hSize; i++) {
+        for (let j = 0; j < combSize; j++) dst.W[i][j] = src.W[i][j];
+        dst.b[i] = src.b[i];
+      }
+    }
   }
 }
