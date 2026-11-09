@@ -33,8 +33,8 @@
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 
 function tanh(x: number): number {
-  const e = Math.exp(2 * x);
-  return (e - 1) / (e + 1);
+  // Math.tanh is stable: (e^{2x} − 1)/(e^{2x} + 1) gave NaN (Infinity/Infinity) for x ≳ 355.
+  return Math.tanh(x);
 }
 
 // ─── Step record (stored for BPTT) ───────────────────────────────────────────
