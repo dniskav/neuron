@@ -246,3 +246,22 @@ describe('Conv2D same padding (I4, N5)', () => {
     expect(conv.getWeights()).toEqual(w)
   })
 })
+
+// T022: validacion de stride y valid con kernel mayor que la entrada
+describe('Conv2D stride and valid-kernel validation (T022)', () => {
+  for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+    it(`stride ${bad} lanza Error con texto`, () => {
+      expect(() => new Conv2D(4, 4, 1, 2, 1, { stride: bad })).toThrow(/Conv2D: stride must be a finite integer >= 1/)
+    })
+  }
+  it('valid con k > H lanza Error claro', () => {
+    expect(() => new Conv2D(2, 4, 1, [3, 2], 1)).toThrow(/cannot exceed input.*valid padding/)
+  })
+  it('valid con k > W lanza Error claro', () => {
+    expect(() => new Conv2D(4, 2, 1, [2, 3], 1, { padding: 'valid' })).toThrow(/cannot exceed input.*valid padding/)
+  })
+  it('valid con k == H y same con k > H siguen permitidos', () => {
+    expect(new Conv2D(3, 3, 1, 3, 1).outputShape()).toEqual([1, 1, 1])
+    expect(new Conv2D(2, 2, 1, 3, 1, { padding: 'same' }).outputShape()).toEqual([2, 2, 1])
+  })
+})

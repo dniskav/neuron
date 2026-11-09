@@ -205,3 +205,15 @@ describe('Conv1D validacion', () => {
     expect(conv.getWeights()).toEqual(shifted(w))
   })
 })
+
+// T022: validacion de stride
+describe('Conv1D stride validation (T022)', () => {
+  for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+    it(`stride ${bad} lanza Error con texto`, () => {
+      expect(() => new Conv1D(8, 3, 1, bad)).toThrow(/Conv1D: stride must be a finite integer >= 1/)
+    })
+  }
+  it('stride valido sigue funcionando', () => {
+    expect(new Conv1D(8, 3, 1, 2).getOutputLength()).toBe(3)
+  })
+})

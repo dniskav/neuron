@@ -13,7 +13,9 @@
 //   stride: step size (default 1)
 //   padding: 'valid' (no padding) or 'same' (output length = ceil(L / stride)).
 //     'same' pads total = k - 1 zeros: left = floor(total / 2), right = total - left
-//     (asymmetric for even k, as in TensorFlow; symmetric for odd k).
+//     (asymmetric for even k, the extra zero goes to the right; symmetric for odd k).
+//     The output length ceil(L / stride) matches TensorFlow, but with stride > 1
+//     the windows are shifted differently (TF uses total = max((ceil(L/s)-1)*s + k - L, 0)).
 //   inputChannels: number of input channels (default 1)
 //
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +58,9 @@ export class Conv1D {
     }
     if (inputChannels < 1) {
       throw new Error('Conv1D: inputChannels must be >= 1')
+    }
+    if (!Number.isInteger(stride) || stride < 1) {
+      throw new Error(`Conv1D: stride must be a finite integer >= 1, got ${stride}`)
     }
 
     this.inputLength = inputLength
@@ -224,7 +229,8 @@ export class Conv1D {
   }
 
   // 'same' padding: total = k - 1, left = floor(total / 2), right = total - left
-  // (asymmetric, TensorFlow style). With odd k, left === right.
+  // (asymmetric: the extra zero goes to the right). With odd k, left === right.
+  // Not identical to TensorFlow for stride > 1 (TF: total = max((ceil(L/s)-1)*s + k - L, 0)).
   private _samePadding(): { left: number; right: number } {
     const total = this.kernelSize - 1
     const left = Math.floor(total / 2)
