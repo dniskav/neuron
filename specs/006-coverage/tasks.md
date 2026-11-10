@@ -204,13 +204,13 @@
       Mutantes: quitar cada validación (4 mutantes); `<UNK>` sustituido por una excepción.
       Gate: `npx vitest run tests/api/Preprocessing.validation.test.ts tests/DataAugmentation.test.ts tests/MaxPool2D.test.ts tests/Flatten.test.ts tests/Tokenizer.test.ts && GC`.
 
-- [ ] T044 [P] [H] [files: tests/coverage.modules.test.ts] FR-011: meta-test que lee `src/` como texto (como `tests/oracle/coverage.test.ts`, que carga `node:fs` con un tipo mínimo propio; el proyecto no declara `@types/node`) y falla si algún módulo (excepto `index.ts` y una lista de excepciones con motivo en el propio archivo: `activations`, `optimizers`, `Tape`, `Layer` si se cubren con otro nombre; el agente construye la lista leyendo qué módulos tienen `tests/<Módulo>*.test.ts` o `tests/oracle/<Módulo>*.test.ts` o `tests/api/<Módulo>*.test.ts`) no tiene ningún archivo de test con su nombre.
+- [x] T044 [P] [H] [files: tests/coverage.modules.test.ts] FR-011: meta-test que lee `src/` como texto (como `tests/oracle/coverage.test.ts`, que carga `node:fs` con un tipo mínimo propio; el proyecto no declara `@types/node`) y falla si algún módulo (excepto `index.ts` y una lista de excepciones con motivo en el propio archivo: `activations`, `optimizers`, `Tape`, `Layer` si se cubren con otro nombre; el agente construye la lista leyendo qué módulos tienen `tests/<Módulo>*.test.ts` o `tests/oracle/<Módulo>*.test.ts` o `tests/api/<Módulo>*.test.ts`) no tiene ningún archivo de test con su nombre.
       Mutantes: renombrar un archivo de test (el meta-test falla); añadir un módulo vacío `src/Foo.ts` (falla); quitar una excepción.
       Gate: `npx vitest run tests/coverage.modules.test.ts && GC`.
 
 ## Lote 12 (serie, tras integrar todo)
 
-- [ ] T045 [H] [files: vitest.config.ts] Umbral de cobertura: ejecutar `npx vitest run --coverage` en la rama integrada, leer los valores globales (líneas, ramas, funciones, sentencias) y fijar `coverage.thresholds` en el valor medido menos 2 puntos (redondeado hacia abajo). Informar los valores medidos y los fijados.
+- [x] T045 [H] [files: vitest.config.ts] Umbral de cobertura: ejecutar `npx vitest run --coverage` en la rama integrada, leer los valores globales (líneas, ramas, funciones, sentencias) y fijar `coverage.thresholds` en el valor medido menos 2 puntos (redondeado hacia abajo). Informar los valores medidos y los fijados.
       Mutantes: n/a; comprobación: `npm run coverage` pasa, y con un umbral temporal de 100 falla.
       Gate: `npm run coverage && npm run typecheck && git diff --quiet -- package.json package-lock.json src/index.ts`.
 
@@ -351,4 +351,10 @@
 - Gate: `grep -rnE "push\(\.\.\.|Math\.(max|min)\(\.\.\." src/` solo devuelve el comentario de `src/Metrics.ts:353` (aceptado).
 - Cambio observable para el changelog: `getWeights` de `Network`/`NetworkN`/`Conv1D`/`Conv2D`, `WeightInspector.inspect`/`inspectAll`, `softmax`, `SoftmaxRegression.predict`/`predictProba`, `GaussianNaiveBayes.predictProba`, las métricas de `Trainer`, `LRScheduler.plateauDecay` y `Word2Vec` ya no lanzan `RangeError` con vectores de más de ~125 000 elementos.
 - Estado: 2410 tests, 131 archivos; Haiku a la primera.
+
+### T044 y T045 (integradas, 2026-11-11)
+
+- T044 (`tests/coverage.modules.test.ts`, 5 tests, 3 mutantes): falla si un módulo de `src/` (56 sin `index.ts`) no tiene test con su nombre en `tests/`, `tests/oracle/` o `tests/api/`. Comparación sensible a mayúsculas y con límite estricto (`Network` no lo cubre `NetworkN.test.ts`). Excepciones verificadas: `activations` → `tests/Activations.test.ts`, `optimizers` → `tests/Optimizers.test.ts`; una excepción obsoleta o sin archivo también hace fallar el test.
+- T045 (`vitest.config.mts`; la spec decía `.ts`): medido en 3 ejecuciones iguales lines 99.38, branches 96.50, functions 99.55, statements 99.25; fijado `thresholds` = 97 / 94 / 97 / 97. Timeout explícito de 30 s en el test «la perdida de train baja…» de `tests/Word2Vec.test.ts` y en los dos «learns: …» de `tests/oracle/VAE.oracle.test.ts` (sin tocar aserciones). Con umbral temporal de 100, `npm run coverage` falla. HUECO: `ci.yml` ejecuta `npm test`, no `npm run coverage`, así que el umbral NO se comprueba en CI (cambiar `ci.yml` es decisión del usuario; candidato para el PR de la 006 o la 007).
+- Estado: 2415 tests, 132 archivos; Haiku a la primera en ambas.
 
