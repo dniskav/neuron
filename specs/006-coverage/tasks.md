@@ -214,7 +214,7 @@
       Mutantes: n/a; comprobación: `npm run coverage` pasa, y con un umbral temporal de 100 falla.
       Gate: `npm run coverage && npm run typecheck && git diff --quiet -- package.json package-lock.json src/index.ts`.
 
-- [ ] T046 [S] [files: ninguno (revisión; el agente `math-reviewer` no edita)] Revisión de una muestra por Sonnet: repite los mutantes de T002 (`Metrics`), T003 (`DecisionTree`), T005 (`PCA`) y T020 (`TSNE`) y comprueba que las cifras esperadas están deducidas a mano (recalcula 3 por archivo) y que las tareas de validación (T036–T043) no cambiaron números de entradas válidas. Informe: lista de mutantes no detectados y de cifras copiadas de la salida.
+- [x] T046 [S] [files: ninguno (revisión; el agente `math-reviewer` no edita)] Revisión de una muestra por Sonnet: repite los mutantes de T002 (`Metrics`), T003 (`DecisionTree`), T005 (`PCA`) y T020 (`TSNE`) y comprueba que las cifras esperadas están deducidas a mano (recalcula 3 por archivo) y que las tareas de validación (T036–T043) no cambiaron números de entradas válidas. Informe: lista de mutantes no detectados y de cifras copiadas de la salida.
       Gate: informe con 0 mutantes no detectados y 0 cifras sin derivación; si hay alguno, se reabre la tarea correspondiente.
 
 - [ ] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
@@ -357,4 +357,29 @@
 - T044 (`tests/coverage.modules.test.ts`, 5 tests, 3 mutantes): falla si un módulo de `src/` (56 sin `index.ts`) no tiene test con su nombre en `tests/`, `tests/oracle/` o `tests/api/`. Comparación sensible a mayúsculas y con límite estricto (`Network` no lo cubre `NetworkN.test.ts`). Excepciones verificadas: `activations` → `tests/Activations.test.ts`, `optimizers` → `tests/Optimizers.test.ts`; una excepción obsoleta o sin archivo también hace fallar el test.
 - T045 (`vitest.config.mts`; la spec decía `.ts`): medido en 3 ejecuciones iguales lines 99.38, branches 96.50, functions 99.55, statements 99.25; fijado `thresholds` = 97 / 94 / 97 / 97. Timeout explícito de 30 s en el test «la perdida de train baja…» de `tests/Word2Vec.test.ts` y en los dos «learns: …» de `tests/oracle/VAE.oracle.test.ts` (sin tocar aserciones). Con umbral temporal de 100, `npm run coverage` falla. HUECO: `ci.yml` ejecuta `npm test`, no `npm run coverage`, así que el umbral NO se comprueba en CI (cambiar `ci.yml` es decisión del usuario; candidato para el PR de la 006 o la 007).
 - Estado: 2415 tests, 132 archivos; Haiku a la primera en ambas.
+
+### T046 (revisión hecha, 2026-11-11): veredicto FAIL del gate → abre T061–T063
+
+- `math-reviewer` (Sonnet) aplicó 78 mutantes (27 `Metrics`, 16 `DecisionTree`, 23 `PCA`, 16 `TSNE`): 66 detectados, 12 no. De los 12, 2 son equivalentes (guarda de lado vacío en `DecisionTree`; `2σ²` en `TSNE`, que la búsqueda binaria compensa). Cifras: 12 grupos recalculados con fracciones exactas, todos coinciden y están derivados en los tests (0 sin derivación). T036–T043: solo validación; goldens propios idénticos en 17 clases salvo los cambios declarados (`f1Score` macro). `DecisionTree` (T003): PASS.
+- Huecos reales (los tests pasan con el mutante):
+  - `Metrics`: `auc` con regla del rectángulo (ningún test tiene puntuaciones empatadas entre clases; con `yTrue=[0,1]`, `scores=[.5,.5]` lo correcto es 0.5); `classificationReport` con soporte `!==` (el caso es balanceado 2/2) y con `p + r >= 0` (ninguna clase tiene p+r = 0).
+  - `PCA`: deflación con signo cambiado u omitida, y `_orthogonalize` quitada en cualquiera de sus tres usos o del todo: los 45 tests pasan. El caso de rango 3 con 4 columnas que T051 cita (error 2.06 antes del arreglo) no está en `tests/PCA.test.ts`; el revisor no logró fabricar un caso que falle sin ortogonalización.
+  - `TSNE`: kernel `1/(1+√d2)` en vez de `1/(1+d2)` y escala de inicialización ×1 en vez de ×0.01: los 15 tests pasan. Además el margen real de separación es ~4 % (2.23 frente a 2.143), no el ≥ 30 % que dice la cabecera.
+- Menores: `tests/api/Unsupervised.validation.test.ts` tiene goldens tomados de la salida (declarados en T038); la rama de F1 de `classificationReport` duplica `_harmonicMean`; `EarlyStopping` con `patience: 0` ahora lanza (T042).
+
+- [ ] T061 [P] [H] [files: tests/Metrics.test.ts] Hallazgo de T046: tests de `auc` con puntuaciones empatadas entre clases (esperado 0.5 con `yTrue=[0,1]`, `scores=[.5,.5]`, y un caso mixto derivado a mano), `classificationReport` con soportes distintos por clase y con una clase con p + r = 0 (F1 = 0, sin NaN). Solo tests; si alguno revela un defecto de `src`, NO fijarlo: informar.
+      Mutantes: `dx*avgY` → `dx*curve[i].tpr`; soporte `y === c` → `!==`; `p + r > 0` → `>= 0`.
+      Gate: `npx vitest run tests/Metrics.test.ts tests/api/Metrics.validation.test.ts && GC`.
+- [ ] T062 [P] [S] [files: tests/PCA.test.ts] Hallazgo de T046: test que sensibilice la deflación y la reortogonalización de `PCA` (p. ej. el caso de rango 3 con 4 columnas de T051, o autovalores casi iguales con `nComponents` ≥ 3, comprobando ortonormalidad de los ejes y autovalores derivados a mano). Si se demuestra que deflación y ortogonalización son redundantes, NO tocar `src`: informar con la demostración para que el orquestador decida (simplificar o documentar).
+      Mutantes: deflación `+=`; deflación omitida; `_orthogonalize` eliminada en cada uno de sus usos y del todo.
+      Gate: `npx vitest run tests/PCA.test.ts && GC`.
+- [ ] T063 [P] [S] [files: tests/TSNE.test.ts] Hallazgo de T046: test que fije el kernel Student-t (KL o gradiente a mano con n = 3, o una propiedad que solo cumpla `1/(1+d²)`) y la escala de inicialización (×0.01, observable con `seed` y pocas iteraciones); corregir en la cabecera la afirmación del margen de separación (real ~4 %: 2.23 frente a 2.143) o ajustar el umbral para que el margen sea ≥ 30 % medido con perturbaciones de semilla. Solo tests.
+      Mutantes: kernel `1/(1+√d2)`; init ×1.
+      Gate: `npx vitest run tests/TSNE.test.ts && GC`.
+
+### T047 (parte local, 2026-11-11)
+
+- 20 ejecuciones seguidas y 5 con `--sequence.shuffle` en Node 26: todas verdes (2415 tests). Bajo Node 20.19 las 3 FALLARON por un test del Lote 13 (`tests/api/Misc.validation.test.ts`, golden de `PositionalEncoding.encode(5, 6)` con igualdad exacta: `Math.pow`/`Math.sin` difieren en 1 ULP entre V8 de Node 20 y 26). Corregido por el orquestador con tolerancia 1e-12; después, 3 de 3 verdes en Node 20.19 y `npm run coverage` verde en Node 20. `tsc --noEmit -p .` y build limpios; 0 `it.fails`/`it.todo`; `package*.json` y `src/index.ts` sin cambios desde 957d618.
+- LECCIÓN: los goldens con funciones trascendentes (`sin`, `cos`, `pow`, `exp`, `tanh`) no deben usar `toEqual`; usar tolerancia. Validar los lotes también bajo Node 20.19 antes de integrar.
+- T047 sigue ABIERTA: falta repetir la batería tras T061–T063 (y T060), subir la rama y el PR con CI en verde.
 
