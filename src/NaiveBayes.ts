@@ -34,6 +34,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateDataset } from './Validation'
+
 export class GaussianNaiveBayes {
   // Per-class, per-feature statistics
   private _means:     Map<number, number[]> = new Map();
@@ -49,14 +51,10 @@ export class GaussianNaiveBayes {
   // when a feature is perfectly constant within a class.
 
   fit(X: number[][], y: number[]): void {
-    if (X.length === 0) throw new Error("GaussianNaiveBayes.fit: X is empty");
-    if (X.length !== y.length) {
-      throw new Error(
-        `GaussianNaiveBayes.fit: X has ${X.length} rows but y has ${y.length} labels`
-      );
-    }
+    // Rectangular, finite X and finite y: checked before any state is touched.
+    const nFeatures = validateDataset(X, y, "GaussianNaiveBayes.fit");
 
-    this._nFeatures = X[0].length;
+    this._nFeatures = nFeatures;
     const m = X.length;
 
     // Collect unique classes
