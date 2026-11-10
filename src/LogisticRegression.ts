@@ -52,6 +52,23 @@ function bce(target: number, pred: number): number {
   return -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
 }
 
+// Loop equivalents of a Math.max spread and of indexOf over that max. A spread
+// of >~125 000 arguments overflows the stack, so these fold with Math.max instead:
+// same result, including -Infinity for [] and NaN when any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
+// First index of the maximum, like indexOf over the Math.max result: -1 when the
+// maximum is NaN (no element is === NaN) or when values is empty.
+function _argmax(values: number[]): number {
+  const m = _maxOf(values);
+  for (let i = 0; i < values.length; i++) if (values[i] === m) return i;
+  return -1;
+}
+
 // ─── LogisticRegression ───────────────────────────────────────────────────────
 
 export class LogisticRegression {
@@ -180,7 +197,7 @@ export class SoftmaxRegression {
   // ─── Softmax helper ──────────────────────────────────────────────────────
   private _softmax(scores: number[]): number[] {
     // Subtract max for numerical stability: exp(x − max) avoids overflow
-    const maxScore = Math.max(...scores);
+    const maxScore = _maxOf(scores);
     const exps = scores.map(s => Math.exp(s - maxScore));
     const sum = exps.reduce((a, b) => a + b, 0);
     return exps.map(e => e / sum);
@@ -322,6 +339,6 @@ export class SoftmaxRegression {
   // ─── Classify (argmax) ────────────────────────────────────────────────────
   predict(x: number[]): number {
     const probs = this.predictProba(x);
-    return probs.indexOf(Math.max(...probs));
+    return _argmax(probs);
   }
 }

@@ -55,7 +55,9 @@ export class WeightInspector {
     return network.layers.map((layer) => {
       const weights: number[] = [];
       for (const neuron of layer.neurons) {
-        weights.push(...neuron.weights, neuron.bias);
+        // Loops, not a push spread: a spread of >~125 000 arguments overflows the stack.
+        for (const v of neuron.weights) weights.push(v);
+        weights.push(neuron.bias);
       }
       return _computeStats(weights, deadThreshold);
     });
@@ -68,7 +70,8 @@ export class WeightInspector {
     const allWeights: number[] = [];
     for (const layer of network.layers) {
       for (const neuron of layer.neurons) {
-        allWeights.push(...neuron.weights, neuron.bias);
+        for (const v of neuron.weights) allWeights.push(v);
+        allWeights.push(neuron.bias);
       }
     }
     return _computeStats(allWeights, deadThreshold);

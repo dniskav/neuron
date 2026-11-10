@@ -209,7 +209,8 @@ export class Conv1D {
       for (const k of kernel)
         for (const c of k)
           w.push(c)
-    w.push(...this.biases)
+    // Loop, not a push spread: a spread of >~125 000 arguments overflows the stack.
+    for (const b of this.biases) w.push(b)
     return w
   }
 
