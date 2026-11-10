@@ -73,10 +73,15 @@ describe('golden: entradas válidas no cambian', () => {
       [0.8414709848078965, 0.5403023058681398, 0.009999833334166664, 0.9999500004166653],
       [0.9092974268256817, -0.4161468365471424, 0.01999866669333308, 0.9998000066665778],
     ])
-    expect(PositionalEncoding.encode(5, 6)).toEqual([
+    // Tolerancia 1e-12, no igualdad exacta: Math.pow/Math.sin difieren en 1 ULP
+    // entre versiones de V8 (0.2300017116647674 en Node 20, …746 en Node 26).
+    const pe = PositionalEncoding.encode(5, 6)
+    const esperado = [
       -0.9589242746631385, 0.28366218546322625, 0.23000171166476746,
       0.9731902242785205, 0.010771965118034833, 0.9999419807006283,
-    ])
+    ]
+    expect(pe.length).toBe(esperado.length)
+    esperado.forEach((v, i) => expect(pe[i]).toBeCloseTo(v, 12))
   })
 
   it('Word2Vec: semilla 7, skip-gram por defecto, lr 0.1, 2 épocas', () => {
