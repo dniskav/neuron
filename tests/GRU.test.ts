@@ -122,3 +122,43 @@ describe('GRULayer', () => {
     expect(differs).toBe(true)
   })
 })
+
+// Pesos deterministas (sin Math.random) para fijar la salida de un forward.
+const mkW = (rows: number, cols: number, k: number) =>
+  Array.from({ length: rows }, (_, i) =>
+    Array.from({ length: cols }, (_, j) => Math.sin(k + 1.7 * i + 0.9 * j) * 0.8))
+const mkGate = (h: number, n: number, k: number) => ({
+  W: mkW(h, n, k),
+  b: Array.from({ length: h }, (_, i) => 0.1 * Math.cos(k + i)),
+})
+const GOLDEN_SEQ = [[1, -2, 0.5], [3, 0.1, -1], [20, -15, 8], [0.2, 0.3, 0.4]]
+
+describe('GRULayer stable tanh (T059)', () => {
+  // Valores calculados con la fórmula anterior (e^{2x}−1)/(e^{2x}+1) antes del
+  // cambio; Math.tanh debe coincidir con tolerancia 1e-12.
+  const GOLDEN = [
+    [0.2982196362022136, 0.07103990232895635, -0.41653076355852947, 0.020181586895853018],
+    [0.33377421132313445, -0.7253748069624101, -0.31086466203029284, 0.18457599149287143],
+    [0.3340209746901341, -0.9616005552495405, -0.9553556746167102, 0.20467223586225994],
+    [-0.11526234281061681, -0.44979700412527135, -0.23079990552005647, 0.20793638157036046],
+  ]
+
+  it('forward with fixed weights matches the pre-change golden values', () => {
+    const g = new GRULayer(3, 4)
+    g.setWeights({ resetGate: mkGate(4, 7, 1), updateGate: mkGate(4, 7, 2), newGate: mkGate(4, 7, 3) })
+    GOLDEN_SEQ.forEach((x, t) => {
+      const h = g.predict(x)
+      h.forEach((v, i) => expect(Math.abs(v - GOLDEN[t][i])).toBeLessThan(1e-12))
+    })
+  })
+
+  it.each([355, 400, 1000, -355, -400, -1000])('finite state when the candidate preactivation is %d', (x) => {
+    const g = new GRULayer(1, 1)
+    const zero = { W: [[0, 0]], b: [0] }
+    // n_pre = 1·x + 0·(r⊙h) + 0 = x; update gate z = sigmoid(0) = 0.5; h_prev = 0.
+    g.setWeights({ resetGate: zero, updateGate: zero, newGate: { W: [[1, 0]], b: [0] } })
+    const h = g.predict([x])
+    // h = (1 − 0.5)·tanh(x) + 0.5·0 = ±0.5
+    expect(h[0]).toBeCloseTo(Math.sign(x) * 0.5, 12)
+  })
+})

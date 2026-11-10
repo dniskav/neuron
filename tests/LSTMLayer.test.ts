@@ -129,3 +129,48 @@ describe('LSTMLayer', () => {
     expect(differs).toBe(true)
   })
 })
+
+// Pesos deterministas (sin Math.random) para fijar la salida de un forward.
+const mkW = (rows: number, cols: number, k: number) =>
+  Array.from({ length: rows }, (_, i) =>
+    Array.from({ length: cols }, (_, j) => Math.sin(k + 1.7 * i + 0.9 * j) * 0.8))
+const mkGate = (h: number, n: number, k: number) => ({
+  W: mkW(h, n, k),
+  b: Array.from({ length: h }, (_, i) => 0.1 * Math.cos(k + i)),
+})
+const GOLDEN_SEQ = [[1, -2, 0.5], [3, 0.1, -1], [20, -15, 8], [0.2, 0.3, 0.4]]
+
+describe('LSTMLayer stable tanh (T059)', () => {
+  // Valores calculados con la fórmula anterior (e^{2x}−1)/(e^{2x}+1) antes del
+  // cambio; Math.tanh debe coincidir con tolerancia 1e-12.
+  const GOLDEN = [
+    [-0.09122480709131517, -0.061079392919465486, 0.24294666578662866, 0.023249792390182676],
+    [-0.07888697764331842, 0.47490773905023936, 0.11026443292027016, -0.021790428943157143],
+    [-0.005053580079612365, 0.40133151528466676, 0.02177587883448283, -0.0007375265995631974],
+    [0.12453445632733004, 0.12140290779818255, 0.329742603639174, -0.09290595088752522],
+  ]
+
+  it('forward with fixed weights matches the pre-change golden values', () => {
+    const l = new LSTMLayer(3, 4)
+    l.setWeights({
+      forgetGate: mkGate(4, 7, 4), inputGate: mkGate(4, 7, 5),
+      cellGate: mkGate(4, 7, 6), outputGate: mkGate(4, 7, 7),
+    })
+    GOLDEN_SEQ.forEach((x, t) => {
+      const h = l.predict(x)
+      h.forEach((v, i) => expect(Math.abs(v - GOLDEN[t][i])).toBeLessThan(1e-12))
+    })
+  })
+
+  it.each([355, 400, 1000, -355, -400, -1000])('finite state when the cell preactivation is %d', (x) => {
+    const l = new LSTMLayer(1, 1)
+    const zero = { W: [[0, 0]], b: [0] }
+    // zg = x; i = o = sigmoid(0) = 0.5; c_prev = 0 → c = 0.5·tanh(x) = ±0.5;
+    // h = 0.5·tanh(±0.5).
+    l.setWeights({ forgetGate: zero, inputGate: zero, cellGate: { W: [[1, 0]], b: [0] }, outputGate: zero })
+    const h = l.predict([x])
+    const s = Math.sign(x)
+    expect(l.c[0]).toBeCloseTo(s * 0.5, 12)
+    expect(h[0]).toBeCloseTo(0.5 * Math.tanh(s * 0.5), 12)
+  })
+})
