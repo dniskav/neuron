@@ -56,6 +56,14 @@ export interface Word2VecOptions {
   minCount?: number;
 }
 
+// Loop equivalent of a Math.max spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including -Infinity for [] and NaN if any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
 export class Word2Vec {
   /** Learned word vectors, shape [vocabSize][embeddingDim]. */
   embeddings: number[][];
@@ -396,7 +404,7 @@ export class Word2Vec {
 // Subtract max before exp to prevent overflow. The constant cancels in the ratio.
 //   softmax(x)_i = exp(x_i - max) / Σ_j exp(x_j - max)
 function _softmax(scores: number[]): number[] {
-  const max = Math.max(...scores);
+  const max = _maxOf(scores);
   const exps = scores.map(s => Math.exp(s - max));
   const sum  = exps.reduce((a, b) => a + b, 0);
   return exps.map(e => e / sum);

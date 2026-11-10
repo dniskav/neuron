@@ -62,6 +62,23 @@ export interface TrainMetrics {
   f1: number;          // macro-average across classes
 }
 
+// Loop equivalents of a Math.max spread and of indexOf over that max. A spread
+// of >~125 000 arguments overflows the stack, so these fold with Math.max instead:
+// same result, including -Infinity for [] and NaN when any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
+// First index of the maximum, like indexOf over the Math.max result: -1 when the
+// maximum is NaN (no element is === NaN) or when values is empty.
+function _argmax(values: number[]): number {
+  const m = _maxOf(values);
+  for (let i = 0; i < values.length; i++) if (values[i] === m) return i;
+  return -1;
+}
+
 export interface TrainerOptions {
   epochs?: number;
   lr?: number;
@@ -410,12 +427,12 @@ export class Trainer {
         if (pred.length === 1) {
           predClass = pred[0] >= 0.5 ? 1 : 0;
         } else {
-          predClass = pred.indexOf(Math.max(...pred));
+          predClass = _argmax(pred);
         }
       } else {
         // One-hot: argmax for both
-        predClass = pred.indexOf(Math.max(...pred));
-        trueClass = target.indexOf(Math.max(...target));
+        predClass = _argmax(pred);
+        trueClass = _argmax(target);
       }
 
       // Clamp to valid range

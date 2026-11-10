@@ -100,11 +100,14 @@ export class Network {
   // Order: hidden layer (all neurons: weights then bias), then output layer.
   getWeights(): number[] {
     const w: number[] = [];
+    // Loops, not a push spread: a spread of >~125 000 arguments overflows the stack.
     for (const n of this.hiddenLayer.neurons) {
-      w.push(...n.weights, n.bias);
+      for (const v of n.weights) w.push(v);
+      w.push(n.bias);
     }
     for (const n of this.outputLayer.neurons) {
-      w.push(...n.weights, n.bias);
+      for (const v of n.weights) w.push(v);
+      w.push(n.bias);
     }
     return w;
   }

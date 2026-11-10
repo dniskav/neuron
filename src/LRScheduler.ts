@@ -17,6 +17,14 @@ import { validateNumber } from './Validation';
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Loop equivalent of a Math.min spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including +Infinity for [] and NaN if any element is NaN.
+function _minOf(values: number[]): number {
+  let m = Infinity;
+  for (const v of values) m = Math.min(m, v);
+  return m;
+}
+
 export class LRScheduler {
   // ── Step Decay ────────────────────────────────────────────────────────────
   // lr = initialLr * dropRate^floor(epoch / epochsDrop)
@@ -56,7 +64,7 @@ export class LRScheduler {
 
     // Check if loss has improved in the last `patience` epochs
     const recentLosses = history.slice(-patience)
-    const minRecentLoss = Math.min(...recentLosses)
+    const minRecentLoss = _minOf(recentLosses)
 
     // If current loss is not better than the minimum of recent losses, decay
     if (currentLoss >= minRecentLoss) {
