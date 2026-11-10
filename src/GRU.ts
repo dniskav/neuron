@@ -24,8 +24,8 @@ function sigmoid(x: number): number {
 }
 
 function tanhFn(x: number): number {
-  const e = Math.exp(2 * x);
-  return (e - 1) / (e + 1);
+  // Math.tanh is stable for large |x|; (e^{2x}-1)/(e^{2x}+1) gives NaN for x >~ 355.
+  return Math.tanh(x);
 }
 
 class Gate {

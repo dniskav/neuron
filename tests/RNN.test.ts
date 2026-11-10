@@ -6,9 +6,9 @@
 // de un paso con T = 1 con cada gradiente escrito a mano, el caso de secuencia
 // vacía, la validación del constructor y un test de aprendizaje con margen.
 //
-// Referencia de tanh: Math.tanh, implementación independiente de la del módulo
-// (que usa (e^{2x} − 1)/(e^{2x} + 1)). Los valores intermedios se escriben como
-// fórmula en cada test, no como salida copiada del código.
+// Referencia de tanh: Math.tanh (el módulo también usa Math.tanh, estable para
+// |x| grande). Los valores intermedios se escriben como fórmula en cada test,
+// no como salida copiada del código.
 //
 // Aprendizaje (tarea de memoria: la salida en t es x_{t−1}, con x_{−1} = 0):
 //   RNN(1, 4, 1), 6 pasos, 50 llamadas a backward, lr base 0.1.
