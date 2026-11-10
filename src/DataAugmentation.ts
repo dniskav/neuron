@@ -61,7 +61,7 @@ export class DataAugmentation {
     min: number[];
     max: number[];
   } {
-    if (X.length === 0) return { normalized: [], min: [], max: [] };
+    if (X.length === 0) throw new Error('DataAugmentation.normalize: X is empty');
     const d   = X[0].length;
     const min = new Array<number>(d).fill(Infinity);
     const max = new Array<number>(d).fill(-Infinity);
@@ -94,7 +94,7 @@ export class DataAugmentation {
     mean: number[];
     std: number[];
   } {
-    if (X.length === 0) return { standardized: [], mean: [], std: [] };
+    if (X.length === 0) throw new Error('DataAugmentation.standardize: X is empty');
     const n = X.length;
     const d = X[0].length;
 
@@ -156,6 +156,11 @@ export class DataAugmentation {
   // Fisher-Yates shuffle — in-place permutation of indices.
   // Returns new arrays (does not mutate the inputs).
   static shuffle(X: number[][], y: number[]): { X: number[][]; y: number[] } {
+    if (X.length !== y.length) {
+      throw new Error(
+        `DataAugmentation.shuffle: X has ${X.length} rows but y has ${y.length} labels`,
+      );
+    }
     const indices = Array.from({ length: X.length }, (_, i) => i);
     for (let i = indices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));

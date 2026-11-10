@@ -203,9 +203,9 @@ describe('MaxPool2D backward', () => {
   })
 })
 
-describe('MaxPool2D current behavior (T043 changes this)', () => {
-  it('entrada menor que poolSize devuelve [] (se cambiará a un error en T043)', () => {
-    // H = 2, p = 3: floor((2 − 3)/3) + 1 = 0 → sin ventanas.
-    expect(new MaxPool2D(3).forward([[[1], [2]], [[3], [4]]])).toEqual([])
+describe('MaxPool2D entrada menor que poolSize (T043: lanza)', () => {
+  it('entrada menor que poolSize lanza en lugar de devolver []', () => {
+    // H = 2, p = 3: floor((2 − 3)/3) + 1 = 0 → sin ventanas; ahora es un error.
+    expect(() => new MaxPool2D(3).forward([[[1], [2]], [[3], [4]]])).toThrow(/^MaxPool2D\.forward: /)
   })
 })

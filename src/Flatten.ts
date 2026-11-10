@@ -21,9 +21,32 @@ export class Flatten {
   // ── Forward pass ──────────────────────────────────────────────────────────
   // Flattens input[h][w][c] into a 1D array in row-major, channel-last order.
   forward(input: number[][][]): number[] {
+    // Validate before saving the shape, so a failed call leaves the previous
+    // inputShape (used by backward) untouched.
+    if (input.length === 0) {
+      throw new Error('Flatten.forward: input is empty (expected [H][W][C] with H >= 1)');
+    }
     const H = input.length;
     const W = input[0].length;
-    const C = input[0][0].length;
+    if (W === 0) {
+      throw new Error('Flatten.forward: input[0] has no columns (expected W >= 1)');
+    }
+    const C = (input[0][0] as number[] | undefined)?.length ?? 0;
+    if (C === 0) {
+      throw new Error('Flatten.forward: input[0][0] has no channels (expected C >= 1)');
+    }
+    for (let h = 0; h < H; h++) {
+      const row = input[h] as number[][] | undefined;
+      if (row?.length !== W) {
+        throw new Error(`Flatten.forward: row ${h} has ${row?.length} columns, expected ${W}`);
+      }
+      for (let w = 0; w < W; w++) {
+        const cell = row[w] as number[] | undefined;
+        if (cell?.length !== C) {
+          throw new Error(`Flatten.forward: [${h}][${w}] has ${cell?.length} channels, expected ${C}`);
+        }
+      }
+    }
 
     this.inputShape = [H, W, C];
 
