@@ -51,6 +51,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateArray, validateDataset } from './Validation'
+
 // ─── Node types ───────────────────────────────────────────────────────────────
 
 interface LeafNode {
@@ -75,6 +77,8 @@ export class DecisionTree {
   private _maxDepth: number;
   private _minSamplesSplit: number;
   private _task: "classification" | "regression";
+  // Feature count fixed by fit(); predict() checks its input against it.
+  private _nFeatures = 0;
 
   constructor(options?: {
     maxDepth?: number;
@@ -85,11 +89,15 @@ export class DecisionTree {
     this._minSamplesSplit = options?.minSamplesSplit ?? 2;
     this._task            = options?.task            ?? "classification";
 
-    if (this._maxDepth <= 0) {
-      throw new Error("DecisionTree: maxDepth must be positive");
+    if (!Number.isInteger(this._maxDepth) || this._maxDepth < 1) {
+      throw new Error(
+        `DecisionTree: maxDepth must be positive integer, got ${this._maxDepth}`
+      );
     }
-    if (this._minSamplesSplit < 2) {
-      throw new Error("DecisionTree: minSamplesSplit must be at least 2");
+    if (!Number.isInteger(this._minSamplesSplit) || this._minSamplesSplit < 2) {
+      throw new Error(
+        `DecisionTree: minSamplesSplit must be at least 2 (integer), got ${this._minSamplesSplit}`
+      );
     }
   }
 
@@ -238,12 +246,9 @@ export class DecisionTree {
 
   // ─── Fit ──────────────────────────────────────────────────────────────────
   fit(X: number[][], y: number[]): void {
-    if (X.length === 0) throw new Error("DecisionTree.fit: X is empty");
-    if (X.length !== y.length) {
-      throw new Error(
-        `DecisionTree.fit: X has ${X.length} rows but y has ${y.length} labels`
-      );
-    }
+    // Rectangular, finite X and finite y: checked before the tree is replaced.
+    const nFeatures = validateDataset(X, y, "DecisionTree.fit");
+    this._nFeatures = nFeatures;
     this._root = this._buildNode(X, y, 0);
   }
 
@@ -261,6 +266,9 @@ export class DecisionTree {
     if (this._root === null) {
       throw new Error("DecisionTree.predict: model has not been fitted yet");
     }
+    // Without this, a short input is read only up to its own length and
+    // silently returns a class.
+    validateArray(x, this._nFeatures, "DecisionTree.predict");
     return this._traverse(this._root, x);
   }
 
