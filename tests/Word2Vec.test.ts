@@ -426,6 +426,7 @@ describe('Word2Vec: aprende', () => {
   // que la perdida no se puede reducir a la mitad. Inicial ~ log 12 = 2.48 (12 palabras).
   // Medido (5 semillas, lr x0.7/x1.3, 100 epocas): final/inicial skip-gram ~0.55, CBOW ~0.29.
   // Umbral 0.8 (el peor medido, 0.57, deja >= 30 % de margen).
+  // Timeout 30 s: con cobertura v8 tarda ~2.0 s medido (T045); el de 5 s por defecto se agota a veces.
   it('la perdida de train baja por debajo de 0.8 de la inicial (skip-gram lr 0.03, CBOW lr 0.1)', () => {
     for (const [model, base] of [['skipgram', 0.03], ['cbow', 0.1]] as const) {
       for (const mult of [0.7, 1, 1.3]) {
@@ -437,5 +438,5 @@ describe('Word2Vec: aprende', () => {
         }
       }
     }
-  })
+  }, 30000)
 })
