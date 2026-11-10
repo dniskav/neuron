@@ -9,8 +9,7 @@
 //
 // Learned: W[pos][d] (tabla), apply suma W; update hace w + lr·dW (dW = -dL/dw).
 //
-// Los casos invalidos (pos negativo, dModel impar) se fijan como COMPORTAMIENTO
-// ACTUAL en un describe aparte; T042 los cambiara. Son hallazgos (ver el informe).
+// Los casos invalidos (pos negativo o no entero, dModel impar) lanzan (T042).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LearnedPositionalEncoding, PositionalEncoding } from '../src/PositionalEncoding'
 import { restoreRandom, seedRandom } from './helpers/seed'
@@ -204,28 +203,23 @@ describe('LearnedPositionalEncoding', () => {
   })
 })
 
-// ─── COMPORTAMIENTO ACTUAL (T042 lo cambiara) ────────────────────────────────
-// Estos casos son invalidos segun la spec (pos negativo, dModel impar). Hoy no
-// lanzan: se fijan tal como estan para que T042 los reescriba. Son hallazgos.
-describe('degenerate inputs (COMPORTAMIENTO ACTUAL; T042 will change these)', () => {
+// ─── ENTRADAS INVALIDAS (T042) ───────────────────────────────────────────────
+// pos debe ser entero >= 0 y dModel par (>= 2). Antes de T042 estos casos no
+// lanzaban; ahora lanzan `PositionalEncoding.<método>: …`.
+describe('invalid inputs (T042)', () => {
   beforeEach(() => seedRandom(0x5eed))
   afterEach(() => restoreRandom())
 
-  it('pos negativo no lanza: encode(-1, 4) = [sin(-1), cos(-1), sin(-0.01), cos(-0.01)]', () => {
-    // sin(-x) = -sin x; cos(-x) = cos x.
-    expectClose(PositionalEncoding.encode(-1, 4), [
-      -0.8414709848078965,
-      0.5403023058681398,
-      -0.009999833334166664,
-      0.9999500004166653,
-    ])
+  it('pos negativo lanza: encode(-1, 4)', () => {
+    expect(() => PositionalEncoding.encode(-1, 4)).toThrow(/^PositionalEncoding\.encode: pos/)
   })
 
-  it('dModel impar no lanza: en encode(1, 3) la ultima dimension recibe solo seno con 10000^(-2/3)', () => {
-    // i = floor(3/2) = 1; 10000^(2/3) = 464.1588833612780, por tanto x = 10^(-8/3) = 0.00215443469003.
-    // sin x = x - x³/6 = 0.00215443469003 - 1e-8/6 = 0.00215443302336 (x³ = 10^(-8)).
-    const pe = PositionalEncoding.encode(1, 3)
-    expect(pe.length).toBe(3)
-    expectClose(pe, [0.8414709848078965, 0.5403023058681398, 0.002154433023365604])
+  it('dModel impar lanza: encode(1, 3)', () => {
+    expect(() => PositionalEncoding.encode(1, 3)).toThrow(/^PositionalEncoding\.encode: dModel/)
+  })
+
+  it('encodeSequence rechaza dModel impar y seqLen no entero', () => {
+    expect(() => PositionalEncoding.encodeSequence(2, 3)).toThrow(/^PositionalEncoding\.encodeSequence: dModel/)
+    expect(() => PositionalEncoding.encodeSequence(2.5, 4)).toThrow(/^PositionalEncoding\.encodeSequence: seqLen/)
   })
 })

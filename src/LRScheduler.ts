@@ -1,5 +1,7 @@
 // ─── Learning Rate Scheduler ─────────────────────────────────────────────────
 //
+import { validateNumber } from './Validation';
+
 // Provides common learning rate decay strategies:
 //   - stepDecay:     drop lr by a factor every N epochs
 //   - exponentialDecay: lr *= decayRate^epoch
@@ -19,12 +21,16 @@ export class LRScheduler {
   // ── Step Decay ────────────────────────────────────────────────────────────
   // lr = initialLr * dropRate^floor(epoch / epochsDrop)
   stepDecay(lr: number, epoch: number, dropRate: number, epochsDrop: number): number {
+    if (!(epochsDrop > 0)) {
+      throw new Error(`LRScheduler.stepDecay: epochsDrop must be > 0, got ${epochsDrop}`);
+    }
     return lr * Math.pow(dropRate, Math.floor(epoch / epochsDrop))
   }
 
   // ── Exponential Decay ─────────────────────────────────────────────────────
   // lr = initialLr * decayRate^epoch
   exponentialDecay(lr: number, epoch: number, decayRate: number): number {
+    validateNumber(decayRate, 'LRScheduler.exponentialDecay: decayRate');
     return lr * Math.pow(decayRate, epoch)
   }
 
@@ -63,6 +69,9 @@ export class LRScheduler {
   // ── Cosine Annealing ──────────────────────────────────────────────────────
   // lr = minLr + 0.5 * (maxLr - minLr) * (1 + cos(π * epoch / maxEpochs))
   cosineAnnealing(lr: number, epoch: number, maxEpochs: number, minLr = 0): number {
+    if (!(maxEpochs > 0)) {
+      throw new Error(`LRScheduler.cosineAnnealing: maxEpochs must be > 0, got ${maxEpochs}`);
+    }
     return minLr + 0.5 * (lr - minLr) * (1 + Math.cos(Math.PI * epoch / maxEpochs))
   }
 }

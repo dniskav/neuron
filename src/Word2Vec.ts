@@ -149,6 +149,14 @@ export class Word2Vec {
   // clarity. This is O(vocabSize) per step — for large vocabularies you would
   // normally switch to negative sampling or hierarchical softmax.
   train(sentences: string[][], lr = 0.025, epochs = 5): number[] {
+    // Validate before touching state (buildVocab below mutates the model).
+    // lr = 0 stays valid: it is a no-op used by existing tests.
+    if (!Number.isFinite(lr) || lr < 0) {
+      throw new Error(`Word2Vec.train: lr must be a finite number >= 0, got ${lr}`);
+    }
+    if (!Number.isInteger(epochs) || epochs < 1) {
+      throw new Error(`Word2Vec.train: epochs must be an integer >= 1, got ${epochs}`);
+    }
     if (this.vocabSize === 0) this.buildVocab(sentences);
 
     const lossHistory: number[] = [];

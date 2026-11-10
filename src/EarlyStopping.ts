@@ -1,5 +1,7 @@
 // ─── EARLY STOPPING ───────────────────────────────────────────────────────────
 //
+import { validateNumber } from './Validation';
+
 // Monitors a validation metric and stops training when it ceases to improve,
 // preventing overfitting and wasted compute.
 //
@@ -62,8 +64,18 @@ export class EarlyStopping {
     mode?: 'min' | 'max';
     restoreBest?: boolean;
   }) {
-    this.patience    = options?.patience    ?? 10;
-    this.minDelta    = options?.minDelta    ?? 1e-4;
+    const patience = options?.patience ?? 10;
+    const minDelta = options?.minDelta ?? 1e-4;
+    if (!Number.isInteger(patience) || patience < 1) {
+      throw new Error(`EarlyStopping.constructor: patience must be an integer >= 1, got ${patience}`);
+    }
+    validateNumber(minDelta, 'EarlyStopping.constructor: minDelta');
+    if (minDelta < 0) {
+      throw new Error(`EarlyStopping.constructor: minDelta must be >= 0, got ${minDelta}`);
+    }
+
+    this.patience    = patience;
+    this.minDelta    = minDelta;
     this.mode        = options?.mode        ?? 'min';
     this.restoreBest = options?.restoreBest ?? false;
 
@@ -83,6 +95,9 @@ export class EarlyStopping {
   // snapshotting when restoreBest = true.
   //
   update(value: number, epoch: number, weights?: number[]): boolean {
+    if (Number.isNaN(value)) {
+      throw new Error(`EarlyStopping.update: value must not be NaN, got ${value}`);
+    }
     if (this.stopped) return true;
 
     const improved = this.mode === 'min'
