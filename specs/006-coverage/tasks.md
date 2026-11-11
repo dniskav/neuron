@@ -391,3 +391,7 @@
 - T063 (`tests/TSNE.test.ts`, +3 tests): inicialización comparada con Box-Muller × 0.01 sobre `mulberry32` reimplementado (`nIter` 0), `kl()` a mano con n = 3 (p_ij = 1/6) y un paso de gradiente a mano; detectan los 2 mutantes de T046. Separación: el margen se aplicaba dos veces (umbral efectivo 2.143, margen real ~4 %); ahora umbral 1.5 con rejilla de lr {3.5, 5, 7, 10, 13} y peor caso medido 2.06 (margen 37 %); el control sin estructura da 0.30. Los tests nuevos dependen de que `nIter = 0` sea válido.
 - Estado: 2425 tests, 132 archivos; cobertura 99.38 / 96.56 / 99.55 / 99.25. El gate de T046 queda satisfecho salvo los mutantes equivalentes documentados.
 
+### T047 (segunda batería, 2026-11-11, sobre 011a012 con T061–T063)
+
+- 20 ejecuciones seguidas, 5 con `--sequence.shuffle` (Node 26) y 3 bajo Node 20.19: las 28 verdes, 2425 tests. `tsc --noEmit -p .` y build limpios, 0 `it.fails`/`it.todo`, `package*.json` y `src/index.ts` sin cambios desde 957d618. Parte local de T047 CUMPLIDA; falta subir la rama, abrir el PR contra `master` y esperar el CI (pedir confirmación al usuario para subir y para fusionar). T060 sigue abierta: decidir con el usuario si entra en este PR o en uno posterior.
+
