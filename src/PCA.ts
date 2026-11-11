@@ -18,6 +18,12 @@
 //     Then deflate:              Σ ← Σ - λ·v·vᵀ       (Hotelling's deflation)
 //     Repeat for the next PC.
 //
+//   Each iterate is also re-orthogonalized against the components already
+//   found. That step is the one that keeps the basis correct: with it, the
+//   deflation term λ·v·(vᵀ·w) is ~1e-16 for any iterate w, so deflation is
+//   numerically redundant here. It is kept because it is the textbook way to
+//   explain how the next component is found.
+//
 // ─── PROJECTION ──────────────────────────────────────────────────────────────
 //   Z = X̃ · Vᵀ        project centered data onto the PC basis
 //                      shape: [n × nComponents]

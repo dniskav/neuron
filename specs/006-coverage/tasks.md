@@ -399,3 +399,20 @@
 
 - T047 cerrada: PR #9 con CI en verde (6 checks) y fusionado en `master` (481293f) con autorización del usuario; `publish.yml` saltó `Publish` (0.3.2). Única tarea abierta: T060 (decisiones del usuario), en un PR aparte.
 
+### Decisiones del usuario (2026-11-11) y tareas T064–T066
+
+El usuario aceptó las recomendaciones del orquestador para todas las preguntas abiertas:
+1. `accuracy([], [])` lanza: se mantiene.
+2. `lr = 0` es un no-op válido en todos los modelos (incluido `Word2Vec.train`): se mantiene. Cierra T060(a).
+3. Secuencia vacía en `RNN.backward`/`Seq2Seq.encode`: LANZA. Cierra T060(b).
+4. `GAN`: la sigmoide de salida de D se comprueba POR VALOR, no por identidad (T065).
+5. `DecisionTree`: `maxDepth: Infinity` vuelve a ser válido (T064).
+6. `PositionalEncoding`: `dModel` impar vuelve a funcionar (T064).
+7. `ci.yml` ejecuta `npm run coverage` (umbral comprobado en CI): hecho por el orquestador.
+8. `PCA`: la deflación de Hotelling se conserva y se documenta como redundante (comentario de cabecera de `src/PCA.ts`): hecho por el orquestador.
+9. `PCA` con ejes nulos de norma ≈ 0: se abre T066.
+
+- [ ] T064 [P] [H] [files: src/DecisionTree.ts, src/PositionalEncoding.ts, tests/DecisionTree.test.ts, tests/PositionalEncoding.test.ts, tests/api/Classifier.validation.test.ts, tests/api/Misc.validation.test.ts] Deshacer dos regresiones de API del Lote 13: `maxDepth: Infinity` válido («sin límite»); `dModel` impar funciona como antes de T042 (última dimensión solo seno), manteniendo el resto de la validación.
+- [ ] T065 [P] [H] [files: src/GAN.ts, tests/GAN.test.ts, tests/api/Generative.validation.test.ts] `GAN` acepta cualquier activación de salida de D que coincida por valor con la sigmoide (`fn` y `dfn` en puntos de sondeo, tolerancia 1e-9); sigue rechazando las demás.
+- [ ] T066 [S] [files: src/PCA.ts, tests/PCA.test.ts] Hallazgo de T062: con datos de rango deficiente, los ejes de varianza 0 pueden salir con norma ≈ 0 en vez de 1 (la normalización devuelve el vector sin tocar si ‖v‖ < 1e-14), contra «eigenvectors (unit length)». Caso mínimo: 8 puntos ±Hₖ (k = 0..3, filas de Hadamard) en 8D, `new PCA(8)`, ejes 5–8. Completar la base con vectores unitarios ortogonales a los ya hallados; `transform` y la reconstrucción no deben cambiar. PROPUESTA, no lanzada.
+
