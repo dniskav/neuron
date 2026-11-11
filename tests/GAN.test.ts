@@ -12,7 +12,7 @@
 // así que además fija cuántos números consume cada método.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { GAN } from '../src/GAN'
-import { sigmoid } from '../src/activations'
+import { sigmoid, type Activation } from '../src/activations'
 import { expectLearns } from './helpers/learns'
 import { seedRandom, restoreRandom } from './helpers/seed'
 
@@ -257,5 +257,53 @@ describe('GAN: el discriminador aprende con G congelado', () => {
     }
     // Peor caso medido: 0.032 (final/inicial). Margen exigido ≥ 30 % sobre el umbral: < 0.07.
     expect(worst).toBeLessThan(0.07)
+  })
+})
+
+describe('GAN: sigmoide equivalente por valor (T065)', () => {
+  // Sigmoide propia: distinto objeto que `sigmoid`, mismo valor en todo el dominio.
+  const own: Activation = { fn: (x) => 1 / (1 + Math.exp(-x)), dfn: (o) => o * (1 - o) }
+  const batches = [
+    [
+      [0.2, 0.3, 0.1],
+      [0.9, 0.1, 0.4],
+    ],
+    [[0.5, 0.5, 0.5]],
+    [
+      [0.1, 0.9, 0.2],
+      [0.4, 0.4, 0.8],
+      [0.7, 0.2, 0.3],
+    ],
+  ]
+
+  function trainWith(outAct: Activation) {
+    seedRandom(0x5eed)
+    const gan = new GAN(2, [4], 3, [4], { discriminatorOptions: { activations: [sigmoid, outAct] } })
+    const losses = batches.map((b) => gan.trainStep(b, 0.1))
+    return { gan, losses }
+  }
+
+  it('entrena igual que con la sigmoide exportada: mismos pesos y pérdidas tras 3 trainStep (1e-12)', () => {
+    const exported = trainWith(sigmoid)
+    const equivalent = trainWith(own)
+    const expectSame = (a: number[], b: number[]) => {
+      expect(a).toHaveLength(b.length)
+      a.forEach((v, i) => expect(Math.abs(v - b[i])).toBeLessThanOrEqual(1e-12))
+    }
+    expectSame(equivalent.gan.generator.getWeights(), exported.gan.generator.getWeights())
+    expectSame(equivalent.gan.discriminator.getWeights(), exported.gan.discriminator.getWeights())
+    equivalent.losses.forEach((l, i) => {
+      expect(Math.abs(l.dLoss - exported.losses[i].dLoss)).toBeLessThanOrEqual(1e-12)
+      expect(Math.abs(l.gLoss - exported.losses[i].gLoss)).toBeLessThanOrEqual(1e-12)
+    })
+  })
+
+  it('aceptar la sigmoide propia no consume Math.random: el siguiente valor coincide con el de la exportada', () => {
+    seedRandom(7)
+    new GAN(2, [4], 3, [4], { discriminatorOptions: { activations: [sigmoid, sigmoid] } })
+    const nextExported = Math.random()
+    seedRandom(7)
+    new GAN(2, [4], 3, [4], { discriminatorOptions: { activations: [sigmoid, own] } })
+    expect(Math.random()).toBe(nextExported)
   })
 })

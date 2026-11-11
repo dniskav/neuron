@@ -17,7 +17,7 @@ import { Autoencoder } from '../../src/Autoencoder'
 import { VAE } from '../../src/VAE'
 import { GAN } from '../../src/GAN'
 import { ContrastiveLearning } from '../../src/ContrastiveLearning'
-import { relu, sigmoid, tanh } from '../../src/activations'
+import { leakyRelu, linear, relu, sigmoid, tanh, type Activation } from '../../src/activations'
 import { seedRandom, restoreRandom } from '../helpers/seed'
 
 beforeEach(() => {
@@ -146,6 +146,39 @@ describe('GAN: contrato de salida sigmoide de D (antes: documentado, no validado
     expect(
       () => new GAN(2, [3], 2, [3], { discriminatorOptions: { activations: [relu, tanh] } }),
     ).toThrow(/^GAN: the discriminator output must use the sigmoid activation/)
+  })
+
+  it('relu, linear, leakyRelu y tanh como salida de D lanzan (comprobación por valor)', () => {
+    for (const act of [relu, linear, leakyRelu, tanh]) {
+      expect(
+        () => new GAN(2, [3], 2, [3], { discriminatorOptions: { activations: [relu, act] } }),
+      ).toThrow(/^GAN: the discriminator output must use the sigmoid activation/)
+    }
+  })
+
+  it('una sigmoide propia equivalente por valor se acepta como salida de D', () => {
+    const own: Activation = { fn: (x) => 1 / (1 + Math.exp(-x)), dfn: (o) => o * (1 - o) }
+    expect(() => new GAN(2, [3], 2, [3], { discriminatorOptions: { activations: [relu, own] } })).not.toThrow()
+  })
+
+  it('una casi sigmoide lanza: fn correcta con dfn incorrecta, o fn desplazada (sigmoide de 2x)', () => {
+    const wrongDfn: Activation = { fn: (x) => 1 / (1 + Math.exp(-x)), dfn: () => 1 }
+    const shifted: Activation = { fn: (x) => 1 / (1 + Math.exp(-2 * x)), dfn: (o) => o * (1 - o) }
+    for (const act of [wrongDfn, shifted]) {
+      expect(
+        () => new GAN(2, [3], 2, [3], { discriminatorOptions: { activations: [relu, act] } }),
+      ).toThrow(/^GAN: the discriminator output must use the sigmoid activation.*checked by value/)
+    }
+  })
+
+  it('si fn o dfn lanzan o devuelven NaN en el sondeo, lanza el mismo error claro (no uno interno)', () => {
+    const throwingFn: Activation = { fn: () => { throw new Error('boom') }, dfn: (o) => o * (1 - o) }
+    const nanDfn: Activation = { fn: (x) => 1 / (1 + Math.exp(-x)), dfn: () => Number.NaN }
+    for (const act of [throwingFn, nanDfn]) {
+      expect(
+        () => new GAN(2, [3], 2, [3], { discriminatorOptions: { activations: [relu, act] } }),
+      ).toThrow(/^GAN: the discriminator output must use the sigmoid activation.*probe set/)
+    }
   })
 })
 

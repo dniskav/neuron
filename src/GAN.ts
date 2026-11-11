@@ -35,15 +35,44 @@
 //      weights) and through G's output derivative, then trainWithDeltas.
 //
 // Contract: D must have a SIGMOID output (BCE deltas `1 - D` / `-D` assume it).
-// The constructor checks it: the output activation of D must be the `sigmoid` object of
-// ./activations, otherwise it throws. The generator step is exact w.r.t. D at
+// The constructor checks it by value: the output activation of D is accepted if it is the
+// `sigmoid` object of ./activations, or any Activation whose fn(x) = 1/(1+e^(-x)) and
+// dfn(out) = out·(1-out) agree with those formulas on a fixed probe set (tolerance 1e-9).
+// Otherwise it throws. The check only calls fn/dfn: it consumes no Math.random and does not
+// touch the network. The generator step is exact w.r.t. D at
 // its post-update weights; an oracle that freezes D at the pre-step weights
 // differs by O(lr).
 //
 
 import { NetworkN, NetworkNOptions } from "./NetworkN";
-import { sigmoid } from "./activations";
+import { Activation, sigmoid } from "./activations";
 import { validateArray } from "./Validation";
+
+// Probe set for the by-value sigmoid check (see the GAN constructor).
+const SIGMOID_PROBE_X = [-6, -2, -0.5, 0, 0.5, 2, 6];
+const SIGMOID_PROBE_OUT = [0.05, 0.25, 0.5, 0.75, 0.95];
+const SIGMOID_PROBE_TOL = 1e-9;
+
+// Returns null when `act` behaves as a sigmoid on the probe set; otherwise the reason it does not.
+function sigmoidMismatch(act: Activation): string | null {
+  const EVAL_FAILED = "fn or dfn threw or returned NaN on the probe set";
+  const isNum = (v: unknown): v is number => typeof v === "number" && !Number.isNaN(v);
+  try {
+    for (const x of SIGMOID_PROBE_X) {
+      const got = act.fn(x);
+      if (!isNum(got)) return EVAL_FAILED;
+      if (!(Math.abs(got - 1 / (1 + Math.exp(-x))) <= SIGMOID_PROBE_TOL)) return "fn differs from 1/(1+e^(-x))";
+    }
+    for (const out of SIGMOID_PROBE_OUT) {
+      const got = act.dfn(out);
+      if (!isNum(got)) return EVAL_FAILED;
+      if (!(Math.abs(got - out * (1 - out)) <= SIGMOID_PROBE_TOL)) return "dfn differs from out·(1-out)";
+    }
+  } catch {
+    return EVAL_FAILED;
+  }
+  return null;
+}
 
 // ─── GAN ─────────────────────────────────────────────────────────────────────
 
@@ -73,12 +102,17 @@ export class GAN {
     this.discriminator = new NetworkN(dStructure, options?.discriminatorOptions ?? {});
 
     // The BCE deltas of trainStep assume D's output is sigmoid (see the header contract).
+    // Identity is a shortcut; any other activation is accepted if it matches sigmoid by value.
     const dOutput = this.discriminator.layers[this.discriminator.layers.length - 1].neurons[0].activation;
     if (dOutput !== sigmoid) {
-      throw new Error(
-        'GAN: the discriminator output must use the sigmoid activation (the BCE deltas assume it); ' +
-        'end discriminatorOptions.activations with sigmoid',
-      );
+      const reason = sigmoidMismatch(dOutput);
+      if (reason !== null) {
+        throw new Error(
+          'GAN: the discriminator output must use the sigmoid activation (the BCE deltas assume it; ' +
+          'checked by value: fn(x) = 1/(1+e^(-x)) and dfn(out) = out·(1-out) on a fixed probe set); ' +
+          `${reason}. End discriminatorOptions.activations with sigmoid or an equivalent activation`,
+        );
+      }
     }
   }
 
