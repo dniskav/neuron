@@ -145,7 +145,7 @@ describe('ModelSaver.fromJSON: rechazos con modelo intacto', () => {
     const dst = new NetworkN([2, 3, 1])
     const before = dst.getWeights()
     expect(() => ModelSaver.fromJSON(dst, json)).toThrow(/ModelSaver\.fromJSON/)
-    expect(() => ModelSaver.fromJSON(dst, json)).toThrow(/espera 13 pesos y el archivo trae 17/)
+    expect(() => ModelSaver.fromJSON(dst, json)).toThrow(/expects 13 weights and the file has 17/)
     expect(dst.getWeights()).toEqual(before)
   })
 
@@ -211,7 +211,7 @@ describe('ModelSaver.fromJSON: rechazos con modelo intacto', () => {
   it('format desconocido lanza', () => {
     const net = new NetworkN([2, 4, 1])
     const json = patch(ModelSaver.toJSON(net), { format: 2 })
-    expect(() => ModelSaver.fromJSON(net, json)).toThrow(/ModelSaver\.fromJSON.*formato/)
+    expect(() => ModelSaver.fromJSON(net, json)).toThrow(/ModelSaver\.fromJSON.*unsupported format/)
   })
 
   it('no escribe pesos antes de validar (modelo espía)', () => {

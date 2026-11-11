@@ -95,3 +95,13 @@
 - T003 y T004: solo comentarios (0 líneas de código en el diff; el JS compilado solo difiere en comentarios). T004 midió: `TSNE` n = 30 diverge con `lr` 200 y converge con 5–20, desde n ≈ 100 el valor por defecto funciona; `TCN` converge con `lr` ≤ 0.39, sube con 1.0 y diverge desde 1.5.
 - Estado: 2495 tests; typecheck limpio. Sin escalados (2 Haiku, 2 Sonnet, todos a la primera).
 
+## Decisiones del usuario sobre Q1–Q6 del inventario (2026-11-11)
+
+El usuario aceptó las propuestas de `breaking-changes.md`, con una excepción en Q3:
+- Q1: la receta `lr·d/2` de `Autoencoder` (`d` = `inputSize`) se documenta como APROXIMADA (conserva el paso del decoder, no el del encoder) y se recomienda reentrenar.
+- Q2: `lr = 0` se documenta tal cual: no-op válido en las redes y modelos generativos/de secuencia; LANZA en `Trainer` y en `LinearRegression.fitGD`, `LogisticRegression.train` y `SoftmaxRegression.train`. No se cambia `Trainer`.
+- Q3: los mensajes de `ModelSaver.fromJSON` se TRADUCEN al inglés antes de publicar (hecho por el orquestador; el changelog y el README citan los mensajes en inglés, leyéndolos de `src/ModelSaver.ts`, no del inventario).
+- Q4: se documenta el alcance real de la validación de `Metrics` (V11), sin ampliarla.
+- Q5: `Network.train` con varias salidas: «reentrenar», sin receta.
+- Q6: el changelog NO cita las tres cifras no reproducidas («~4×», «coseno 0.887», «~85 %»).
+
