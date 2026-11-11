@@ -217,7 +217,7 @@
 - [x] T046 [S] [files: ninguno (revisión; el agente `math-reviewer` no edita)] Revisión de una muestra por Sonnet: repite los mutantes de T002 (`Metrics`), T003 (`DecisionTree`), T005 (`PCA`) y T020 (`TSNE`) y comprueba que las cifras esperadas están deducidas a mano (recalcula 3 por archivo) y que las tareas de validación (T036–T043) no cambiaron números de entradas válidas. Informe: lista de mutantes no detectados y de cifras copiadas de la salida.
       Gate: informe con 0 mutantes no detectados y 0 cifras sin derivación; si hay alguno, se reabre la tarea correspondiente.
 
-- [ ] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
+- [x] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
       Gate: las 20 ejecuciones verdes y el CI de GitHub verde (ci x2, CodeQL, GitGuardian).
 
 ## Dependencias y orden
@@ -394,4 +394,8 @@
 ### T047 (segunda batería, 2026-11-11, sobre 011a012 con T061–T063)
 
 - 20 ejecuciones seguidas, 5 con `--sequence.shuffle` (Node 26) y 3 bajo Node 20.19: las 28 verdes, 2425 tests. `tsc --noEmit -p .` y build limpios, 0 `it.fails`/`it.todo`, `package*.json` y `src/index.ts` sin cambios desde 957d618. Parte local de T047 CUMPLIDA; falta subir la rama, abrir el PR contra `master` y esperar el CI (pedir confirmación al usuario para subir y para fusionar). T060 sigue abierta: decidir con el usuario si entra en este PR o en uno posterior.
+
+### Cierre (2026-11-11)
+
+- T047 cerrada: PR #9 con CI en verde (6 checks) y fusionado en `master` (481293f) con autorización del usuario; `publish.yml` saltó `Publish` (0.3.2). Única tarea abierta: T060 (decisiones del usuario), en un PR aparte.
 
