@@ -189,7 +189,9 @@ export class LearnedPositionalEncoding {
   // Apply gradient update to position encoding weights.
   //
   // `dWeights` has the same shape as `weights`: [maxSeqLen][dModel].
-  // Each entry is dL/dW_pos[pos][d] — the loss gradient w.r.t. that weight.
+  // Each entry is the update direction for that weight, i.e. −dL/dW_pos[pos][d]:
+  // the code ADDS lr · dWeights, so pass the NEGATIVE loss gradient to descend
+  // (same convention as EmbeddingMatrix.update in MatMul.ts).
   //
   // Simple SGD is used here (matching EmbeddingMatrix in MatMul.ts):
   // position embeddings are updated every step for all positions in the batch,
