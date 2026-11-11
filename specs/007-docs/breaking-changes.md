@@ -146,3 +146,14 @@ Comprobación de cobertura del inventario: de los 49 archivos de `git diff --sta
 - La igualdad de resultados bit a bit de `Value.backward` y de los `getWeights` sin `push(...)` se apoya en los tests de las tareas T034/T035/T048 (no re-medida aquí).
 - G15: el número de sorteos de `Math.random` por paso se midió con `dropoutRate` 0.5 y estructuras pequeñas; la proporción exacta depende del nº de capas ocultas.
 - Los tests de `NetworkTransformer.train` (G02) se midieron con `count` = 4 y un solo bloque; el factor es exactamente `count` por construcción (`src/NetworkTransformer.ts:146`).
+
+## Añadidos tras el inventario (2026-11-11, T018–T020; redactados por el orquestador)
+
+| ID | área | clase/método | antes | ahora | migración | origen |
+|---|---|---|---|---|---|---|
+| V27 | validación | `NetworkN.train`/`trainWithDeltas`, `Network.train`, `Neuron.train`, `NeuronN.train`, `NetworkLSTM.train`, `LSTMLayer.backprop`, `GRULayer.backprop`, `NetworkTransformer.train`, `NetworkTransformerRL.train` | `lr` NaN no lanzaba y dejaba todos los pesos en NaN (reproducido: 13 de 13 en `NetworkN([2,3,1])`); `lr` negativo entrenaba al revés; `Network`/`Neuron` rechazaban NaN («expected finite number, got X») pero aceptaban negativos | Lanzan «Clase.método: lr must be a finite number >= 0, got X» antes de tocar pesos, estado o trayectoria; `lr = 0` sigue siendo no-op válido | Pasar `lr` finito ≥ 0 | 007 T018 (sonda del orquestador antes y después) |
+| G25 | entrenamiento y métricas | `Trainer` con `computeMetrics`: `TrainMetrics.f1` | Media armónica de la precisión macro y el recall macro | Media de F1 por clase (igual que `Metrics.f1Score`); con `[[1,2,0],[0,1,0],[0,0,4]]`: 7/9 → 2/3 | Recalibrar umbrales sobre `f1` | 007 T019 |
+| — | corrección (no incompatible salvo comparación de cadenas) | `LossPlotter.render()` | Borde superior un carácter más largo que las filas; etiquetas de más de 6 caracteres desplazaban el borde | Todas las líneas del marco miden `width` | — | 007 T020 |
+
+Sin validar `lr` (documentado, no corregido): `Conv1D`/`Conv2D` `backward`, `BatchNorm.trainParams`, `LayerNorm.backwardOne`, `AttentionHead`/`MultiHeadAttention`/`TransformerBlock` `backward`, `WeightMatrix`/`BiasVector`/`EmbeddingMatrix`/`LearnedPositionalEncoding` `update`, optimizadores, opciones `lr` de `SOM` y `TSNE`. `Perceptron.train` rechaza también `lr = 0` («learning rate must be positive»), igual que las tres regresiones y `Trainer`.
+

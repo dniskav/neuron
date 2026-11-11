@@ -25,7 +25,7 @@ If you are upgrading from 0.3.2, these are the points that matter most:
    ```
 
    For `Network.train` with several outputs there is no recipe: 0.3.2 only trained output 0. Retrain. For `Autoencoder` the recipe keeps the step of the decoder but not that of the encoder, because the encoder gradient also changed. Retraining is recommended.
-4. **`lr = 0` is a valid no-op** in the networks and in the generative and sequence models, but it **throws** in `Trainer` (0.3.2 accepted it) and in `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (they already rejected it).
+4. **`lr = 0` is a valid no-op** in the networks and in the generative and sequence models, but it **throws** in `Trainer` (0.3.2 accepted it) and in `Perceptron.train`, `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (they already rejected it). NaN, Infinity and negative `lr` throw in all of them (V27).
 5. **Many methods now throw on invalid input** (empty data, wrong lengths, NaN, bad options) before touching any state. Code that relied on silent behavior must now handle or avoid the error.
 
 ### Breaking changes
@@ -33,6 +33,15 @@ If you are upgrading from 0.3.2, these are the points that matter most:
 #### Training and gradients
 
 The following changes alter the numbers a training run produces. There is no `lr` factor that reproduces the old trajectories unless stated. Retrain.
+
+**Training metrics**
+
+- **`Trainer` with `computeMetrics`: `f1` (G25).**
+  - Before: `f1` was `2PR / (P + R)` computed from the macro precision and the macro recall.
+  - Now: `f1` is the mean of the per-class F1, the same definition as `Metrics.f1Score` (scikit-learn `average='macro'`). A class with precision + recall = 0 contributes 0. `accuracy`, `precision` and `recall` are unchanged.
+  - Effect: the new value is never higher than the old one, and equal when precision and recall are the same for every class. Example with confusion matrix `[[1,2,0],[0,1,0],[0,0,4]]`: 7/9 before, 2/3 now.
+  - Migration: recalibrate any threshold or comparison that used the `f1` reported by `Trainer`.
+  - Note: `Trainer` averages over as many classes as the network has outputs; `Metrics` averages up to the highest label present in the data. They differ only when the last classes have no samples and no predictions.
 
 **Sequence and attention models**
 
@@ -187,6 +196,11 @@ Every new validation throws `Error('Class.method: ...')` BEFORE touching any sta
   - Before: it accepted `clipValue` (stored and ignored), `epochs` 0 or 1.5, `lr` 0, `lr` NaN (it failed later), an empty dataset, `earlyStopping` without validation data and `patience` 0.
   - Now: `clipValue` is REMOVED from `TrainerOptions` (it does not compile in TypeScript, and a JavaScript caller that passes it is ignored). `Trainer.train` throws `Trainer.train: ...` for `epochs` (integer greater than 0), `lr` (finite and greater than 0, so `lr = 0` throws), `lrDecay` (in (0, 1]), `weightDecay` (at least 0), `patience` (integer at least 1), `minDelta` (at least 0), an empty dataset, `earlyStopping` without `setValidationData()` or with empty data, and `restoreBestWeights` without `earlyStopping`. `setValidationData` without `earlyStopping` is stored and ignored.
   - Migrate: for gradient clipping use `ClippedOptimizerFactory`. Fix the options.
+- **`NetworkN`, `Network`, `Neuron`, `NeuronN`, `NetworkLSTM`, `LSTMLayer`, `GRULayer`, `NetworkTransformer`, `NetworkTransformerRL` (V27).**
+  - Before: `NetworkN.train`, `NetworkN.trainWithDeltas`, `NeuronN.train`, `NetworkLSTM.train`, `LSTMLayer.backprop`, `GRULayer.backprop`, `NetworkTransformer.train` and `NetworkTransformerRL.train` did not validate `lr`. `lr = NaN` did not throw and left every weight as NaN, and a negative `lr` trained in the wrong direction. `Network.train` and `Neuron.train` rejected NaN but accepted a negative `lr`.
+  - Now: all of them throw `Class.method: lr must be a finite number >= 0, got X` for NaN, Infinity, a negative or a non-numeric `lr`, before any weight, state or stored trajectory is touched. `lr = 0` is still a valid no-op.
+  - Migration: pass a finite `lr >= 0`. `Network.train` and `Neuron.train` used to throw `expected finite number, got X`; update code that matches the old message.
+  - Not validated: the low-level building blocks (`Conv1D`/`Conv2D` `backward`, `BatchNorm`, `LayerNorm`, the attention classes, `WeightMatrix`/`BiasVector`/`EmbeddingMatrix` `update`, the optimizers) and the `lr` options of `SOM` and `TSNE`.
 - **`RNN`, `TCN`/`CausalConv1D`, `Seq2Seq` (V15).** Before: `lr` NaN or -1 was accepted and corrupted weights, an empty sequence returned silently (`RNN.backward([])` gave 0, `Seq2Seq.encode([])` a zero context), NaN in rows passed, and constructors accepted NaN or 1.5. Now they throw before touching state: `lr` must be finite and at least 0 (**`lr = 0` is a valid no-op**), empty sequences (including `RNN.backward([])`, `Seq2Seq.encode([])`, `TCN.forward([])`), wrong row width or target length, NaN or Infinity in rows, targets and the context (`ctx.h`, `ctx.c`), and constructors need finite integers greater than 0. Migrate: validate inputs, or use `lr = 0` for a no-op.
 - **`Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` (V16).** Before: empty batches and `lr` NaN or negative gave NaN and corrupted weights (`GAN.trainStep([])` returned `{ dLoss: NaN, gLoss: NaN }`), and one invalid row in `Autoencoder.trainBatch` left the earlier rows trained. Now they throw on empty batches or pairs, wrong width, non-finite values and `lr` NaN or negative, before touching weights. `Autoencoder.trainBatch` validates `lr` and ALL rows up front. `lr = 0` is a valid no-op. Migrate: clean the batches.
 - **`EarlyStopping`, `LRScheduler`, `DataLoader`, `Word2Vec.train` (V17).** Before they accepted `patience` 0 or 1.5, negative `minDelta`, `update(NaN)`, `stepDecay` with `epochsDrop` 0, `exponentialDecay` with NaN, `cosineAnnealing` with `maxEpochs` 0, `batchSize` 0 or 1.5, and `Word2Vec.train` with `epochs` 0 or negative `lr`. Now they throw: `patience` integer at least 1, `minDelta` finite and at least 0, `epochsDrop > 0`, `decayRate` finite, `maxEpochs > 0`, `batchSize` integer at least 1, `epochs` integer at least 1, `lr` finite and at least 0 (`Word2Vec.train` with `lr = 0` is still valid). Migrate: fix the options.
@@ -254,6 +268,10 @@ Every new validation throws `Error('Class.method: ...')` BEFORE touching any sta
 - **A07.** `Network.train(inputs, number | number[], lr)`, and `Network` satisfies `TrainableNetwork` (see G21).
 - **A08.** `NetworkTransformerRL.setWeights`, `getWeights`, `setWeightsFlat` and `setWeightsStructured` are validated (see V01).
 - `GAN` accepts any discriminator output activation that is equivalent to sigmoid by value, not only the exported `sigmoid` object (this is the same behavior as 0.3.2 and is not a breaking change).
+
+### Fixed
+
+- **`LossPlotter.render()` frame alignment.** The top border was one character longer than the rows, and Y-axis labels longer than 6 characters (for example `0.01417`) pushed the right border out. Now every line of the frame has the same length, equal to `width`: long labels widen the label column and the plot area gives up those columns. A title longer than the frame is cut. The footer and the options are unchanged. Code that compares the rendered string character by character will see the difference.
 
 ### Migration guide
 

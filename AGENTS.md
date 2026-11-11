@@ -74,7 +74,7 @@ Everything is exported from `src/index.ts` (126 names: 97 values, 29 types). The
 
 | Export | File | Purpose |
 |--------|------|---------|
-| `Trainer` | `Trainer.ts` | Epoch loop: `lrDecay`, `weightDecay`, `earlyStopping`, `restoreBestWeights`, `computeMetrics`. |
+| `Trainer` | `Trainer.ts` | Epoch loop: `lrDecay`, `weightDecay`, `earlyStopping`, `restoreBestWeights`, `computeMetrics` (`f1` is the mean of the per-class F1, as `Metrics.f1Score`). |
 | `EarlyStopping` | `EarlyStopping.ts` | Patience-based stop on a monitored value. |
 | `LRScheduler` | `LRScheduler.ts` | `stepDecay`, `exponentialDecay`, `plateauDecay`, `cosineAnnealing`. |
 | `DataLoader` | `DataLoader.ts` | Batching, shuffling, validation split; `DataLoader.sequences`. |
@@ -164,9 +164,9 @@ Everything is exported from `src/index.ts` (126 names: 97 values, 29 types). The
 - `setWeights` and `setWeightsFlat` validate length and finiteness before writing anything. A model that diverged to NaN cannot be restored with `setWeights(getWeights())`.
 - `getWeights` returns copies. In the recurrent classes `setWeights` copies its input too, so neither side aliases the model.
 - **`lr` is validated per class, not globally.**
-  - `lr = 0` is accepted (a no-op for the default SGD) in `NetworkN`, `Network`, `NetworkLSTM`, `RNN`, `TCN`, `CausalConv1D`, `Seq2Seq`, `Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` and `Word2Vec`.
-  - `lr = 0` THROWS in `Trainer` (needs finite `lr > 0`) and in `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (need `lr > 0`).
-  - NaN or negative `lr` throws in `RNN`, `TCN`, `CausalConv1D`, `Seq2Seq`, `Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` and `Word2Vec` (finite and `>= 0`), and in the regressions and `Trainer` (above). `Network.train`, `Neuron.train` and `Perceptron.train` reject NaN and Infinity but accept negative values. `NetworkN.train`, `NetworkLSTM.train`, `LSTMLayer.backprop` and the Transformer classes do not validate `lr` at all: do not pass NaN or a negative value.
+  - `lr = 0` is accepted (a no-op for the default SGD) in `NetworkN` (`train` and `trainWithDeltas`), `Network`, `Neuron`, `NeuronN`, `NetworkLSTM`, `LSTMLayer.backprop`, `GRULayer.backprop`, `NetworkTransformer`, `NetworkTransformerRL`, `RNN`, `TCN`, `CausalConv1D`, `Seq2Seq`, `Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` and `Word2Vec`.
+  - `lr = 0` THROWS in `Trainer` (needs finite `lr > 0`), in `Perceptron.train` and in `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (need `lr > 0`).
+  - NaN, Infinity or negative `lr` throws in every class of the two lists above, before any weight or state is touched (`Class.method: lr must be a finite number >= 0, got X` in the networks). NOT validated: the low-level building blocks, which trust their caller: `Conv1D.backward`, `Conv2D.backward`, `BatchNorm.trainParams`, `LayerNorm.backwardOne`, `AttentionHead`/`MultiHeadAttention`/`TransformerBlock` `backward`, `WeightMatrix`/`BiasVector`/`EmbeddingMatrix`/`LearnedPositionalEncoding` `update`, the optimizers' `step`, and the `lr` options of `SOM` and `TSNE`. Do not pass NaN or a negative value to those.
 - `NetworkLSTM.train` and `LSTMLayer.backprop` check the whole input (length against the trajectory, row widths, finiteness) before changing weights, and a rejected call does NOT clear the stored trajectory, so you can retry with the right input.
 - `Trainer` rejects options that cannot take effect instead of ignoring them (`epochs` integer > 0, `lrDecay` in (0, 1], `weightDecay >= 0`, `patience` integer >= 1, empty dataset, `earlyStopping` without validation data, `restoreBestWeights` without `earlyStopping`). `clipValue` is not a `Trainer` option; use `ClippedOptimizerFactory`.
 - `GAN` throws unless the discriminator output is a sigmoid (checked by value). `NetworkN.trainWithDeltas` and `inputGradient` throw when the last layer has `residual`.
