@@ -3,7 +3,7 @@
 **Input**: `specs/007-docs/spec.md`, `plan.md`
 **Formato**: `- [ ] T0NN [P?] [H|S] [files: ...]` + línea `Gate:`. `[P]` solo si los archivos no se solapan con otras tareas del mismo lote. `package.json`, `package-lock.json`, `src/index.ts`, el changelog y `tasks.md` son exclusivos del orquestador: ninguna tarea los toca, **salvo T005, que escribe `CHANGELOG.md` porque en 007 es el entregable (excepción expresa; ninguna otra tarea lo edita)**.
 **Requisitos de cada agente**: comprobar la base (`git merge-base --is-ancestor d0228b7 HEAD`; si no, `git rebase fix/v0.4`), `npm ci` si falta `node_modules`, `npm run build` antes de cualquier gate de ejemplos, comandos git simples (sin `cd && git` ni `for`), UN solo `vitest` completo al final, scripts temporales con el prefijo de la tarea (`t0NN_*`) en el scratchpad, comandos sin `timeout` (macOS no lo tiene).
-**Idioma de redacción (IDIOMA)**: el que decida el usuario en la pregunta 1 de la spec (recomendado: inglés). Sin respuesta, NO se lanzan T005–T011 ni T013. `breaking-changes.md`, `migration-evidence.md` e informes van en español.
+**Idioma de redacción (IDIOMA)**: INGLÉS (decisión del usuario, 2026-11-11). `breaking-changes.md`, `migration-evidence.md` e informes van en español.
 **GC (gate común)**, repetido en cada tarea: `npm run typecheck && git diff --quiet d0228b7 -- package.json package-lock.json src/index.ts && grep -q '"version": "0.3.2"' package.json`. Las tareas que no tocan `src/` añaden `&& git diff --quiet d0228b7 -- src` (**GC-SRC**). La definición de terminado (`npx tsc --noEmit -p .`, `npm run build`, `npx vitest run`) la comprueba el orquestador al integrar.
 **Cifras y afirmaciones**: toda afirmación nueva de README, changelog o `AGENTS.md` cita una fila del inventario o un archivo de `src/` con su línea en el informe del agente; si no puede comprobarla, la deja fuera y lo informa («a verificar»). Ningún agente copia el comentario de resultado de un ejemplo: lo compara con la salida real y anota los dos valores.
 **Ejemplos (FR-007)**: cada bloque ```` ```ts ```` es autosuficiente, rápido (segundos), sin red ni archivos, y con semilla propia o rango si hay azar. Gate de ejemplos: `node specs/007-docs/tools/readme-gate.mjs <archivo.md>` (3 ejecuciones, `fail=0`) sobre `dist/` recién construido.
@@ -79,3 +79,11 @@
 - BLOQUEADAS por decisión del usuario: T012 y T016 (pregunta 2). Idioma pendiente (pregunta 1): bloquea T005–T011 y T013; T001–T004 y T014 no dependen de él.
 - Decisiones de diseño (preguntas 3, 4 y 5) NO añaden tareas de comportamiento: T003 aplica las opciones (a) recomendadas solo en comentarios.
 - Modelos: 10 tareas Haiku (T002, T003, T006, T007, T009, T010, T011, T013, T015, T016) y 7 Sonnet (T001, T004, T005, T008, T012, T014, T017) según `specs/ORCHESTRATION.md`; T005 es Sonnet porque redacta la guía de migración; si Haiku falla 1 vez en el mismo criterio, la tarea pasa a Sonnet. Opus: no se usa.
+
+## Decisiones del usuario (2026-11-11)
+
+1. Idioma del README y del CHANGELOG: **inglés**.
+2. `AGENTS.md`: **reescribir al día desde la versión commiteada**. El borrado sin commitear del usuario (41 líneas) se DESCARTÓ con su autorización (`git checkout -- AGENTS.md`). **T012 y T016 quedan DESBLOQUEADAS** (ignorar las marcas «BLOQUEADA» de arriba).
+3. Meta-checks de exports (T015, T016): **tests permanentes** en `npm test` y CI.
+4. Diseño: **solo documentar**. `Autoencoder` no restaura el aviso `latentSize >= inputSize` (se corrige el comentario); `ContrastiveLearning.dropoutFeatures` no cambia (se documenta que no reescala); los ejes nulos de `PCA` van a «Known limitations» del README (T066 no se lanza en la 0.4.0).
+
