@@ -217,7 +217,7 @@
 - [x] T046 [S] [files: ninguno (revisión; el agente `math-reviewer` no edita)] Revisión de una muestra por Sonnet: repite los mutantes de T002 (`Metrics`), T003 (`DecisionTree`), T005 (`PCA`) y T020 (`TSNE`) y comprueba que las cifras esperadas están deducidas a mano (recalcula 3 por archivo) y que las tareas de validación (T036–T043) no cambiaron números de entradas válidas. Informe: lista de mutantes no detectados y de cifras copiadas de la salida.
       Gate: informe con 0 mutantes no detectados y 0 cifras sin derivación; si hay alguno, se reabre la tarea correspondiente.
 
-- [ ] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
+- [x] T047 [S] [files: ninguno (orquestador y `verifier`)] Estabilidad y cierre: 20 ejecuciones seguidas de la suite, 5 con `--sequence.shuffle`, tres bajo Node 20.19 (`~/.nvm/versions/node/v20.19.0`), `npx tsc --noEmit -p .`, `npm run build`, `git diff --quiet 957d618 -- package.json package-lock.json src/index.ts` (o la base vigente de 006), `grep -r "it.fails\|it.todo" tests` = 0; actualizar `specs/HANDOFF.md`; PR contra `master` y CI de GitHub en verde antes de pedir el merge al usuario.
       Gate: las 20 ejecuciones verdes y el CI de GitHub verde (ci x2, CodeQL, GitGuardian).
 
 ## Dependencias y orden
@@ -335,7 +335,7 @@
 - T041 (`Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning`; 29 tests, 8 mutantes): lanzan con lote/pares vacíos (antes NaN), ancho incorrecto o no finitos, antes de tocar pesos (`GAN` valida el lote entero antes de entrenar); `lr` NaN/±Infinity/negativo lanzan; `lr = 0` se acepta (tests existentes: `Autoencoder.test.ts:166`, `GAN.test.ts:188`, `oracle/GAN.oracle.test.ts:269`). `VAE`: `options.activations` debe tener `decoderHidden.length + 1` entradas y cubrir las capas ocultas del encoder (mensaje «VAE: options.activations needs …»). `GAN`: el constructor lanza si la salida de D no es el objeto `sigmoid` exportado (comparación por identidad: una sigmoide propia equivalente también se rechaza; riesgo de API a revisar en 007). Un test de `ContrastiveLearning.test.ts` se reescribió (`trainStep([])` ya no fija NaN). `Autoencoder.trainBatch` no valida filas por adelantado (preexistente; entra en T060).
 - Estado: 2275 tests, 127 archivos.
 
-- [ ] T060 [S] [files: src/RNN.ts, src/TCN.ts, src/Seq2Seq.ts, src/Autoencoder.ts, tests/api/Sequence.validation.test.ts, tests/api/Generative.validation.test.ts, tests/RNN.test.ts, tests/Seq2Seq.test.ts] Seguimiento de T040/T041 (principio V). DECISIÓN PREVIA DEL USUARIO para (a) y (b); (c)–(e) se pueden hacer sin ella. (a) ¿`lr` debe ser > 0 estricto (como pedía T040/T041) o `lr = 0` sigue siendo un no-op válido (estado actual)? Si estricto, cambiar `tests/RNN.test.ts:190,199`, `tests/Seq2Seq.test.ts:204-210`, `tests/Autoencoder.test.ts:166`, `tests/GAN.test.ts:188` y `tests/oracle/GAN.oracle.test.ts:269`. (b) Secuencia vacía: `RNN.backward([])` y `Seq2Seq.encode([])` devuelven cero (fijado en `tests/RNN.test.ts:230` y `tests/Seq2Seq.test.ts:80`) mientras `forward`/`train`/`trainStep` lanzan: unificar o documentar. (c) NaN/Infinity DENTRO de las filas de `x`, `sequence` y `targets` de `RNN`/`TCN`/`Seq2Seq` pasa en silencio. (d) Los constructores de `RNN` y `TCN` aceptan NaN como tamaño (`NaN <= 0` es false). (e) `Autoencoder.trainBatch` no valida las filas por adelantado: un error en una fila posterior deja entrenadas las anteriores. Falla antes / pasa después con cada reproducción; mutante: quitar cada validación.
+- [x] T060 [S] [files: src/RNN.ts, src/TCN.ts, src/Seq2Seq.ts, src/Autoencoder.ts, tests/api/Sequence.validation.test.ts, tests/api/Generative.validation.test.ts, tests/RNN.test.ts, tests/Seq2Seq.test.ts] Seguimiento de T040/T041 (principio V). DECISIÓN PREVIA DEL USUARIO para (a) y (b); (c)–(e) se pueden hacer sin ella. (a) ¿`lr` debe ser > 0 estricto (como pedía T040/T041) o `lr = 0` sigue siendo un no-op válido (estado actual)? Si estricto, cambiar `tests/RNN.test.ts:190,199`, `tests/Seq2Seq.test.ts:204-210`, `tests/Autoencoder.test.ts:166`, `tests/GAN.test.ts:188` y `tests/oracle/GAN.oracle.test.ts:269`. (b) Secuencia vacía: `RNN.backward([])` y `Seq2Seq.encode([])` devuelven cero (fijado en `tests/RNN.test.ts:230` y `tests/Seq2Seq.test.ts:80`) mientras `forward`/`train`/`trainStep` lanzan: unificar o documentar. (c) NaN/Infinity DENTRO de las filas de `x`, `sequence` y `targets` de `RNN`/`TCN`/`Seq2Seq` pasa en silencio. (d) Los constructores de `RNN` y `TCN` aceptan NaN como tamaño (`NaN <= 0` es false). (e) `Autoencoder.trainBatch` no valida las filas por adelantado: un error en una fila posterior deja entrenadas las anteriores. Falla antes / pasa después con cada reproducción; mutante: quitar cada validación.
 
 ### Lote 13 (integrado: T039, T042, T043, T059)
 
@@ -394,4 +394,33 @@
 ### T047 (segunda batería, 2026-11-11, sobre 011a012 con T061–T063)
 
 - 20 ejecuciones seguidas, 5 con `--sequence.shuffle` (Node 26) y 3 bajo Node 20.19: las 28 verdes, 2425 tests. `tsc --noEmit -p .` y build limpios, 0 `it.fails`/`it.todo`, `package*.json` y `src/index.ts` sin cambios desde 957d618. Parte local de T047 CUMPLIDA; falta subir la rama, abrir el PR contra `master` y esperar el CI (pedir confirmación al usuario para subir y para fusionar). T060 sigue abierta: decidir con el usuario si entra en este PR o en uno posterior.
+
+### Cierre (2026-11-11)
+
+- T047 cerrada: PR #9 con CI en verde (6 checks) y fusionado en `master` (481293f) con autorización del usuario; `publish.yml` saltó `Publish` (0.3.2). Única tarea abierta: T060 (decisiones del usuario), en un PR aparte.
+
+### Decisiones del usuario (2026-11-11) y tareas T064–T066
+
+El usuario aceptó las recomendaciones del orquestador para todas las preguntas abiertas:
+1. `accuracy([], [])` lanza: se mantiene.
+2. `lr = 0` es un no-op válido en todos los modelos (incluido `Word2Vec.train`): se mantiene. Cierra T060(a).
+3. Secuencia vacía en `RNN.backward`/`Seq2Seq.encode`: LANZA. Cierra T060(b).
+4. `GAN`: la sigmoide de salida de D se comprueba POR VALOR, no por identidad (T065).
+5. `DecisionTree`: `maxDepth: Infinity` vuelve a ser válido (T064).
+6. `PositionalEncoding`: `dModel` impar vuelve a funcionar (T064).
+7. `ci.yml` ejecuta `npm run coverage` (umbral comprobado en CI): hecho por el orquestador.
+8. `PCA`: la deflación de Hotelling se conserva y se documenta como redundante (comentario de cabecera de `src/PCA.ts`): hecho por el orquestador.
+9. `PCA` con ejes nulos de norma ≈ 0: se abre T066.
+
+- [x] T064 [P] [H] [files: src/DecisionTree.ts, src/PositionalEncoding.ts, tests/DecisionTree.test.ts, tests/PositionalEncoding.test.ts, tests/api/Classifier.validation.test.ts, tests/api/Misc.validation.test.ts] Deshacer dos regresiones de API del Lote 13: `maxDepth: Infinity` válido («sin límite»); `dModel` impar funciona como antes de T042 (última dimensión solo seno), manteniendo el resto de la validación.
+- [x] T065 [P] [H] [files: src/GAN.ts, tests/GAN.test.ts, tests/api/Generative.validation.test.ts] `GAN` acepta cualquier activación de salida de D que coincida por valor con la sigmoide (`fn` y `dfn` en puntos de sondeo, tolerancia 1e-9); sigue rechazando las demás.
+- [ ] T066 [S] [files: src/PCA.ts, tests/PCA.test.ts] Hallazgo de T062: con datos de rango deficiente, los ejes de varianza 0 pueden salir con norma ≈ 0 en vez de 1 (la normalización devuelve el vector sin tocar si ‖v‖ < 1e-14), contra «eigenvectors (unit length)». Caso mínimo: 8 puntos ±Hₖ (k = 0..3, filas de Hadamard) en 8D, `new PCA(8)`, ejes 5–8. Completar la base con vectores unitarios ortogonales a los ya hallados; `transform` y la reconstrucción no deben cambiar. PROPUESTA, no lanzada.
+
+### T060, T064, T065 (integradas, 2026-11-11)
+
+- T060 (Sonnet; `RNN`, `TCN`/`CausalConv1D`, `Seq2Seq`, `Autoencoder`; 11 mutantes): `RNN.backward([])` y `Seq2Seq.encode([])` LANZAN (antes 0 y contexto cero; la guarda va antes de `reset()`); NaN/Infinity dentro de filas, targets y contexto lanzan «Clase.método: X[i]: invalid value at index j» antes de tocar estado; `CausalConv1D.forward` valida el ancho de fila (antes NaN en silencio); los constructores de `RNN`, `CausalConv1D` y `TCN` exigen enteros finitos > 0; `Autoencoder.trainBatch` valida `lr` y TODAS las filas por adelantado (un lote con una fila inválida no cambia pesos). `lr = 0` sigue siendo no-op válido, con un test por clase. A VIGILAR: `TCN.forward` valida finitud en cada nivel, así que un desbordamiento interno a Infinity con entrada finita ahora lanza en el nivel siguiente. Sin tratar: `Seq2Seq.decode` no valida `steps`; `Autoencoder.train` delega la finitud en `NetworkN.predict`. El agente no hizo golden numérico aparte: se apoya en los tests de valores a 1e-12 y en los oráculos, sin cambios; el orquestador comprobó que en `src` solo se sustituyen comprobaciones.
+- T064 (Haiku; 5 mutantes): `DecisionTree` acepta `maxDepth: Infinity` (test: 16 puntos con etiqueta x mod 2, profundidad 15 y 16/16 sin límite frente a 13/16 con el valor por defecto 10); `PositionalEncoding` vuelve a admitir `dModel` impar (última dimensión solo seno), con `dModel` entero ≥ 1. Mensajes: «positive integer or Infinity (no depth limit)» y «integer >= 1».
+- T065 (Haiku; 4 mutantes): `GAN` acepta como salida de D el `sigmoid` exportado o cualquier `Activation` que coincida por valor (`fn` en x ∈ {−6, −2, −0.5, 0, 0.5, 2, 6} y `dfn` en out ∈ {0.05, 0.25, 0.5, 0.75, 0.95}, tolerancia 1e-9); `relu`, `tanh`, `linear`, `leakyRelu` y las casi sigmoides siguen lanzando; la comprobación no consume `Math.random`. Cierra el «riesgo de API» anotado en T041.
+- Orquestador: `ci.yml` ejecuta `npm run coverage` y `src/PCA.ts` documenta la deflación redundante.
+- Estado: 2495 tests, 132 archivos; verde ×3 en Node 26 y ×1 en Node 20.19 tras cada merge. Única tarea abierta de la 006: T066 (ejes nulos de `PCA`), PROPUESTA.
 

@@ -29,5 +29,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test
-        run: npm test
+      # Runs the whole suite and fails below the thresholds in vitest.config.mts.
+      - name: Test with coverage thresholds
+        run: npm run coverage

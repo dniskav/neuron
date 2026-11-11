@@ -173,6 +173,44 @@ describe('Autoencoder train / trainBatch (reconstruction MSE by hand)', () => {
     expect(() => linearNet().trainBatch([], 0.1)).toThrow(/Autoencoder\.trainBatch: batch X must be non-empty/)
   })
 
+  // decisión del usuario 2026-11-11: lr = 0 sigue siendo un no-op válido (train y trainBatch).
+  it('train with lr = 0 is a valid no-op: loss 6.06125, weights unchanged', () => {
+    const ae = linearNet()
+    // x = [1, 2]: z = 0.5 − 2 + 0.25 = −1.25; x̂ = [2·(−1.25) + 0.1, 1.25] = [−2.4, 1.25]
+    // loss = ((1 + 2.4)² + (2 − 1.25)²) / 2 = (11.56 + 0.5625) / 2 = 6.06125
+    expect(ae.train([1, 2], 0)).toBeCloseTo(6.06125, 12)
+    expect(ae.encoder.getWeights()).toEqual([0.5, -1, 0.25])
+    expect(ae.decoder.getWeights()).toEqual([2, 0.1, -1, 0])
+  })
+
+  // T060 (e): the whole batch is validated before the first row trains.
+  const BAD_BATCHES: [string, number[][], RegExp][] = [
+    ['a later row of the wrong length', [[1, 2], [1]], /Autoencoder\.trainBatch: X\[1\]: expected array of length 2, got 1/],
+    ['a later row with NaN', [[1, 2], [Number.NaN, 0]], /Autoencoder\.trainBatch: X\[1\]: invalid value at index 0: NaN/],
+    ['a later row with Infinity', [[1, 2], [0, 1], [0, Infinity]], /Autoencoder\.trainBatch: X\[2\]: invalid value at index 1/],
+  ]
+  it.each(BAD_BATCHES)('trainBatch with %s changes no weight', (_name, batch, msg) => {
+    const ae = linearNet()
+    const enc = ae.encoder.getWeights()
+    const dec = ae.decoder.getWeights()
+    expect(() => ae.trainBatch(batch, 0.1)).toThrow(msg)
+    expect(ae.encoder.getWeights()).toEqual(enc)
+    expect(ae.decoder.getWeights()).toEqual(dec)
+  })
+
+  it.each([Number.NaN, Infinity, -Infinity, -0.1])('trainBatch rejects lr = %s and changes no weight', (lr) => {
+    const ae = linearNet()
+    const enc = ae.encoder.getWeights()
+    expect(() => ae.trainBatch([[1, 2]], lr)).toThrow(/Autoencoder\.trainBatch: lr must be a finite number >= 0/)
+    expect(ae.encoder.getWeights()).toEqual(enc)
+  })
+
+  it('a valid batch still trains every row (weights change with lr > 0)', () => {
+    const ae = linearNet()
+    ae.trainBatch([[1, 2], [0, 0]], 0.01)
+    expect(ae.encoder.getWeights()).not.toEqual([0.5, -1, 0.25])
+  })
+
   it('train rejects an input of the wrong length and leaves every weight untouched', () => {
     const ae = linearNet()
     const encBefore = ae.encoder.getWeights()

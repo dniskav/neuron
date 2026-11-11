@@ -89,9 +89,10 @@ export class DecisionTree {
     this._minSamplesSplit = options?.minSamplesSplit ?? 2;
     this._task            = options?.task            ?? "classification";
 
-    if (!Number.isInteger(this._maxDepth) || this._maxDepth < 1) {
+    // Infinity means "no depth limit" (the node-depth check is then never true).
+    if (this._maxDepth !== Infinity && (!Number.isInteger(this._maxDepth) || this._maxDepth < 1)) {
       throw new Error(
-        `DecisionTree: maxDepth must be positive integer, got ${this._maxDepth}`
+        `DecisionTree: maxDepth must be positive integer or Infinity (no depth limit), got ${this._maxDepth}`
       );
     }
     if (!Number.isInteger(this._minSamplesSplit) || this._minSamplesSplit < 2) {

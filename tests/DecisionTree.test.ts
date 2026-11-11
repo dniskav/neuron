@@ -155,6 +155,32 @@ describe('DecisionTree', () => {
     })
   })
 
+  describe('maxDepth Infinity (T064: sin límite de profundidad)', () => {
+    it('XOR with maxDepth Infinity reaches accuracy 1.0', () => {
+      const t = new DecisionTree({ maxDepth: Infinity })
+      t.fit(B, [0, 1, 1, 0])
+      expect(accuracy(t, B, [0, 1, 1, 0])).toBe(1)
+    })
+
+    it('alternating 1-D labels on 16 points need depth 15: Infinity solves it, default (10) does not', () => {
+      // y = x mod 2 on x = 0..15. Greedy CART peels one point per level here, so the
+      // unbounded tree has depth 15 = N - 1 and separates all points. With maxDepth 10
+      // the tree stops at depth 10 and misclassifies 3 of 16 points (13/16).
+      const X = Array.from({ length: 16 }, (_, i) => [i])
+      const y = X.map(([i]) => i % 2)
+
+      const def = new DecisionTree()
+      def.fit(X, y)
+      expect(depthOf(rootOf(def))).toBe(10)
+      expect(accuracy(def, X, y)).toBe(13 / 16)
+
+      const inf = new DecisionTree({ maxDepth: Infinity })
+      inf.fit(X, y)
+      expect(depthOf(rootOf(inf))).toBe(15)
+      expect(accuracy(inf, X, y)).toBe(1)
+    })
+  })
+
   describe('regression', () => {
     it('leaves are the mean of their samples (maxDepth 1)', () => {
       // x = [1,2,3,10,11,12], y = x. Best split between 3 and 10: threshold 6.5.

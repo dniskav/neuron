@@ -9,7 +9,8 @@
 //
 // Learned: W[pos][d] (tabla), apply suma W; update hace w + lr·dW (dW = -dL/dw).
 //
-// Los casos invalidos (pos negativo o no entero, dModel impar) lanzan (T042).
+// Los casos invalidos (pos negativo o no entero, dModel no entero o < 2) lanzan (T042).
+// dModel impar es valido (T064): la ultima dimension recibe solo el seno.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LearnedPositionalEncoding, PositionalEncoding } from '../src/PositionalEncoding'
 import { restoreRandom, seedRandom } from './helpers/seed'
@@ -203,9 +204,44 @@ describe('LearnedPositionalEncoding', () => {
   })
 })
 
+// ─── dModel IMPAR (restaurado en T064) ───────────────────────────────────────
+// Antes de T042 un dModel impar funcionaba: los pares (2i, 2i+1) usan sin/cos y
+// la ultima dimension, sin pareja, recibe solo el seno con la frecuencia de su
+// indice i = floor(dModel/2). Se restaura esa rama tal cual.
+describe('dModel impar: la última dimensión recibe solo seno (T064)', () => {
+  beforeEach(() => seedRandom(0x5eed))
+  afterEach(() => restoreRandom())
+
+  it('encode(1, 3) = [sin 1, cos 1, sin(1/10000^(2/3))]', () => {
+    // i = floor(3/2) = 1; 10000^(2/3) = 464.1588833612779, x = 1/464.1588833612779 = 10^(-8/3) = 0.00215443469003.
+    // sin x = x - x³/6 = 0.00215443469003 - 1e-8/6 = 0.00215443302336 (x³ = 10^(-8)).
+    const pe = PositionalEncoding.encode(1, 3)
+    expect(pe.length).toBe(3)
+    expectClose(pe, [0.8414709848078965, 0.5403023058681398, 0.002154433023365604])
+  })
+
+  it('dModel 1 (el caso mínimo válido): no hay pares, solo seno: encode(1, 1) = [sin 1]', () => {
+    // i = floor(1/2) = 0, freq = 10000^0 = 1 -> [sin(pos)].
+    expectClose(PositionalEncoding.encode(1, 1), [0.8414709848078965])
+    expectClose(PositionalEncoding.encode(0, 1), [0])
+  })
+
+  it('encodeSequence(2, 3) tiene 2 filas de longitud 3, con la última columna en seno', () => {
+    const seq = PositionalEncoding.encodeSequence(2, 3)
+    expect(seq.length).toBe(2)
+    expect(seq.every((row) => row.length === 3)).toBe(true)
+    expectClose(seq[0], [0, 1, 0])
+    expectClose(seq[1], [0.8414709848078965, 0.5403023058681398, 0.002154433023365604])
+  })
+
+  it('apply con dModel impar suma la codificación (apply([[1,2,3]]) -> [1, 3, 3])', () => {
+    // Fila 0: PE(0,3) = [0, 1, sin 0] = [0, 1, 0]
+    expectClose(PositionalEncoding.apply([[1, 2, 3]])[0], [1, 3, 3])
+  })
+})
+
 // ─── ENTRADAS INVALIDAS (T042) ───────────────────────────────────────────────
-// pos debe ser entero >= 0 y dModel par (>= 2). Antes de T042 estos casos no
-// lanzaban; ahora lanzan `PositionalEncoding.<método>: …`.
+// pos debe ser entero >= 0; dModel entero >= 2; seqLen entero >= 0.
 describe('invalid inputs (T042)', () => {
   beforeEach(() => seedRandom(0x5eed))
   afterEach(() => restoreRandom())
@@ -214,12 +250,13 @@ describe('invalid inputs (T042)', () => {
     expect(() => PositionalEncoding.encode(-1, 4)).toThrow(/^PositionalEncoding\.encode: pos/)
   })
 
-  it('dModel impar lanza: encode(1, 3)', () => {
-    expect(() => PositionalEncoding.encode(1, 3)).toThrow(/^PositionalEncoding\.encode: dModel/)
+  it('dModel 0, negativo, no entero o NaN lanza: encode(1, dModel)', () => {
+    for (const dModel of [0, -3, 1.5, NaN]) {
+      expect(() => PositionalEncoding.encode(1, dModel)).toThrow(/^PositionalEncoding\.encode: dModel/)
+    }
   })
 
-  it('encodeSequence rechaza dModel impar y seqLen no entero', () => {
-    expect(() => PositionalEncoding.encodeSequence(2, 3)).toThrow(/^PositionalEncoding\.encodeSequence: dModel/)
+  it('encodeSequence rechaza seqLen no entero (2.5)', () => {
     expect(() => PositionalEncoding.encodeSequence(2.5, 4)).toThrow(/^PositionalEncoding\.encodeSequence: seqLen/)
   })
 })

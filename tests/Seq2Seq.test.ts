@@ -76,10 +76,12 @@ describe('Seq2Seq constructor', () => {
 })
 
 describe('Seq2Seq.encode', () => {
-  it('returns h and c of length hiddenSize, both 0 for an empty sequence', () => {
-    const ctx = zeroNet(1, 2, 1).encode([])
-    expect(ctx.h).toEqual([0, 0]) // the state starts at 0 and nothing is applied
-    expect(ctx.c).toEqual([0, 0])
+  it('an empty sequence throws (decision of the user 2026-11-11, as trainStep) and leaves the encoder state alone', () => {
+    const m = zeroNet(1, 2, 1, 1)
+    const ctx = m.encode(SEQ3) // leaves a non-zero encoder state
+    expect(() => m.encode([])).toThrow('Seq2Seq.encode: inputSequence must not be empty')
+    expect(m.encoder.h).toEqual(ctx.h) // the check runs before encoder.reset()
+    expect(m.encoder.c).toEqual(ctx.c)
   })
 
   it('final state with cell bias 1: c_3 = 0.875·tanh(1), h_3 = 0.5·tanh(c_3)', () => {
@@ -201,6 +203,7 @@ describe('Seq2Seq.trainStep', () => {
     expect(m.W_out[0][1]).toBeCloseTo(0.5 * (u0 + u1), 12)
   })
 
+  // decisión del usuario 2026-11-11: lr = 0 sigue siendo un no-op válido (no se exige lr > 0).
   it('lr = 0 leaves every weight unchanged, and the loss is still finite', () => {
     const m = new Seq2Seq(1, 3, 1)
     const enc = m.encoder.getWeightsFlat()
