@@ -63,8 +63,9 @@ export class Autoencoder {
       throw new Error(`Autoencoder: latentSize must be ≥ 1, got ${latentSize}`);
     }
     if (latentSize >= inputSize) {
-      // Not a hard error — an over-complete autoencoder is valid for denoising —
-      // but we warn so the user is aware.
+      // No error and no warning: an over-complete autoencoder is valid (e.g. for
+      // denoising). Nothing is thrown or logged. With latentSize >= inputSize the
+      // latent code need not compress, and the network can learn the identity map.
       // throw new Error(...)  // intentionally not thrown
     }
 
