@@ -24,6 +24,7 @@
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { relu as reluActivation } from "./activations";
+import { validateArray } from "./Validation";
 
 // ── Input checks (T040). Run before any cache or weight is touched.
 function checkLr(where: string, lr: number): void {
@@ -40,7 +41,14 @@ function checkRows(where: string, name: string, rows: unknown, width: number): v
     if (!Array.isArray(row) || row.length !== width) {
       throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
     }
+    // T060: NaN/Infinity inside a row is rejected too (it used to flow through silently).
+    validateArray(row, width, `${where}: ${name}[${t}]`);
   });
+}
+
+// Sizes must be finite positive integers: `NaN <= 0` is false, so a plain `<= 0` accepted NaN.
+function isSize(n: unknown): boolean {
+  return typeof n === "number" && Number.isInteger(n) && n > 0;
 }
 
 // ─── CausalConv1D ─────────────────────────────────────────────────────────────
@@ -83,8 +91,8 @@ export class CausalConv1D {
     dilation:       number,
     optimizerFactory: OptimizerFactory = () => new SGD()
   ) {
-    if (inputChannels <= 0 || outputChannels <= 0 || kernelSize <= 0 || dilation <= 0) {
-      throw new Error('CausalConv1D: all dimensions must be positive');
+    if (!isSize(inputChannels) || !isSize(outputChannels) || !isSize(kernelSize) || !isSize(dilation)) {
+      throw new Error('CausalConv1D: all dimensions must be positive integers');
     }
 
     this.inputChannels  = inputChannels;
@@ -113,6 +121,8 @@ export class CausalConv1D {
   // input: [T][inputChannels]
   // Returns: [T][outputChannels]  (same length — causal padding preserves T)
   forward(input: number[][]): number[][] {
+    // T060: width and finiteness are checked before the cache (_paddedInput) is replaced.
+    checkRows('CausalConv1D.forward', 'input', input, this.inputChannels);
     const T   = input.length;
     const pad = (this.kernelSize - 1) * this.dilation;
 
@@ -254,8 +264,9 @@ export class TCN {
     outputSize:    number,
     optimizerFactory: OptimizerFactory = () => new SGD()
   ) {
-    if (levels <= 0) throw new Error('TCN: levels must be positive');
-    if (outputSize <= 0) throw new Error('TCN: outputSize must be positive');
+    if (!isSize(levels)) throw new Error('TCN: levels must be positive (a finite integer)');
+    if (!isSize(outputSize)) throw new Error('TCN: outputSize must be positive (a finite integer)');
+    // inputChannels, channels and kernelSize are checked by CausalConv1D (all must be positive integers).
 
     this.inputChannels = inputChannels;
     this.channels      = channels;

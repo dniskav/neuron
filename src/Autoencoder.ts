@@ -38,6 +38,7 @@
 import { NetworkN }        from "./NetworkN";
 import { NetworkNOptions } from "./NetworkN";
 import { mse }             from "./losses";
+import { validateArray }   from "./Validation";
 
 export class Autoencoder {
   /** Encoder sub-network: maps input → latent representation. */
@@ -210,6 +211,12 @@ export class Autoencoder {
     if (X.length === 0) {
       throw new Error("Autoencoder.trainBatch: batch X must be non-empty");
     }
+    // T060: validate the WHOLE batch (and lr) first. Without this, a bad row in the middle
+    // left the rows before it already trained.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`Autoencoder.trainBatch: lr must be a finite number >= 0, got ${lr}`);
+    }
+    X.forEach((x, i) => validateArray(x, this._inputSize, `Autoencoder.trainBatch: X[${i}]`));
     let totalLoss = 0;
     for (const x of X) totalLoss += this.train(x, lr);
     return totalLoss / X.length;

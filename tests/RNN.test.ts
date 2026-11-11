@@ -186,6 +186,7 @@ describe('RNN backward (valores a mano)', () => {
     //   h_1 = tanh(0) = 0 → o_1 = 0, diff_1 = 0 − 1 = −1
     //   h_2 = tanh(1) → o_2 = t,   diff_2 = t − 0 = t,  t = tanh(1)
     //   L = (1/(T·O)) Σ diff² = (1 + t²) / (2·1)
+    // decisión del usuario 2026-11-11: lr = 0 sigue siendo un no-op válido en RNN.backward.
     const net = net111(1, 0, 1)
     const loss = net.backward([[0], [1]], [[1], [0]], 0)
     expect(loss).toBeCloseTo((1 + T1 * T1) / 2, 12)
@@ -224,10 +225,10 @@ describe('RNN backward (valores a mano)', () => {
     expect(net.Whh[0][0]).toBeCloseTo(0, 12)
   })
 
-  it('an empty sequence returns 0 and leaves every weight unchanged', () => {
+  it('an empty sequence throws (decision of the user 2026-11-11, as forward/train) and leaves every weight unchanged', () => {
     const net = new RNN(2, 3, 2)
     const before = JSON.stringify([net.Wxh, net.Whh, net.Why, net.bh, net.by])
-    expect(net.backward([], [], 0.1)).toBe(0)
+    expect(() => net.backward([], [], 0.1)).toThrow('RNN.backward: sequence must not be empty')
     expect(JSON.stringify([net.Wxh, net.Whh, net.Why, net.bh, net.by])).toBe(before)
   })
 })
