@@ -106,6 +106,10 @@ export class NetworkTransformerRL {
   // Returns: MSE loss
 
   train(sequence: number[][], target: number[], lr: number): number {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkTransformerRL.train: lr must be a finite number >= 0, got ${lr}`)
+    }
     // Forward
     const h = this._forward(sequence)
     const pooled = this._pool(h)

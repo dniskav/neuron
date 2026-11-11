@@ -109,6 +109,10 @@ export class NetworkN {
   train(inputs: number[], targets: number[], lr: number): number {
     validateArray(inputs, this.structure[0], 'NetworkN.train');
     validateArray(targets, this.structure[this.structure.length - 1], 'NetworkN.train');
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkN.train: lr must be a finite number >= 0, got ${lr}`);
+    }
 
     const { act, pre } = this._forwardAll(inputs, true);
     const pred = act[act.length - 1];
@@ -135,6 +139,10 @@ export class NetworkN {
   trainWithDeltas(inputs: number[], outputDeltas: number[], lr: number, reuseMasks = false): void {
     validateArray(inputs, this.structure[0], 'NetworkN.trainWithDeltas');
     validateArray(outputDeltas, this.structure[this.structure.length - 1], 'NetworkN.trainWithDeltas');
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkN.trainWithDeltas: lr must be a finite number >= 0, got ${lr}`);
+    }
     this._assertDeltasSupported('trainWithDeltas');
     if (reuseMasks) this._assertMasksSaved('trainWithDeltas');
     const { act, pre } = this._forwardAll(inputs, true, reuseMasks);

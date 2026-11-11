@@ -104,6 +104,10 @@ export class NetworkTransformer {
   // carries g = -dL/dz with L the returned mean CE (dLogits = -(prob - target)/count).
 
   train(tokens: number[], targets: number[], lr: number, mask?: boolean[]): number {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkTransformer.train: lr must be a finite number >= 0, got ${lr}`)
+    }
     // ── Forward ──────────────────────────────────────────────────────────────
     const h = this._forward(tokens)
 

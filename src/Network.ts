@@ -29,7 +29,10 @@ export class Network {
   train(inputs: number[], target: number | number[], lr: number): number {
     validateArray(inputs, this.hiddenLayer.neurons[0].weights.length, 'Network.train');
     const targets = this._targetVector(target);
-    validateNumber(lr, 'Network.train');
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`Network.train: lr must be a finite number >= 0, got ${lr}`);
+    }
     const hiddenOut = this.hiddenLayer.predict(inputs);
     const outputNeurons = this.outputLayer.neurons;
     // All predictions and deltas use the ORIGINAL weights (before any update)

@@ -26,7 +26,10 @@ export class Neuron {
   train(input: number, target: number, lr: number): void {
     validateNumber(input, 'Neuron.train');
     validateNumber(target, 'Neuron.train');
-    validateNumber(lr, 'Neuron.train');
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`Neuron.train: lr must be a finite number >= 0, got ${lr}`);
+    }
     const prediction = this.predict(input);
     const error = target - prediction;
     const grad = error * prediction * (1 - prediction); // sigmoid derivative
