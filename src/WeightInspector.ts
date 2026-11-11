@@ -22,10 +22,13 @@
 //
 // Usage:
 //
-//   WeightInspector.print(net);
-//   // →  Layer 0: mean= 0.012  std= 0.341  min=-0.982  max= 0.876  dead=  3/72
-//   // →  Layer 1: mean=-0.003  std= 0.289  min=-0.764  max= 0.741  dead=  0/9
-//   // →  Global:  mean= 0.009  std= 0.330  min=-0.982  max= 0.876  dead=  3/81
+//   WeightInspector.print(net);   // net = new NetworkN([2, 3, 1]), abridged output:
+//   // → Weight Inspector:
+//   // →   Layer          mean        std        min        max         dead    params
+//   // →   Layer 0      0.1479     0.2536    -0.2760     0.7013          3/9         9
+//   // →   Layer 1      0.0760     0.3053    -0.3779     0.4424          1/4         4
+//   // →   Global       0.1257     0.2726    -0.3779     0.7013         4/13        13
+//   // (the values depend on the initial weights; the table layout is the real one)
 //
 
 import { NetworkN } from "./NetworkN";
