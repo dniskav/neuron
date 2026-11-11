@@ -44,7 +44,21 @@
 //   sin centrar sería (12²+12²+8²+8²)/4 + ((−2)²+(−4)²+(−2)²+(−4)²)/4 = 104 + 10 = 114
 //   ⇒ r₁ = 4/114, distinto de 0.8. Con 2 componentes sobre DS la suma sigue siendo 1.
 //
-// Semilla: seedRandom en beforeEach y restoreRandom en afterEach.
+//
+// ─── Datos con ejes y autovalores conocidos (T062) ────────────────────────────────
+//   Filas de Hadamard H (Sylvester, H₁ = [1], H₂ₙ = [[H,H],[H,−H]]): entradas ±1,
+//   filas mutuamente ortogonales de norma² = p. Ejes unitarios uₖ = Hₖ/√p. Para amplitudes
+//   aₖ > 0 (K ejes) los datos son los 2K puntos ±aₖ·Hₖ: media 0 (vienen en pares ±) y
+//     Σ = (1/2K)·Σₖ 2·aₖ²·Hₖ·Hₖᵀ = (1/K)·Σₖ aₖ²·p·uₖ·uₖᵀ   ⇒   λₖ = aₖ²·p/K, eje uₖ.
+//   Con K = p: λₖ = aₖ². Con K < p el rango es K y los otros p − K autovalores son 0.
+//   Las mediciones se hicieron aplicando a mano los mutantes de T046 a src/PCA.ts:
+//     · deflación con signo cambiado u omitida, y sin la segunda pasada de
+//       reortogonalización, y sin ortogonalizar el vector inicial: SIN efecto observable
+//       (equivalentes: ver comentario de cada test), no se fuerza ningún test.
+//     · sin ortogonalizar dentro del bucle (con o sin el vector inicial): lo detectan los
+//       tests de «ortogonalización en el bucle» (ejes a 1e-5…1 de ortonormales, error de
+//       reconstrucción ≥ 1e-6 frente a ≤ 1e-12 con el código correcto).
+//// Semilla: seedRandom en beforeEach y restoreRandom en afterEach.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PCA } from '../src/PCA'
@@ -68,6 +82,50 @@ function meanSquaredRowError(A: number[][], B: number[][]): number {
   let s = 0
   A.forEach((row, i) => row.forEach((v, j) => { s += (v - B[i][j]) ** 2 }))
   return s / A.length
+}
+
+/** Filas de Hadamard (Sylvester) de orden p (potencia de 2): entradas ±1, ortogonales entre sí. */
+function hadamard(p: number): number[][] {
+  let H = [[1]]
+  while (H.length < p) {
+    const n = H.length
+    const N: number[][] = []
+    for (let i = 0; i < 2 * n; i++) {
+      N.push(Array.from({ length: 2 * n }, (_, j) => H[i % n][j % n] * (i >= n && j >= n ? -1 : 1)))
+    }
+    H = N
+  }
+  return H
+}
+
+/** Los 2K puntos ±aₖ·Hₖ (aₖ > 0). Media 0, ejes uₖ = Hₖ/√p, λₖ = aₖ²·p/K (ver cabecera). */
+function axisData(p: number, amps: number[]): number[][] {
+  const H = hadamard(p)
+  const X: number[][] = []
+  amps.forEach((a, k) => {
+    if (a > 0) {
+      X.push(H[k].map(v => v * a))
+      X.push(H[k].map(v => -v * a))
+    }
+  })
+  return X
+}
+
+const dot = (a: number[], b: number[]) => a.reduce((s, v, i) => s + v * b[i], 0)
+
+/** max |cᵢ·cⱼ − δᵢⱼ| sobre los primeros m componentes. */
+function maxOrthoError(C: number[][], m: number): number {
+  let e = 0
+  for (let i = 0; i < m; i++) for (let j = 0; j < m; j++) e = Math.max(e, Math.abs(dot(C[i], C[j]) - (i === j ? 1 : 0)))
+  return e
+}
+
+/** max |x − x̂| con todos los componentes. */
+function maxReconstructionError(pca: PCA, X: number[][]): number {
+  const R = pca.inverseTransform(pca.transform(X))
+  let e = 0
+  X.forEach((row, i) => row.forEach((v, j) => { e = Math.max(e, Math.abs(v - R[i][j])) }))
+  return e
 }
 
 describe('PCA', () => {
@@ -202,6 +260,86 @@ describe('PCA', () => {
       pca.fit(DS)
       const R = pca.inverseTransform(pca.transform(DS))
       expect(meanSquaredRowError(DS, R)).toBeCloseTo(1, TOL_EIG)
+    })
+  })
+
+  describe('ortogonalización en el bucle de iteración (T062)', () => {
+    // Sin ortogonalizar cada paso, la iteración de potencias pura deja que el redondeo de la
+    // deflación reintroduzca ejes anteriores: los ejes finales dejan de ser ortonormales.
+    // (Deflación y reortogonalización por sí solas son redundantes entre sí: ver el informe.)
+
+    it('8 ejes con autovalores 1e8, 1e6, …, 1e-6: ejes ortonormales y reconstrucción exacta', () => {
+      // p = K = 8, aₖ = 1e4/10ᵏ ⇒ λₖ = aₖ² = 1e8/100ᵏ (cabecera). Σλ = 1e8·(1 − 100⁻⁸)/(1 − 1/100).
+      // Ratio rₖ = 100⁻ᵏ / Σⱼ 100⁻ʲ. Ortonormalidad: VVᵀ = I (8 vectores unitarios ortogonales).
+      // Medido: código correcto ≤ 5e-16; sin ortogonalizar en el bucle ≥ 2.9e-5 (6 semillas).
+      const amps = [1e4, 1e3, 1e2, 10, 1, 0.1, 0.01, 0.001]
+      const X = axisData(8, amps)
+      const H = hadamard(8)
+      const sumGeo = (1 - 100 ** -8) / (1 - 1 / 100)
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const pca = new PCA(8)
+        pca.fit(X)
+        expect(maxOrthoError(pca.components, 8)).toBeLessThan(1e-9)
+        expect(maxReconstructionError(pca, X)).toBeLessThan(1e-8) // |x| ≤ 1e4·1
+        // Los tres primeros ejes son H₀/√8, H₁/√8, H₂/√8 (|c·u| = 1; los demás, λ ≪ ruido de Σ)
+        for (let k = 0; k < 3; k++) {
+          expect(Math.abs(dot(pca.components[k], H[k])) / Math.sqrt(8)).toBeGreaterThan(1 - 1e-9)
+        }
+        // Ratios: los autovalores se ven a través del ruido relativo de Σ (~1e-16)
+        const r = pca.explainedVarianceRatio()
+        for (let k = 0; k < 8; k++) expect(Math.abs(r[k] - 100 ** -k / sumGeo)).toBeLessThan(1e-12)
+        expect(pca.explainedVariance[0] / 1e8).toBeCloseTo(1, 9)
+        expect(pca.explainedVariance[1] / 1e6).toBeCloseTo(1, 9)
+      }
+    })
+
+    it('rango 3 en 4 columnas, escala 1e3 (caso de T051): cuarto eje ortogonal y x̂ = x', () => {
+      // Puntos ±1e3·Hₖ, k = 1..3 (filas (1,1,1,1), (1,1,−1,−1), (1,−1,1,−1)); n = 6, media 0.
+      // Σ = (1/6)·2·Σₖ 1e6·Hₖ·Hₖᵀ = (1e6/3)·4·(u₁u₁ᵀ + u₂u₂ᵀ + u₃u₃ᵀ) ⇒ λ = 4e6/3 (triple), 0.
+      // Traza 4e6 ⇒ ratios 1/3, 1/3, 1/3 y 0. El eje nulo es u₄ = (1,−1,−1,1)/2.
+      // Autovalor triple: la base de los tres primeros ejes es libre; se comprueba que sea
+      // ortonormal, ⊥ u₄, y que x̂ = x. Medido (error máx. |x − x̂|, 6 semillas): correcto ≤ 1e-12; sin ortogonalizar ≥ 1e3.
+      const X = axisData(4, [1e3, 1e3, 1e3, 0])
+      const u4 = [0.5, -0.5, -0.5, 0.5]
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        seedRandom(seed)
+        const pca = new PCA(4)
+        pca.fit(X)
+        const C = pca.components
+        expect(maxOrthoError(C, 3)).toBeLessThan(1e-9)
+        for (let k = 0; k < 3; k++) expect(Math.abs(dot(C[k], u4))).toBeLessThan(1e-9)
+        // El cuarto eje es ⊥ a los tres primeros (puede salir con norma ≈ 0 si λ₄ = 0 y el
+        // ruido de Σ cae bajo el umbral de normalización: también cumple |c₄·cₖ| ≈ 0).
+        for (let k = 0; k < 3; k++) expect(Math.abs(dot(C[3], C[k]))).toBeLessThan(1e-9)
+        expect(maxReconstructionError(pca, X)).toBeLessThan(1e-6)
+        pca.explainedVariance.slice(0, 3).forEach(l => expect(l / (4e6 / 3)).toBeCloseTo(1, 9))
+        expect(Math.abs(pca.explainedVariance[3])).toBeLessThan(1e-6)
+        const r = pca.explainedVarianceRatio()
+        for (let k = 0; k < 3; k++) expect(r[k]).toBeCloseTo(1 / 3, 9)
+      }
+    })
+
+    it('autovalores casi iguales (1.002001, 1.00100025, 1, 0.99900025): ejes ortonormales', () => {
+      // p = K = 4, aₖ = (1.001, 1.0005, 1, 0.9995) ⇒ λₖ = aₖ² = 1.002001, 1.00100025, 1, 0.99900025
+      // (cabecera), suma 4.0020015, ratio aₖ²/Σa². Huecos relativos ~5e-4 ⇒ ejes ≈ H₀…H₃/2.
+      // Medido: ortonormalidad correcta ≤ 5e-16; sin ortogonalizar en el bucle ≥ 5.6e-8.
+      const amps = [1.001, 1.0005, 1, 0.9995]
+      const X = axisData(4, amps)
+      const H = hadamard(4)
+      const total = amps.reduce((s, a) => s + a * a, 0)
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const pca = new PCA(4)
+        pca.fit(X)
+        expect(maxOrthoError(pca.components, 4)).toBeLessThan(1e-10)
+        expect(maxReconstructionError(pca, X)).toBeLessThan(1e-9)
+        amps.forEach((a, k) => {
+          expect(Math.abs(pca.explainedVariance[k] - a * a)).toBeLessThan(1e-8)
+          expect(Math.abs(pca.explainedVarianceRatio()[k] - (a * a) / total)).toBeLessThan(1e-8)
+          expect(Math.abs(dot(pca.components[k], H[k])) / 2).toBeGreaterThan(1 - 1e-8)
+        })
+      }
     })
   })
 
