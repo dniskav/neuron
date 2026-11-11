@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Trainer } from '../src/Trainer';
 import { NetworkN } from '../src/NetworkN';
 import type { TrainableNetwork } from '../src/Trainer';
+import { f1Score, precision, recall } from '../src/Metrics';
 
 describe('Trainer', () => {
   // ── Basic tests (existing) ──────────────────────────────────────────────
@@ -485,5 +486,121 @@ describe('Trainer', () => {
     const net = new NetworkN([2, 4, 1]);
     const trainer = new Trainer(net, { verbose: true, epochs: 5 });
     expect(trainer.verbose).toBe(true);
+  });
+});
+
+// ── T019: f1 is the mean of per-class F1 (as Metrics.f1Score), not 2PR/(P+R) ──
+
+// Fake model with fixed outputs: sample i (input [i]) always gets class pred[i].
+// `train` does nothing, so the metrics after one epoch are those of this table.
+function fixedModel(pred: number[], nClasses: number, single = false): TrainableNetwork & {
+  predict(x: number[]): number[];
+} {
+  return {
+    train: () => 0,
+    predict: (x: number[]) => {
+      const c = pred[x[0]];
+      if (single) return [c];
+      const out = new Array(nClasses).fill(0);
+      out[c] = 1;
+      return out;
+    },
+  };
+}
+
+function oneHot(labels: number[], k: number): number[][] {
+  return labels.map((c) => {
+    const v = new Array(k).fill(0);
+    v[c] = 1;
+    return v;
+  });
+}
+
+function trainerMetricsFor(yTrue: number[], yPred: number[], k: number) {
+  const t = new Trainer(fixedModel(yPred, k), { epochs: 1, lr: 0.1, computeMetrics: true });
+  t.train({ inputs: yTrue.map((_, i) => [i]), targets: oneHot(yTrue, k) });
+  return t.getMetrics()[0];
+}
+
+describe('Trainer f1 (T019)', () => {
+  it('3 classes, unbalanced: f1 is the mean of per-class F1 (hand-derived)', () => {
+    // Confusion matrix C[true][pred], 8 samples (class sizes 3, 1, 4):
+    //        pred0 pred1 pred2
+    //  true0   1     2     0
+    //  true1   0     1     0
+    //  true2   0     0     4
+    // class 0: tp=1, predicted=1, actual=3 -> P=1,   R=1/3 -> F1 = 2*1*(1/3)/(4/3) = 1/2
+    // class 1: tp=1, predicted=3, actual=1 -> P=1/3, R=1   -> F1 = 1/2
+    // class 2: tp=4, predicted=4, actual=4 -> P=1,   R=1   -> F1 = 1
+    // macro P = (1+1/3+1)/3 = 7/9, macro R = (1/3+1+1)/3 = 7/9
+    // mean of F1 = (1/2+1/2+1)/3 = 2/3   (new)
+    // harmonic of macros = 2*(7/9)(7/9)/(14/9) = 7/9   (old, wrong)
+    const yTrue = [0, 0, 0, 1, 2, 2, 2, 2];
+    const yPred = [0, 1, 1, 1, 2, 2, 2, 2];
+    const m = trainerMetricsFor(yTrue, yPred, 3);
+    expect(m.f1).toBeCloseTo(2 / 3, 12);
+    expect(m.precision).toBeCloseTo(7 / 9, 12);
+    expect(m.recall).toBeCloseTo(7 / 9, 12);
+    expect(m.accuracy).toBeCloseTo(6 / 8, 12);
+  });
+
+  it('a class with P + R = 0 has F1 0 and the result is finite', () => {
+    // C[true][pred], 5 samples:
+    //  true0: 2 -> pred0 ; true1: 1 -> pred1 ; true2: 2 -> pred1 (class 2 never right, never predicted)
+    // class 0: P=1, R=1 -> F1=1
+    // class 1: tp=1, predicted=3, actual=1 -> P=1/3, R=1 -> F1 = 2*(1/3)/(4/3) = 1/2
+    // class 2: tp=0, predicted=0, actual=2 -> P=0, R=0 -> F1 = 0 (guard, not 0/0)
+    // mean F1 = (1 + 1/2 + 0)/3 = 1/2   (old formula: 8/15)
+    const yTrue = [0, 0, 1, 2, 2];
+    const yPred = [0, 0, 1, 1, 1];
+    const m = trainerMetricsFor(yTrue, yPred, 3);
+    expect(Number.isFinite(m.f1)).toBe(true);
+    expect(m.f1).toBeCloseTo(1 / 2, 12);
+  });
+
+  it('matches Metrics macro f1, precision and recall on the same predictions', () => {
+    const yTrue = [0, 0, 0, 1, 2, 2, 2, 2, 1, 0];
+    const yPred = [0, 1, 1, 1, 2, 0, 2, 2, 2, 0];
+    const m = trainerMetricsFor(yTrue, yPred, 3);
+    expect(Math.abs(m.f1 - f1Score(yTrue, yPred))).toBeLessThan(1e-12);
+    expect(Math.abs(m.precision - precision(yTrue, yPred))).toBeLessThan(1e-12);
+    expect(Math.abs(m.recall - recall(yTrue, yPred))).toBeLessThan(1e-12);
+  });
+
+  it('matches Metrics.f1Score on the predictions of a trained NetworkN', () => {
+    const net = new NetworkN([2, 6, 3]);
+    const inputs = [[0, 0], [0, 1], [1, 0], [1, 1], [0.5, 0.5], [0.2, 0.9]];
+    const labels = [0, 1, 1, 2, 2, 0];
+    const t = new Trainer(net, { epochs: 30, lr: 0.3, computeMetrics: true });
+    t.train({ inputs, targets: oneHot(labels, 3) });
+    const preds = inputs.map((x) => {
+      const o = net.predict(x);
+      return o.indexOf(Math.max(...o));
+    });
+    const last = t.getMetrics()[29];
+    expect(Math.abs(last.f1 - f1Score(labels, preds))).toBeLessThan(1e-12);
+  });
+
+  it('golden: binary single output where both formulas agree stays the same', () => {
+    // C = [[3,1],[1,3]]: both classes have P = R = 3/4, so F1 = 3/4 either way.
+    const yTrue = [0, 0, 0, 0, 1, 1, 1, 1];
+    const yPred = [0, 0, 0, 1, 1, 1, 1, 0];
+    const t = new Trainer(fixedModel(yPred, 2, true), { epochs: 1, lr: 0.1, computeMetrics: true });
+    t.train({ inputs: yTrue.map((_, i) => [i]), targets: yTrue.map((c) => [c]) });
+    const m = t.getMetrics()[0];
+    expect(m.f1).toBeCloseTo(0.75, 12);
+    expect(m.accuracy).toBeCloseTo(0.75, 12);
+  });
+
+  // Known difference: Trainer uses K = target width (2 for single output), so a
+  // class with no samples and no predictions inside that K counts as F1 0 in the
+  // mean; Metrics uses K = max label + 1 over the data, so a trailing empty class
+  // is not counted there. Interior empty classes count as 0 in both.
+  it('a trailing class with no samples counts as F1 0 in Trainer (K = target width)', () => {
+    const yTrue = [0, 0, 1, 1];
+    const yPred = [0, 0, 1, 1];
+    const m = trainerMetricsFor(yTrue, yPred, 3);
+    expect(m.f1).toBeCloseTo(2 / 3, 12);
+    expect(f1Score(yTrue, yPred)).toBeCloseTo(1, 12);
   });
 });
