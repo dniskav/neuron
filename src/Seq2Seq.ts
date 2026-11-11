@@ -38,6 +38,7 @@
 
 import { LSTMLayer } from "./LSTMLayer";
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validateArray } from "./Validation";
 
 // ── Input checks (T040). Run before any LSTM state or weight is touched.
 function checkLr(where: string, lr: number): void {
@@ -54,6 +55,8 @@ function checkRows(where: string, name: string, rows: unknown, width: number): v
     if (!Array.isArray(row) || row.length !== width) {
       throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
     }
+    // T060: NaN/Infinity inside a row is rejected too (it used to flow through silently).
+    validateArray(row, width, `${where}: ${name}[${t}]`);
   });
 }
 
@@ -61,6 +64,7 @@ function checkVector(where: string, name: string, v: unknown, width: number): vo
   if (!Array.isArray(v) || v.length !== width) {
     throw new Error(`${where}: ${name} must be an array of length ${width}`);
   }
+  validateArray(v, width, `${where}: ${name}`);
 }
 
 export class Seq2Seq {
@@ -129,6 +133,10 @@ export class Seq2Seq {
   // Runs the encoder over inputSequence and returns the final (h, c) pair.
   // The context vector summarizes the full input sequence.
   encode(inputSequence: number[][]): { h: number[], c: number[] } {
+    // Decision of the user (2026-11-11): an empty sequence throws, like trainStep.
+    if (Array.isArray(inputSequence) && inputSequence.length === 0) {
+      throw new Error('Seq2Seq.encode: inputSequence must not be empty');
+    }
     checkRows('Seq2Seq.encode', 'inputSequence', inputSequence, this.inputSize);
     this.encoder.reset();
     for (const x of inputSequence) {

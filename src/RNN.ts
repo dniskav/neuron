@@ -31,6 +31,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { validateArray } from "./Validation";
 
 function tanh(x: number): number {
   // Math.tanh is stable: (e^{2x} − 1)/(e^{2x} + 1) gave NaN (Infinity/Infinity) for x ≳ 355.
@@ -53,7 +54,14 @@ function checkRows(where: string, name: string, rows: unknown, width: number): v
     if (!Array.isArray(row) || row.length !== width) {
       throw new Error(`${where}: ${name}[${t}] must be an array of length ${width}`);
     }
+    // T060: NaN/Infinity inside a row is rejected too (it used to flow through silently).
+    validateArray(row, width, `${where}: ${name}[${t}]`);
   });
+}
+
+// Sizes must be finite positive integers: `NaN <= 0` is false, so a plain `<= 0` accepted NaN.
+function isSize(n: unknown): boolean {
+  return typeof n === "number" && Number.isInteger(n) && n > 0;
 }
 
 // ─── Step record (stored for BPTT) ───────────────────────────────────────────
@@ -100,8 +108,8 @@ export class RNN {
     outputSize: number,
     optimizerFactory: OptimizerFactory = () => new SGD()
   ) {
-    if (inputSize <= 0 || hiddenSize <= 0 || outputSize <= 0) {
-      throw new Error('RNN: all sizes must be positive');
+    if (!isSize(inputSize) || !isSize(hiddenSize) || !isSize(outputSize)) {
+      throw new Error('RNN: all sizes must be positive integers');
     }
     this.inputSize  = inputSize;
     this.hiddenSize = hiddenSize;
@@ -198,6 +206,10 @@ export class RNN {
   // Returns the mean squared error loss.
   backward(sequence: number[][], targets: number[][], lr: number): number {
     checkLr('RNN.backward', lr);
+    // Decision of the user (2026-11-11): an empty sequence throws, like forward/train/trainStep.
+    if (Array.isArray(sequence) && sequence.length === 0) {
+      throw new Error('RNN.backward: sequence must not be empty');
+    }
     checkRows('RNN.backward', 'sequence', sequence, this.inputSize);
     checkRows('RNN.backward', 'targets', targets, this.outputSize);
     if (targets.length !== sequence.length) {
@@ -208,8 +220,6 @@ export class RNN {
 
     // Run forward to populate trajectory (discards previous state so sequence is fresh)
     this.reset();
-    // An empty sequence has nothing to learn: returns 0 with the state reset (pinned by RNN.test.ts).
-    if (sequence.length === 0) return 0;
     const { outputs } = this.forward(sequence);
 
     const T = this._traj.length;
