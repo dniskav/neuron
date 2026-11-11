@@ -90,9 +90,13 @@ export class LossPlotter {
     }
     const range  = maxL - minL || 1;
 
-    // Number of characters reserved for the Y-axis label (e.g. "0.1234 ┤")
-    const yLabelW = 8;
-    // Actual plot area width (inside the axes)
+    // Width of the Y-axis label column (e.g. "0.1234 ┤"): at least 8 characters,
+    // and wide enough for the longest label that can be drawn (negative or 7-char
+    // values such as "-0.2500" or "0.01417" would otherwise push the axis out of line).
+    const midL = (minL + maxL) / 2;
+    const longestLabel = Math.max(_fmtNum(maxL).length, _fmtNum(minL).length, _fmtNum(midL).length);
+    const yLabelW = Math.max(8, longestLabel + 2);
+    // Actual plot area width (inside the axes); the whole block is `width` wide
     const plotW   = Math.max(4, this.width - yLabelW - 1);
     const plotH   = Math.max(3, this.height);
 
@@ -115,10 +119,14 @@ export class LossPlotter {
     // Build the output lines
     const lines: string[] = [];
 
-    // Title line
-    const titlePadded = ` ${this.title} `;
-    const dashCount   = Math.max(0, plotW + yLabelW - titlePadded.length);
-    lines.push('┌' + titlePadded + '─'.repeat(dashCount) + '┐');
+    // Title line: '┌' + inner + '┐', where inner has the same width as the rows
+    // between their first and last column (yLabelW + plotW - 1 characters).
+    // A title longer than that is cut so the corner stays in the border column.
+    const inner = yLabelW + plotW - 1;
+    let titlePadded = [...` ${this.title} `];
+    if (titlePadded.length > inner) titlePadded = titlePadded.slice(0, inner);
+    const dashCount = inner - titlePadded.length;
+    lines.push('┌' + titlePadded.join('') + '─'.repeat(dashCount) + '┐');
 
     // Plot rows with Y-axis labels
     for (let row = 0; row < plotH; row++) {
@@ -128,8 +136,7 @@ export class LossPlotter {
       } else if (row === plotH - 1) {
         label = _fmtNum(minL).padStart(yLabelW - 2) + ' ┤';
       } else if (row === Math.floor(plotH / 2)) {
-        const mid = (minL + maxL) / 2;
-        label = _fmtNum(mid).padStart(yLabelW - 2) + ' ┤';
+        label = _fmtNum(midL).padStart(yLabelW - 2) + ' ┤';
       } else {
         label = ' '.repeat(yLabelW - 1) + '│';
       }

@@ -22,8 +22,9 @@ import { restoreRandom, seedRandom } from './helpers/seed'
 //   pie: ' min=0.2500  max=1.000  last=0.2500  n=3'
 //   total de líneas: 1 (título) + 15 (filas) + 1 (eje x) + 1 (epoch) + 1 (pie) = 19
 //
-// Nota: la línea del título mide 61 (un carácter más que las filas). Es cosmético y no
-// se fija aquí; el test solo comprueba que empieza por '┌' y contiene el título.
+// Nota: la línea del título mide lo mismo que las filas (60). Antes del arreglo de T020
+// medía 61; la alineación completa se fija en el bloque «alineación del marco (T020)».
+// Este test solo comprueba que empieza por '┌' y contiene el título.
 
 const PLOT_W = 51
 const TICK_LABELS: Record<number, string> = {
@@ -249,5 +250,101 @@ describe('LossPlotter', () => {
       // una sola época '0': primera = última = '0', relleno = max(1, 51 - 1 - 1) = 49
       expect(lines[17]).toBe(' '.repeat(8) + '0' + ' '.repeat(49) + '0  epoch')
     })
+  })
+
+  // ─── alineación del marco (T020) ───────────────────────────────────────────
+  // El bloque del gráfico son las líneas 0..height+1 de render(): título, `height` filas
+  // y eje x. Todas miden lo mismo, y '┐', '│' y '┘' caen en la misma columna.
+  // Las líneas de epoch y pie quedan fuera del marco. Longitudes en caracteres (code points).
+
+  const SERIES_T020: Array<[string, number[]]> = [
+    ['exponencial de 100 puntos', Array.from({ length: 100 }, (_, e) => 2 * Math.exp(-0.05 * e))],
+    ['valores muy pequeños (1e-7)', [1e-7, 2e-7, 3e-7]],
+    ['valores grandes (123456.789)', [123456.789, 200000, 150000]],
+    ['negativos', [-5, -1, -3]],
+    ['negativos con etiquetas de 7 caracteres', [-0.2, -0.5, -1]],
+    ['serie constante', [0.5, 0.5, 0.5]],
+    ['un solo punto', [1]],
+  ]
+
+  // Comprueba el marco de un render con `height` filas; si se da `width`, todas las líneas
+  // del bloque deben medir exactamente `width`.
+  function expectFrameAligned(text: string, height: number, width?: number): void {
+    const all = text.split('\n')
+    expect(all).toHaveLength(height + 4) // título, filas, eje x, epoch y pie
+    const lines = all.slice(0, height + 2)
+    const widths = lines.map((l) => [...l].length)
+    expect(widths).toEqual(Array(lines.length).fill(widths[0]))
+    if (width !== undefined) expect(widths[0]).toBe(width)
+
+    const last = widths[0] - 1
+    expect(lines[0].startsWith('┌')).toBe(true)
+    expect([...lines[0]][last]).toBe('┐')
+    for (let r = 1; r <= height; r++) expect([...lines[r]][last]).toBe('│')
+    expect([...lines[height + 1]][last]).toBe('┘')
+    expect([...lines[height + 1]].includes('└')).toBe(true)
+
+    // las etiquetas del eje Y terminan en '┤' en una única columna
+    const tickCols = lines
+      .slice(1, height + 1)
+      .filter((l) => l.includes('┤'))
+      .map((l) => [...l].indexOf('┤'))
+    expect(tickCols.length).toBeGreaterThan(0)
+    expect(new Set(tickCols).size).toBe(1)
+  }
+
+  it('caso mínimo del defecto: width 40, height 6, 2·e^(-0.05e) con e = 0..99 mide 40 en todo el marco', () => {
+    // Derivación a mano (antes de T020: título 41, filas 40):
+    //   min = 2·e^(-4.95) ≈ 0.014167 → toPrecision(4) = '0.01417' (7 caracteres)
+    //   max = 2.000; medio = (2 + 0.014167) / 2 ≈ 1.00708 → '1.007'
+    //   yLabelW = max(8, 7 + 2) = 9; plotW = max(4, 40 - 9 - 1) = 30
+    //   fila = yLabelW + plotW + 1 = 9 + 30 + 1 = 40 = width
+    //   título = '┌' + inner + '┐', con inner = yLabelW + plotW - 1 = 38 → 40
+    const plotter = new LossPlotter({ width: 40, height: 6 })
+    for (let e = 0; e < 100; e++) plotter.add(2 * Math.exp(-0.05 * e), e)
+    const text = plotter.render()
+    const lines = text.split('\n')
+
+    expectFrameAligned(text, 6, 40)
+    expect(lines[1].startsWith('  2.000 ┤')).toBe(true) // max, fila 0
+    expect(lines[4].startsWith('  1.007 ┤')).toBe(true) // medio, fila floor(6/2) = 3
+    expect(lines[6].startsWith('0.01417 ┤')).toBe(true) // min, fila 5
+    expect(lines[8]).toContain('99  epoch')
+  })
+
+  for (const [name, losses] of SERIES_T020) {
+    it(`marco alineado con width 40 y height 6: ${name}`, () => {
+      const plotter = new LossPlotter({ width: 40, height: 6 })
+      plotter.addMultiple(losses)
+      expectFrameAligned(plotter.render(), 6, 40)
+    })
+  }
+
+  it('combinaciones de width (20, 40, 60), height (3, 6, 15) y series quedan alineadas', () => {
+    for (const width of [20, 40, 60]) {
+      for (const height of [3, 6, 15]) {
+        for (const [, losses] of SERIES_T020) {
+          const plotter = new LossPlotter({ width, height })
+          plotter.addMultiple(losses)
+          expectFrameAligned(plotter.render(), height, width)
+        }
+      }
+    }
+  })
+
+  it('valores por defecto (width 60, height 15) con etiquetas negativas de 7 caracteres', () => {
+    const plotter = new LossPlotter()
+    plotter.addMultiple([-0.2, -0.5, -1])
+    expectFrameAligned(plotter.render(), 15, 60)
+  })
+
+  it('un título más largo que el marco se corta y el borde derecho sigue alineado', () => {
+    const plotter = new LossPlotter({ width: 20, height: 3, title: 'Un título mucho más largo que el marco' })
+    plotter.addMultiple([1, 2, 3])
+    const text = plotter.render()
+
+    expectFrameAligned(text, 3, 20)
+    // interior = yLabelW + plotW - 1 = 8 + 11 - 1 = 18 caracteres: ' Un título mucho m'
+    expect(text.split('\n')[0]).toBe('┌ Un título mucho m┐')
   })
 })
