@@ -132,6 +132,25 @@ describe('rocCurve / auc', () => {
     expect(auc([1, 0, 1, 0], [0.9, 0.8, 0.7, 0.6])).toBeCloseTo(0.75, 12)
   })
 
+  it('empate entre clases, mínimo: yTrue=[0,1], scores=[.5,.5] → AUC = 1/2', () => {
+    // Umbrales: único 0.5, más 1.5. t=1.5: (fpr 0, tpr 0). t=0.5: ambos predichos 1 → FP=1 de N=1
+    // (fpr 1) y TP=1 de P=1 (tpr 1). Un solo trapecio de (0,0) a (1,1): dx=1, avgY=1/2 → AUC = 1/2.
+    // Mann-Whitney: el empate pos/neg cuenta 1/2.
+    expect(auc([0, 1], [0.5, 0.5])).toBeCloseTo(1 / 2, 12)
+  })
+
+  it('empate entre clases, mixto: 6 muestras con un empate pos/neg → AUC = 11/18', () => {
+    // yTrue=[1,0,1,0,1,0], scores=[.9,.8,.6,.6,.4,.2]. P=3, N=3.
+    // Positivos: 0.9, 0.6, 0.4. Negativos: 0.8, 0.6, 0.2. Empate: 0.6 (pos) con 0.6 (neg).
+    // Pares (pos,neg), 9 en total (Mann-Whitney, empate = 1/2):
+    //   0.9 gana a 0.8, 0.6, 0.2 → 3.   0.6 pierde con 0.8, empata con 0.6 (1/2), gana a 0.2 → 3/2.
+    //   0.4 pierde con 0.8 y 0.6, gana a 0.2 → 1.   Total 3 + 3/2 + 1 = 11/2 → (11/2)/9 = 11/18.
+    // Trapecio sobre la curva (fpr,tpr) con puntos (0,0),(0,1/3),(1/3,1/3),(2/3,2/3),(2/3,1),(1,1):
+    //   (0,0)-(0,1/3): dx=0.   (0,1/3)-(1/3,1/3): 1/3·1/3 = 1/9.   (1/3,1/3)-(2/3,2/3): 1/3·1/2 = 1/6.
+    //   (2/3,2/3)-(2/3,1): dx=0.   (2/3,1)-(1,1): 1/3·1 = 1/3.   Suma = 1/9 + 1/6 + 1/3 = 11/18.
+    expect(auc([1, 0, 1, 0, 1, 0], [0.9, 0.8, 0.6, 0.6, 0.4, 0.2])).toBeCloseTo(11 / 18, 12)
+  })
+
   it('rocCurve en el caso intermedio: puntos (fpr, tpr) y umbrales a mano', () => {
     // Umbrales desc: 0.9, 0.8, 0.7, 0.6, más uno por encima del máximo: 0.9+1 = 1.9.
     // P=2, N=2. Para cada umbral t, pred = score ≥ t:
@@ -255,6 +274,52 @@ describe('classificationReport', () => {
     )
     expect(row('macro avg')).toBe(
       'macro avg'.padEnd(10) + '0.8333'.padStart(10) + '0.7500'.padStart(10) + '0.7333'.padStart(10) + '4'.padStart(10),
+    )
+  })
+
+  it('soportes distintos por clase (3 de la clase 0, 1 de la clase 1)', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    // yTrue=[0,0,0,1], yPred=[0,0,1,1].
+    // Clase 0: TP=2 (i0,i1), FP=0, FN=1 (i2). P=2/2=1, R=2/3, F1=2·1·(2/3)/(5/3)=4/5. Soporte 3.
+    // Clase 1: TP=1 (i3), FP=1 (i2), FN=0. P=1/2, R=1/1=1, F1=2·(1/2)·1/(3/2)=2/3. Soporte 1.
+    // Macro: P=(1+1/2)/2=3/4=0.7500, R=(2/3+1)/2=5/6≈0.8333, F1=(4/5+2/3)/2=11/15≈0.7333. Soporte 4.
+    classificationReport([0, 0, 0, 1], [0, 0, 1, 1])
+
+    const rows = spy.mock.calls.map((c) => c[0] as string)
+    const row = (label: string): string | undefined => rows.find((r) => r.startsWith(label))
+
+    expect(row('class_0')).toBe(
+      'class_0'.padEnd(10) + '1.0000'.padStart(10) + '0.6667'.padStart(10) + '0.8000'.padStart(10) + '3'.padStart(10),
+    )
+    expect(row('class_1')).toBe(
+      'class_1'.padEnd(10) + '0.5000'.padStart(10) + '1.0000'.padStart(10) + '0.6667'.padStart(10) + '1'.padStart(10),
+    )
+    expect(row('macro avg')).toBe(
+      'macro avg'.padEnd(10) + '0.7500'.padStart(10) + '0.8333'.padStart(10) + '0.7333'.padStart(10) + '4'.padStart(10),
+    )
+  })
+
+  it('clase con precisión + recall = 0: F1 = 0 (no NaN) y promedios finitos', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    // yTrue=[0,0,1,1,2,2], yPred=[0,0,1,1,0,1]. K=3.
+    // Clase 0: TP=2 (i0,i1), FP=1 (i4), FN=0. P=2/3, R=2/2=1, F1=2·(2/3)·1/(5/3)=4/5. Soporte 2.
+    // Clase 1: TP=2 (i2,i3), FP=1 (i5), FN=0. P=2/3, R=1, F1=4/5. Soporte 2.
+    // Clase 2: nunca predicha correctamente. TP=0, FP=0 (nunca se predice 2), FN=2.
+    //   P = 0 por convención (tp+fp=0), R = 0/2 = 0, p+r = 0 → F1 = 0 (no 0/0).  Soporte 2.
+    // Macro: P=(2/3+2/3+0)/3=4/9≈0.4444, R=(1+1+0)/3=2/3≈0.6667, F1=(4/5+4/5+0)/3=8/15≈0.5333. Soporte 6.
+    classificationReport([0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 0, 1])
+
+    const rows = spy.mock.calls.map((c) => c[0] as string)
+    const row = (label: string): string | undefined => rows.find((r) => r.startsWith(label))
+
+    expect(row('class_2')).toBe(
+      'class_2'.padEnd(10) + '0.0000'.padStart(10) + '0.0000'.padStart(10) + '0.0000'.padStart(10) + '2'.padStart(10),
+    )
+    expect(row('class_0')).toBe(
+      'class_0'.padEnd(10) + '0.6667'.padStart(10) + '1.0000'.padStart(10) + '0.8000'.padStart(10) + '2'.padStart(10),
+    )
+    expect(row('macro avg')).toBe(
+      'macro avg'.padEnd(10) + '0.4444'.padStart(10) + '0.6667'.padStart(10) + '0.5333'.padStart(10) + '6'.padStart(10),
     )
   })
 })
