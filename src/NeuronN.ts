@@ -44,6 +44,10 @@ export class NeuronN {
   }
 
   train(inputs: number[], target: number, lr: number): void {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NeuronN.train: lr must be a finite number >= 0, got ${lr}`);
+    }
     const prediction = this.predict(inputs);
     const error = target - prediction;
     const grad = error * this.activation.dfn(prediction);

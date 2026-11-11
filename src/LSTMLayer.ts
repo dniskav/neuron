@@ -193,6 +193,10 @@ export class LSTMLayer {
     lr: number,
     dcFinal?: number[],
   ): { dh0: number[]; dc0: number[] } {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`LSTMLayer.backprop: lr must be a finite number >= 0, got ${lr}`);
+    }
     const T = this._traj.length;
     if (!Array.isArray(dh_seq)) {
       throw new Error(`LSTMLayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
