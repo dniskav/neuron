@@ -39,8 +39,10 @@
 //   Step 4 — KL divergence gradient:
 //     ∂KL/∂yi = 4 Σ_j (p_ij - q_ij)(yi - yj)(1 + ‖yi - yj‖²)^{-1}
 //
-//   Step 5 — Gradient descent with momentum:
-//     Y(t) = Y(t-1) + lr · grad + momentum · (Y(t-1) - Y(t-2))
+//   Step 5 — Gradient descent with momentum (the code subtracts the gradient):
+//     Y(t) = Y(t-1) - lr · grad + momentum · (Y(t-1) - Y(t-2))
+//     where grad = ∂KL/∂Y (with p_ij scaled by the early-exaggeration factor
+//     during the first iterations), and momentum is 0.5 or 0.8 (see below).
 //
 // ─── TRICKS ──────────────────────────────────────────────────────────────────
 //
@@ -69,7 +71,21 @@ export interface TSNEOptions {
    * Must be less than the number of data points.
    */
   perplexity?: number;
-  /** Learning rate for gradient descent. Default 200. */
+  /**
+   * Learning rate for gradient descent. Default 200.
+   *
+   * The stable range depends on n. The default is NOT safe for small n.
+   * Measured on one case, not a law: two clusters of n/2 points each in 5-D
+   * (centers 6 apart on every axis, uniform noise in [-1, 1) per axis), nIter = 300,
+   * seeds 1-3, 2-D output, final KL(P ‖ Q) and largest |coordinate|:
+   *   n = 30,  perplexity 5:  lr 5-20 converges (KL 0.21-0.25, |y| <= 18);
+   *                           lr 200 diverges (KL 1.4-2.1, |y| 390-574).
+   *   n = 60,  perplexity 10: lr 200 is unstable (KL 0.34-1.21, |y| 63-238).
+   *   n = 100, perplexity 15: lr 5-200 converges (KL 0.37-0.49, |y| <= 28).
+   *   n = 200, perplexity 30: lr 5-400 converges (KL 0.44-0.64, |y| <= 27).
+   * So for n of about 100 or more the default works; for n of a few dozen use
+   * a much smaller value (5-10 worked at n = 30).
+   */
   lr?: number;
   /** Number of gradient-descent iterations. Default 1000. */
   nIter?: number;
