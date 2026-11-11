@@ -47,11 +47,17 @@ export interface WeightStats {
 export class WeightInspector {
   // ── Per-layer statistics ─────────────────────────────────────────────────
   // Returns one WeightStats per layer in network.layers order.
+  // deadThreshold: NaN o negativo lanza; 0 es válido (ningún peso queda muerto).
+  // Con pesos NaN, mean y std valen NaN; min y max ignoran los NaN (las comparaciones
+  // con NaN son falsas) y un NaN nunca cuenta como muerto.
   static inspect(network: NetworkN, deadThreshold = 1e-3): WeightStats[] {
+    _checkThreshold(deadThreshold, 'WeightInspector.inspect');
     return network.layers.map((layer) => {
       const weights: number[] = [];
       for (const neuron of layer.neurons) {
-        weights.push(...neuron.weights, neuron.bias);
+        // Loops, not a push spread: a spread of >~125 000 arguments overflows the stack.
+        for (const v of neuron.weights) weights.push(v);
+        weights.push(neuron.bias);
       }
       return _computeStats(weights, deadThreshold);
     });
@@ -60,10 +66,12 @@ export class WeightInspector {
   // ── Global statistics ────────────────────────────────────────────────────
   // Aggregates all weights across the entire network.
   static inspectAll(network: NetworkN, deadThreshold = 1e-3): WeightStats {
+    _checkThreshold(deadThreshold, 'WeightInspector.inspectAll');
     const allWeights: number[] = [];
     for (const layer of network.layers) {
       for (const neuron of layer.neurons) {
-        allWeights.push(...neuron.weights, neuron.bias);
+        for (const v of neuron.weights) allWeights.push(v);
+        allWeights.push(neuron.bias);
       }
     }
     return _computeStats(allWeights, deadThreshold);
@@ -109,11 +117,31 @@ export class WeightInspector {
   //   Run net.predict() for each validation sample and record the output of
   //   each hidden layer. Pass those as `activations` here.
   //
-  // threshold: activations below this are counted as "dead" (default: 1e-6).
+  // threshold: una neurona es "muerta" si |activación| < threshold en todas las
+  // muestras (default: 1e-6). Comparación estricta: un valor igual al umbral vive.
+  // NaN o negativo lanzan; 0 es válido.
+  //
+  // Lanza si las filas no tienen todas la misma longitud o si hay valores NaN/no finitos.
   //
   static countDeadReLUs(activations: number[][], threshold = 1e-6): number {
+    _checkThreshold(threshold, 'WeightInspector.countDeadReLUs');
     if (activations.length === 0) return 0;
     const numNeurons = activations[0].length;
+    activations.forEach((row, i) => {
+      if (!Array.isArray(row) || row.length !== numNeurons) {
+        const len = Array.isArray(row) ? row.length : typeof row;
+        throw new Error(
+          `WeightInspector.countDeadReLUs: row ${i} has length ${len}, expected ${numNeurons}`
+        );
+      }
+      row.forEach((v, j) => {
+        if (typeof v !== 'number' || !Number.isFinite(v)) {
+          throw new Error(
+            `WeightInspector.countDeadReLUs: activation at row ${i}, neuron ${j} must be finite, got ${v}`
+          );
+        }
+      });
+    });
     let dead = 0;
     for (let j = 0; j < numNeurons; j++) {
       const allDead = activations.every((row) => Math.abs(row[j]) < threshold);
@@ -124,6 +152,13 @@ export class WeightInspector {
 }
 
 // ─── Private Helpers ──────────────────────────────────────────────────────────
+
+// Un umbral de "muerto" debe ser un número no negativo: NaN y valores negativos lanzan.
+function _checkThreshold(threshold: number, methodName: string): void {
+  if (typeof threshold !== 'number' || Number.isNaN(threshold) || threshold < 0) {
+    throw new Error(`${methodName}: threshold must be a non-negative number, got ${threshold}`);
+  }
+}
 
 function _computeStats(weights: number[], deadThreshold: number): WeightStats {
   const n = weights.length;

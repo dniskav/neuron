@@ -1,5 +1,7 @@
 // ─── Learning Rate Scheduler ─────────────────────────────────────────────────
 //
+import { validateNumber } from './Validation';
+
 // Provides common learning rate decay strategies:
 //   - stepDecay:     drop lr by a factor every N epochs
 //   - exponentialDecay: lr *= decayRate^epoch
@@ -15,16 +17,28 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Loop equivalent of a Math.min spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including +Infinity for [] and NaN if any element is NaN.
+function _minOf(values: number[]): number {
+  let m = Infinity;
+  for (const v of values) m = Math.min(m, v);
+  return m;
+}
+
 export class LRScheduler {
   // ── Step Decay ────────────────────────────────────────────────────────────
   // lr = initialLr * dropRate^floor(epoch / epochsDrop)
   stepDecay(lr: number, epoch: number, dropRate: number, epochsDrop: number): number {
+    if (!(epochsDrop > 0)) {
+      throw new Error(`LRScheduler.stepDecay: epochsDrop must be > 0, got ${epochsDrop}`);
+    }
     return lr * Math.pow(dropRate, Math.floor(epoch / epochsDrop))
   }
 
   // ── Exponential Decay ─────────────────────────────────────────────────────
   // lr = initialLr * decayRate^epoch
   exponentialDecay(lr: number, epoch: number, decayRate: number): number {
+    validateNumber(decayRate, 'LRScheduler.exponentialDecay: decayRate');
     return lr * Math.pow(decayRate, epoch)
   }
 
@@ -50,7 +64,7 @@ export class LRScheduler {
 
     // Check if loss has improved in the last `patience` epochs
     const recentLosses = history.slice(-patience)
-    const minRecentLoss = Math.min(...recentLosses)
+    const minRecentLoss = _minOf(recentLosses)
 
     // If current loss is not better than the minimum of recent losses, decay
     if (currentLoss >= minRecentLoss) {
@@ -63,6 +77,9 @@ export class LRScheduler {
   // ── Cosine Annealing ──────────────────────────────────────────────────────
   // lr = minLr + 0.5 * (maxLr - minLr) * (1 + cos(π * epoch / maxEpochs))
   cosineAnnealing(lr: number, epoch: number, maxEpochs: number, minLr = 0): number {
+    if (!(maxEpochs > 0)) {
+      throw new Error(`LRScheduler.cosineAnnealing: maxEpochs must be > 0, got ${maxEpochs}`);
+    }
     return minLr + 0.5 * (lr - minLr) * (1 + Math.cos(Math.PI * epoch / maxEpochs))
   }
 }

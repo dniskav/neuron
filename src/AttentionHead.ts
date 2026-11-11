@@ -187,9 +187,9 @@ export class AttentionHead {
   // Order: Wq, Wk, Wv.
   getWeights(): number[] {
     const w: number[] = [];
-    for (const row of this.Wq.W) w.push(...row);
-    for (const row of this.Wk.W) w.push(...row);
-    for (const row of this.Wv.W) w.push(...row);
+    for (const row of this.Wq.W) for (const v of row) w.push(v);
+    for (const row of this.Wk.W) for (const v of row) w.push(v);
+    for (const row of this.Wv.W) for (const v of row) w.push(v);
     return w;
   }
 

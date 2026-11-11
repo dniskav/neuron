@@ -83,7 +83,19 @@ export class DatasetLoader {
     const header = rows[0]
     const dataRows = rows.slice(1)
 
-    return DatasetLoader._buildDataPair(header, dataRows, options)
+    // Rows must have as many fields as the header: a short row would turn the
+    // missing cell into the category "undefined", a long one would lose data.
+    // (Blank lines, including the one after a final newline, were already
+    // dropped by the parser, so they never reach this check.)
+    dataRows.forEach((row, i) => {
+      if (row.length !== header.length) {
+        throw new Error(
+          `DatasetLoader.fromCSV: row ${i + 1} has ${row.length} fields, expected ${header.length}.`,
+        )
+      }
+    })
+
+    return DatasetLoader._buildDataPair('fromCSV', header, dataRows, options)
   }
 
   // ── JSON ─────────────────────────────────────────────────────────────────────
@@ -110,11 +122,12 @@ export class DatasetLoader {
     const header = Object.keys(records[0])
     const dataRows = records.map(row => header.map(col => String(row[col] ?? '')))
 
-    return DatasetLoader._buildDataPair(header, dataRows, options)
+    return DatasetLoader._buildDataPair('fromJSON', header, dataRows, options)
   }
 
   // ── Private: shared pipeline ──────────────────────────────────────────────
   private static _buildDataPair(
+    method: 'fromCSV' | 'fromJSON',
     header: string[],
     dataRows: string[][],
     options: DatasetLoaderOptions,
@@ -144,6 +157,15 @@ export class DatasetLoader {
           // Build sorted unique categories for determinism
           const unique = [...new Set(values)].sort()
           catMaps[col] = Object.fromEntries(unique.map((v, i) => [v, i]))
+        } else {
+          // An empty numeric cell would become parseFloat('') = NaN and poison
+          // training silently: fail with the 1-based data row and the column.
+          const emptyAt = values.findIndex(v => v === '')
+          if (emptyAt !== -1) {
+            throw new Error(
+              `DatasetLoader.${method}: empty value in numeric column "${col}" at row ${emptyAt + 1}.`,
+            )
+          }
         }
       }
     }

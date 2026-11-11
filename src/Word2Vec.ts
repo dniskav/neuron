@@ -56,6 +56,14 @@ export interface Word2VecOptions {
   minCount?: number;
 }
 
+// Loop equivalent of a Math.max spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including -Infinity for [] and NaN if any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
 export class Word2Vec {
   /** Learned word vectors, shape [vocabSize][embeddingDim]. */
   embeddings: number[][];
@@ -149,6 +157,14 @@ export class Word2Vec {
   // clarity. This is O(vocabSize) per step — for large vocabularies you would
   // normally switch to negative sampling or hierarchical softmax.
   train(sentences: string[][], lr = 0.025, epochs = 5): number[] {
+    // Validate before touching state (buildVocab below mutates the model).
+    // lr = 0 stays valid: it is a no-op used by existing tests.
+    if (!Number.isFinite(lr) || lr < 0) {
+      throw new Error(`Word2Vec.train: lr must be a finite number >= 0, got ${lr}`);
+    }
+    if (!Number.isInteger(epochs) || epochs < 1) {
+      throw new Error(`Word2Vec.train: epochs must be an integer >= 1, got ${epochs}`);
+    }
     if (this.vocabSize === 0) this.buildVocab(sentences);
 
     const lossHistory: number[] = [];
@@ -388,7 +404,7 @@ export class Word2Vec {
 // Subtract max before exp to prevent overflow. The constant cancels in the ratio.
 //   softmax(x)_i = exp(x_i - max) / Σ_j exp(x_j - max)
 function _softmax(scores: number[]): number[] {
-  const max = Math.max(...scores);
+  const max = _maxOf(scores);
   const exps = scores.map(s => Math.exp(s - max));
   const sum  = exps.reduce((a, b) => a + b, 0);
   return exps.map(e => e / sum);

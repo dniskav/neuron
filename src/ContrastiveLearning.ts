@@ -21,6 +21,7 @@
 import { NetworkN }          from './NetworkN';
 import { NetworkNOptions }   from './NetworkN';
 import { relu, linear }      from './activations';
+import { validateArray }     from './Validation';
 
 // ─── AUGMENTER ────────────────────────────────────────────────────────────────
 //
@@ -222,6 +223,7 @@ export class ContrastiveLearning {
   //
   // Forward-only pass. Used for validation / monitoring during training.
   computeLoss(pairs: [number[], number[]][]): number {
+    this._checkPairs(pairs, 'ContrastiveLearning.computeLoss');
     const { projections, N } = this._forwardProjections(pairs);
     return this._ntXentLoss(projections, N);
   }
@@ -246,6 +248,11 @@ export class ContrastiveLearning {
   //
   // Returns: NT-Xent loss before the weight update.
   trainStep(pairs: [number[], number[]][], lr: number): number {
+    // Validated before any weight changes: pairs, then lr finite and >= 0 (lr = 0 is a no-op).
+    this._checkPairs(pairs, 'ContrastiveLearning.trainStep');
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`ContrastiveLearning.trainStep: lr must be a finite number >= 0, got ${lr}`);
+    }
     const loss = this.computeLoss(pairs);
 
     // Finite-difference gradient approximation, SIMULTANEOUS step:
@@ -300,6 +307,24 @@ export class ContrastiveLearning {
     }
 
     return loss;
+  }
+
+  // ── Private: validate the batch of pairs ─────────────────────────────────
+  //
+  // Non-empty list of pairs; each pair is two views of the encoder's input width, all finite.
+  // With no pairs there are no anchors and the NT-Xent mean would be 0/0 (NaN).
+  private _checkPairs(pairs: unknown, method: string): void {
+    if (!Array.isArray(pairs) || pairs.length === 0) {
+      throw new Error(`${method}: pairs must be a non-empty array`);
+    }
+    const inputWidth = this.encoder.structure[0];
+    (pairs as unknown[]).forEach((pair, i) => {
+      if (!Array.isArray(pair) || pair.length !== 2) {
+        throw new Error(`${method}: pairs[${i}] must be a pair of 2 views`);
+      }
+      validateArray(pair[0], inputWidth, `${method}: pairs[${i}][0]`);
+      validateArray(pair[1], inputWidth, `${method}: pairs[${i}][1]`);
+    });
   }
 
   // ── Private: forward all pairs through the projection head ───────────────

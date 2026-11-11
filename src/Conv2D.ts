@@ -287,7 +287,8 @@ export class Conv2D {
         for (const kw of kh)
           for (const v of kw)
             w.push(v);
-    w.push(...this.biases);
+    // Loop, not a push spread: a spread of >~125 000 arguments overflows the stack.
+    for (const b of this.biases) w.push(b);
     return w;
   }
 

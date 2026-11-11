@@ -35,12 +35,15 @@
 //      weights) and through G's output derivative, then trainWithDeltas.
 //
 // Contract: D must have a SIGMOID output (BCE deltas `1 - D` / `-D` assume it).
-// This is documented, not validated. The generator step is exact w.r.t. D at
+// The constructor checks it: the output activation of D must be the `sigmoid` object of
+// ./activations, otherwise it throws. The generator step is exact w.r.t. D at
 // its post-update weights; an oracle that freezes D at the pre-step weights
 // differs by O(lr).
 //
 
 import { NetworkN, NetworkNOptions } from "./NetworkN";
+import { sigmoid } from "./activations";
+import { validateArray } from "./Validation";
 
 // ─── GAN ─────────────────────────────────────────────────────────────────────
 
@@ -68,6 +71,15 @@ export class GAN {
     // Discriminator: outputDim → ...hidden... → 1 (probability of being real)
     const dStructure = [outputDim, ...discriminatorHidden, 1];
     this.discriminator = new NetworkN(dStructure, options?.discriminatorOptions ?? {});
+
+    // The BCE deltas of trainStep assume D's output is sigmoid (see the header contract).
+    const dOutput = this.discriminator.layers[this.discriminator.layers.length - 1].neurons[0].activation;
+    if (dOutput !== sigmoid) {
+      throw new Error(
+        'GAN: the discriminator output must use the sigmoid activation (the BCE deltas assume it); ' +
+        'end discriminatorOptions.activations with sigmoid',
+      );
+    }
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -99,6 +111,17 @@ export class GAN {
     realBatch: number[][],
     lr: number,
   ): { dLoss: number; gLoss: number } {
+    // Validated before any weight changes: a non-empty batch whose rows have G's output width
+    // (D's input width) and finite values, and lr finite and >= 0 (lr = 0 is a valid no-op).
+    if (!Array.isArray(realBatch) || realBatch.length === 0) {
+      throw new Error('GAN.trainStep: realBatch must be a non-empty array');
+    }
+    const outputDim = this.generator.structure[this.generator.structure.length - 1];
+    realBatch.forEach((row, i) => validateArray(row, outputDim, `GAN.trainStep: realBatch[${i}]`));
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`GAN.trainStep: lr must be a finite number >= 0, got ${lr}`);
+    }
+
     const eps = 1e-15;
     let dLossSum = 0;
     let gLossSum = 0;

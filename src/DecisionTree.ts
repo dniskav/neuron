@@ -34,9 +34,24 @@
 //   - Node depth reaches maxDepth
 //   - Node has fewer than minSamplesSplit samples
 //   - All samples have the same label (Gini = 0)
-//   - No split improves the impurity (pure node or single unique value)
+//   - No split with weightedImpurity <= parentImpurity exists (e.g. every
+//     feature has a single unique value in the node)
+//
+// ─── ZERO-GAIN SPLITS (XOR) ───────────────────────────────────────────────────
+//
+//   The search is greedy, but a split is accepted when it does NOT worsen the
+//   parent (weightedImpurity <= parentImpurity), so zero-gain splits are
+//   allowed in impure nodes. Among candidates the first strictly-best one
+//   wins (ties keep the earliest feature / threshold).
+//   Consequence: XOR ([0,0],[0,1],[1,0],[1,1] → 0,1,1,0) has no gain at the
+//   root (Gini 0.5 for every split) but the tree splits anyway and separates
+//   it perfectly with maxDepth >= 2. With maxDepth = 1 it stays a stump.
+//   Side effect: on noisy data, zero-gain splits can make trees deeper than a
+//   strict-gain CART, always bounded by maxDepth and minSamplesSplit.
 //
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { validateArray, validateDataset } from './Validation'
 
 // ─── Node types ───────────────────────────────────────────────────────────────
 
@@ -62,6 +77,8 @@ export class DecisionTree {
   private _maxDepth: number;
   private _minSamplesSplit: number;
   private _task: "classification" | "regression";
+  // Feature count fixed by fit(); predict() checks its input against it.
+  private _nFeatures = 0;
 
   constructor(options?: {
     maxDepth?: number;
@@ -72,11 +89,15 @@ export class DecisionTree {
     this._minSamplesSplit = options?.minSamplesSplit ?? 2;
     this._task            = options?.task            ?? "classification";
 
-    if (this._maxDepth <= 0) {
-      throw new Error("DecisionTree: maxDepth must be positive");
+    if (!Number.isInteger(this._maxDepth) || this._maxDepth < 1) {
+      throw new Error(
+        `DecisionTree: maxDepth must be positive integer, got ${this._maxDepth}`
+      );
     }
-    if (this._minSamplesSplit < 2) {
-      throw new Error("DecisionTree: minSamplesSplit must be at least 2");
+    if (!Number.isInteger(this._minSamplesSplit) || this._minSamplesSplit < 2) {
+      throw new Error(
+        `DecisionTree: minSamplesSplit must be at least 2 (integer), got ${this._minSamplesSplit}`
+      );
     }
   }
 
@@ -165,8 +186,10 @@ export class DecisionTree {
           (leftY.length  / n) * this._impurity(leftY) +
           (rightY.length / n) * this._impurity(rightY);
 
-        // Only consider splits that strictly improve over the parent
-        if (weightedImpurity < bestImpurity && weightedImpurity < parentImpurity) {
+        // Accept splits that do not worsen the parent (zero-gain allowed, so
+        // XOR-like data can be separated at the next level). Among candidates,
+        // the first strictly-best one wins (ties keep the earliest).
+        if (weightedImpurity < bestImpurity && weightedImpurity <= parentImpurity) {
           bestImpurity = weightedImpurity;
           bestSplit = { featureIndex: j, threshold };
         }
@@ -223,12 +246,9 @@ export class DecisionTree {
 
   // ─── Fit ──────────────────────────────────────────────────────────────────
   fit(X: number[][], y: number[]): void {
-    if (X.length === 0) throw new Error("DecisionTree.fit: X is empty");
-    if (X.length !== y.length) {
-      throw new Error(
-        `DecisionTree.fit: X has ${X.length} rows but y has ${y.length} labels`
-      );
-    }
+    // Rectangular, finite X and finite y: checked before the tree is replaced.
+    const nFeatures = validateDataset(X, y, "DecisionTree.fit");
+    this._nFeatures = nFeatures;
     this._root = this._buildNode(X, y, 0);
   }
 
@@ -246,6 +266,9 @@ export class DecisionTree {
     if (this._root === null) {
       throw new Error("DecisionTree.predict: model has not been fitted yet");
     }
+    // Without this, a short input is read only up to its own length and
+    // silently returns a class.
+    validateArray(x, this._nFeatures, "DecisionTree.predict");
     return this._traverse(this._root, x);
   }
 

@@ -27,6 +27,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateArray, validateDataset } from './Validation'
+
 export interface KMeansOptions {
   maxIter?: number;
   seed?: number;
@@ -70,6 +72,8 @@ export class KMeans {
     if (!X || X.length === 0) {
       throw new Error("KMeans.fit: dataset X must be non-empty");
     }
+    // Rectangular, finite X: checked before this.centroids is reset below.
+    validateDataset(X, undefined, 'KMeans.fit');
     const n = X.length;
     const d = X[0].length;
     if (this._k > n) {
@@ -135,6 +139,9 @@ export class KMeans {
     if (this.centroids.length === 0) {
       throw new Error("KMeans.predict: call fit() before predict()");
     }
+    // Without this, a short input is compared only over its own length and
+    // silently returns a cluster.
+    validateArray(x, this.centroids[0].length, 'KMeans.predict');
     return this._nearestCentroid(x);
   }
 

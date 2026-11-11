@@ -36,7 +36,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { validateArray, validateNumber } from "./Validation";
+import { validateArray, validateDataset, validateNumber } from "./Validation";
 
 // ─── Internal sigmoid ─────────────────────────────────────────────────────────
 function sigmoid(z: number): number {
@@ -52,19 +52,21 @@ function bce(target: number, pred: number): number {
   return -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
 }
 
-// ─── Training-data validation ─────────────────────────────────────────────────
-// Rows of X must be arrays of the same length as X[0] (at least 1 feature) with
-// finite numbers, and y must be finite. Runs BEFORE any weight or Math.random use.
-function validateTrainingData(X: number[][], y: number[], method: string): void {
-  if (!Array.isArray(X[0])) {
-    throw new Error(`${method}: X[0]: expected array, got ${typeof X[0]}`);
-  }
-  const nFeatures = X[0].length;
-  if (nFeatures === 0) throw new Error(`${method}: X rows need at least 1 feature`);
-  for (let i = 0; i < X.length; i++) {
-    validateArray(X[i], nFeatures, `${method}: X[${i}]`);
-  }
-  validateArray(y, X.length, `${method}: y`);
+// Loop equivalents of a Math.max spread and of indexOf over that max. A spread
+// of >~125 000 arguments overflows the stack, so these fold with Math.max instead:
+// same result, including -Infinity for [] and NaN when any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
+// First index of the maximum, like indexOf over the Math.max result: -1 when the
+// maximum is NaN (no element is === NaN) or when values is empty.
+function _argmax(values: number[]): number {
+  const m = _maxOf(values);
+  for (let i = 0; i < values.length; i++) if (values[i] === m) return i;
+  return -1;
 }
 
 // ─── LogisticRegression ───────────────────────────────────────────────────────
@@ -100,14 +102,8 @@ export class LogisticRegression {
       throw new Error("LogisticRegression.train: epochs must be a positive integer");
     }
 
-    validateTrainingData(X, y, "LogisticRegression.train");
-    for (let i = 0; i < y.length; i++) {
-      if (y[i] < 0 || y[i] > 1) {
-        throw new Error(
-          `LogisticRegression.train: y[${i}] = ${y[i]} is outside [0, 1]`
-        );
-      }
-    }
+    // Validates X (rectangular, finite), y (finite) and y in [0, 1]; runs before any weight change.
+    validateDataset(X, y, "LogisticRegression.train", { labels: "unit" });
 
     this._nFeatures = X[0].length;
     // Continue from the existing weights if their length matches; otherwise
@@ -201,7 +197,7 @@ export class SoftmaxRegression {
   // ─── Softmax helper ──────────────────────────────────────────────────────
   private _softmax(scores: number[]): number[] {
     // Subtract max for numerical stability: exp(x − max) avoids overflow
-    const maxScore = Math.max(...scores);
+    const maxScore = _maxOf(scores);
     const exps = scores.map(s => Math.exp(s - maxScore));
     const sum = exps.reduce((a, b) => a + b, 0);
     return exps.map(e => e / sum);
@@ -231,14 +227,10 @@ export class SoftmaxRegression {
       throw new Error("SoftmaxRegression.train: epochs must be a positive integer");
     }
 
-    validateTrainingData(X, y, "SoftmaxRegression.train");
+    // Validates X, y (finite) and the labels (integers >= 0); runs before any weight change.
+    validateDataset(X, y, "SoftmaxRegression.train", { labels: "integer" });
     let maxLabel = 0;
     for (let i = 0; i < y.length; i++) {
-      if (!Number.isInteger(y[i]) || y[i] < 0) {
-        throw new Error(
-          `SoftmaxRegression.train: label y[${i}] = ${y[i]} must be an integer >= 0`
-        );
-      }
       if (y[i] > maxLabel) maxLabel = y[i];
     }
 
@@ -347,6 +339,6 @@ export class SoftmaxRegression {
   // ─── Classify (argmax) ────────────────────────────────────────────────────
   predict(x: number[]): number {
     const probs = this.predictProba(x);
-    return probs.indexOf(Math.max(...probs));
+    return _argmax(probs);
   }
 }

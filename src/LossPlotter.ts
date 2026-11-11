@@ -43,8 +43,16 @@ export class LossPlotter {
     height?: number;
     title?: string;
   }) {
-    this.width  = options?.width  ?? 60;
-    this.height = options?.height ?? 15;
+    const width  = options?.width  ?? 60;
+    const height = options?.height ?? 15;
+    if (!Number.isInteger(width) || width <= 0) {
+      throw new Error(`LossPlotter.constructor: width must be a positive integer, got ${width}`);
+    }
+    if (!Number.isInteger(height) || height <= 0) {
+      throw new Error(`LossPlotter.constructor: height must be a positive integer, got ${height}`);
+    }
+    this.width  = width;
+    this.height = height;
     this.title  = options?.title  ?? 'Loss Curve';
     this.losses = [];
     this.epochs = [];
@@ -52,12 +60,20 @@ export class LossPlotter {
 
   // Add a single (loss, epoch) pair.
   add(loss: number, epoch?: number): void {
+    if (!Number.isFinite(loss)) {
+      throw new Error(`LossPlotter.add: loss must be a finite number, got ${loss}`);
+    }
     this.losses.push(loss);
     this.epochs.push(epoch ?? this.losses.length - 1);
   }
 
   // Add multiple loss values (epochs are auto-numbered from 0).
   addMultiple(losses: number[]): void {
+    for (let i = 0; i < losses.length; i++) {
+      if (!Number.isFinite(losses[i])) {
+        throw new Error(`LossPlotter.addMultiple: losses[${i}] must be a finite number, got ${losses[i]}`);
+      }
+    }
     for (const l of losses) this.add(l);
   }
 
@@ -66,8 +82,12 @@ export class LossPlotter {
     if (this.losses.length === 0) return `[${this.title}] — no data yet`;
 
     const losses = this.losses;
-    const minL   = Math.min(...losses);
-    const maxL   = Math.max(...losses);
+    let minL = losses[0];
+    let maxL = losses[0];
+    for (let i = 1; i < losses.length; i++) {
+      if (losses[i] < minL) minL = losses[i];
+      if (losses[i] > maxL) maxL = losses[i];
+    }
     const range  = maxL - minL || 1;
 
     // Number of characters reserved for the Y-axis label (e.g. "0.1234 ┤")
@@ -108,7 +128,7 @@ export class LossPlotter {
       } else if (row === plotH - 1) {
         label = _fmtNum(minL).padStart(yLabelW - 2) + ' ┤';
       } else if (row === Math.floor(plotH / 2)) {
-        const mid = minL + range / 2;
+        const mid = (minL + maxL) / 2;
         label = _fmtNum(mid).padStart(yLabelW - 2) + ' ┤';
       } else {
         label = ' '.repeat(yLabelW - 1) + '│';

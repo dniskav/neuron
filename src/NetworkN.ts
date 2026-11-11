@@ -177,7 +177,9 @@ export class NetworkN {
     const w: number[] = [];
     for (const layer of this.layers) {
       for (const n of layer.neurons) {
-        w.push(...n.weights, n.bias);
+        // Loops, not a push spread: a spread of >~125 000 arguments overflows the stack.
+        for (const v of n.weights) w.push(v);
+        w.push(n.bias);
       }
     }
     return w;

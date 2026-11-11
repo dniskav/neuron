@@ -131,3 +131,33 @@ describe('makeElu', () => {
     expect(custom.fn(-100)).toBeCloseTo(-2, 5)
   })
 })
+
+describe('tanh stable for large |x| (T059)', () => {
+  it.each([355, 400, 1000])('tanh.fn(%d) is exactly 1 (not NaN)', (x) => {
+    expect(tanh.fn(x)).toBe(1)
+    expect(tanh.fn(-x)).toBe(-1)
+  })
+
+  it('tanh.fn(354) and tanh.fn(-354) saturate', () => {
+    expect(tanh.fn(354)).toBe(1)
+    expect(tanh.fn(-354)).toBe(-1)
+  })
+
+  it('matches Math.tanh to 1e-12 across the pre-change range', () => {
+    // Golden: values of the previous formula, fixed here.
+    const GOLDEN: Array<[number, number]> = [
+      [0.5, 0.46211715726000974],
+      [1, 0.7615941559557649],
+      [3, 0.9950547536867305],
+      [-7, -0.9999983369439446],
+      [100, 1],
+      [-100, -1],
+    ]
+    for (const [x, y] of GOLDEN) expect(Math.abs(tanh.fn(x) - y)).toBeLessThan(1e-12)
+    for (let x = -20; x <= 20; x += 0.5) expect(Math.abs(tanh.fn(x) - Math.tanh(x))).toBeLessThan(1e-12)
+  })
+
+  it('dfn at saturation is 0', () => {
+    expect(tanh.dfn(tanh.fn(1000))).toBe(0)
+  })
+})

@@ -268,6 +268,7 @@ describe('VAE learns', () => {
 
   const variants = SEEDS.flatMap((seed) => [0.7, 1, 1.3].map((f) => ({ seed, f })))
 
+  // Timeout 30 s: con cobertura v8 tarda ~1.8 s medido (T045); el de 5 s por defecto se agota a veces.
   it('learns: reconstruction from mu beats predicting the mean by a wide margin (5 seeds x lr x0.7/x1.3)', () => {
     for (const { seed, f } of variants) {
       const vae = trained(seed, BASE_LR * f)
@@ -275,8 +276,9 @@ describe('VAE learns', () => {
       // criterion < 0.5 x baseline; a 30 % margin means <= 0.35 x baseline
       expect(self, `seed ${seed}, lr x${f}: self ${self}, baseline ${baseline}`).toBeLessThan(0.35 * baseline)
     }
-  })
+  }, 30000)
 
+  // Timeout 30 s: con cobertura v8 tarda ~1.8 s medido (T045); el de 5 s por defecto se agota a veces.
   it('learns: mu varies with the input, causally (MSE with its own mu < 0.5 x MSE with another input\'s mu)', () => {
     for (const { seed, f } of variants) {
       const vae = trained(seed, BASE_LR * f)
@@ -287,7 +289,7 @@ describe('VAE learns', () => {
       // 0.35 = 0.5 with a 30 % margin
       expect(sOwn, `seed ${seed}, lr x${f}: own ${sOwn}, other ${sOther}`).toBeLessThan(0.35 * sOther)
     }
-  })
+  }, 30000)
 })
 
 // The totalLoss that train() returns carries klWeight: recon + beta * kl.

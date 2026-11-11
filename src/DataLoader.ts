@@ -37,6 +37,9 @@ export class DataLoader {
   private _validationSplit: number
 
   constructor(data: DataPair, batchSize = 1, validationSplit = 0) {
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      throw new Error(`DataLoader.constructor: batchSize must be an integer >= 1, got ${batchSize}`)
+    }
     if (data.inputs.length !== data.targets.length) {
       throw new Error('DataLoader: inputs and targets must have the same length')
     }

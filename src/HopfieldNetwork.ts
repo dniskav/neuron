@@ -26,6 +26,8 @@
 // ─── CAPACITY ────────────────────────────────────────────────────────────────
 //   Theoretical maximum before spurious states dominate:
 //     P_max ≈ 0.138 · N         (Amit, Gutfreund & Sompolinsky, 1985)
+//   store() warns once per network (console.warn) when storedPatterns exceeds
+//   max(1, floor(0.138 · N)).
 //   Storing more than ~14% of N patterns causes interference and recall errors.
 //   Beyond capacity the network may converge to "spurious" states — linear
 //   combinations (mixtures) of stored patterns.
@@ -39,6 +41,7 @@ export class HopfieldNetwork {
   readonly n: number;
   /** Number of patterns stored so far. */
   storedPatterns: number;
+  private _capacityWarned = false;
 
   constructor(n: number) {
     if (!Number.isInteger(n) || n < 1) {
@@ -55,19 +58,7 @@ export class HopfieldNetwork {
   //
   // The pattern must be bipolar: each element must be +1 or −1.
   store(pattern: number[]): void {
-    if (pattern.length !== this.n) {
-      throw new Error(
-        `HopfieldNetwork.store: pattern length ${pattern.length} does not match network size ${this.n}`
-      );
-    }
-    for (let i = 0; i < this.n; i++) {
-      if (pattern[i] !== 1 && pattern[i] !== -1) {
-        throw new Error(
-          `HopfieldNetwork.store: pattern values must be +1 or -1, got ${pattern[i]} at index ${i}. ` +
-          `Use HopfieldNetwork.binarize() to convert 0/1 arrays.`
-        );
-      }
-    }
+    this._assertBipolar('store', 'pattern', pattern);
 
     const scale = 1 / this.n;
     for (let i = 0; i < this.n; i++) {
@@ -80,10 +71,16 @@ export class HopfieldNetwork {
 
     this.storedPatterns++;
 
-    // Warn if approaching the theoretical capacity limit
-    if (this.storedPatterns > Math.floor(0.138 * this.n)) {
-      // Not thrown — just surfaced for awareness. Callers can silence by wrapping.
-      // At ~14% of N the error rate begins to rise sharply.
+    // Warn once per network when the theoretical capacity is exceeded
+    // (~0.138·N patterns, at least 1: a single pattern is always valid).
+    // Not thrown: the network keeps working, with errors.
+    const capacity = Math.max(1, Math.floor(0.138 * this.n));
+    if (!this._capacityWarned && this.storedPatterns > capacity) {
+      this._capacityWarned = true;
+      console.warn(
+        `HopfieldNetwork.store: ${this.storedPatterns} patterns exceed the capacity ` +
+        `max(1, floor(0.138·N)) = ${capacity} for N = ${this.n}; recall may converge to spurious states.`
+      );
     }
   }
 
@@ -94,11 +91,7 @@ export class HopfieldNetwork {
   //   sᵢ ← sign(hᵢ)           (+1, −1; unchanged when hᵢ = 0)
   // Returns the converged state vector.
   recall(input: number[], maxIter = 20 * this.n): number[] {
-    if (input.length !== this.n) {
-      throw new Error(
-        `HopfieldNetwork.recall: input length ${input.length} does not match network size ${this.n}`
-      );
-    }
+    this._assertBipolar('recall', 'input', input);
 
     const s = [...input];
 
@@ -130,11 +123,7 @@ export class HopfieldNetwork {
   // Stored patterns are local minima. Updates always push E downward (or keep
   // it constant), so the network is guaranteed to converge.
   energy(state: number[]): number {
-    if (state.length !== this.n) {
-      throw new Error(
-        `HopfieldNetwork.energy: state length ${state.length} does not match network size ${this.n}`
-      );
-    }
+    this._assertBipolar('energy', 'state', state);
     let e = 0;
     for (let i = 0; i < this.n; i++) {
       for (let j = 0; j < this.n; j++) {
@@ -148,6 +137,7 @@ export class HopfieldNetwork {
   // Converts a 0/1 array to bipolar −1/+1.
   //   0 → −1,   1 → +1
   static binarize(arr: number[]): number[] {
+    HopfieldNetwork._assertFinite('binarize', arr);
     return arr.map(v => (v === 0 ? -1 : 1));
   }
 
@@ -155,10 +145,35 @@ export class HopfieldNetwork {
   // Converts a bipolar −1/+1 array back to 0/1.
   //   −1 → 0,   +1 → 1
   static unbinarize(arr: number[]): number[] {
+    HopfieldNetwork._assertFinite('unbinarize', arr);
     return arr.map(v => (v === -1 ? 0 : 1));
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
+
+  private _assertBipolar(method: string, name: string, v: number[]): void {
+    if (v.length !== this.n) {
+      throw new Error(
+        `HopfieldNetwork.${method}: ${name} length ${v.length} does not match network size ${this.n}`
+      );
+    }
+    for (let i = 0; i < this.n; i++) {
+      if (v[i] !== 1 && v[i] !== -1) {
+        throw new Error(
+          `HopfieldNetwork.${method}: ${name} values must be +1 or -1, got ${v[i]} at index ${i}. ` +
+          `Use HopfieldNetwork.binarize() to convert 0/1 arrays.`
+        );
+      }
+    }
+  }
+
+  private static _assertFinite(method: string, arr: number[]): void {
+    for (let i = 0; i < arr.length; i++) {
+      if (!Number.isFinite(arr[i])) {
+        throw new Error(`HopfieldNetwork.${method}: values must be finite, got ${arr[i]} at index ${i}`);
+      }
+    }
+  }
 
   private _shuffleInPlace(arr: number[]): void {
     for (let i = arr.length - 1; i > 0; i--) {

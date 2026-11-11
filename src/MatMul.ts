@@ -44,10 +44,18 @@ export function transpose(A: number[][]): number[][] {
 // ── Softmax (row-wise) ────────────────────────────────────────────────────────
 
 export function softmax(row: number[]): number[] {
-  const max  = Math.max(...row)
+  const max  = _maxOf(row)
   const exps = row.map(v => Math.exp(v - max))
   const sum  = exps.reduce((a, b) => a + b, 0)
   return exps.map(e => e / sum)
+}
+
+// Loop equivalent of a Math.max spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including -Infinity for [] and NaN if any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity
+  for (const v of values) m = Math.max(m, v)
+  return m
 }
 
 // ── Softmax backward (Jacobian-vector product) ────────────────────────────────
@@ -103,7 +111,7 @@ export class WeightMatrix {
   // ── Flat weight serialization ─────────────────────────────────────────────
   getWeights(): number[] {
     const w: number[] = [];
-    for (const row of this.W) w.push(...row);
+    for (const row of this.W) for (const v of row) w.push(v);
     return w;
   }
 
@@ -177,7 +185,7 @@ export class EmbeddingMatrix {
 
   getWeights(): number[] {
     const w: number[] = []
-    for (const row of this.W) w.push(...row)
+    for (const row of this.W) for (const v of row) w.push(v)
     return w
   }
 

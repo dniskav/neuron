@@ -24,8 +24,8 @@ function sigmoid(x: number): number {
 }
 
 function tanhFn(x: number): number {
-  const e = Math.exp(2 * x);
-  return (e - 1) / (e + 1);
+  // Math.tanh is stable for large |x|; (e^{2x}-1)/(e^{2x}+1) gives NaN for x >~ 355.
+  return Math.tanh(x);
 }
 
 class Gate {
@@ -251,14 +251,16 @@ export class GRULayer {
 
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: resetGate (W, b), updateGate (W, b), newGate (W, b).
+  // Se añade elemento a elemento: pasar una fila grande como argumentos
+  // supera el límite de la VM (RangeError).
   getWeightsFlat(): number[] {
     const w: number[] = [];
-    for (const row of this.resetGate.W) w.push(...row);
-    w.push(...this.resetGate.b);
-    for (const row of this.updateGate.W) w.push(...row);
-    w.push(...this.updateGate.b);
-    for (const row of this.newGate.W) w.push(...row);
-    w.push(...this.newGate.b);
+    for (const row of this.resetGate.W) for (const v of row) w.push(v);
+    for (const v of this.resetGate.b) w.push(v);
+    for (const row of this.updateGate.W) for (const v of row) w.push(v);
+    for (const v of this.updateGate.b) w.push(v);
+    for (const row of this.newGate.W) for (const v of row) w.push(v);
+    for (const v of this.newGate.b) w.push(v);
     return w;
   }
 

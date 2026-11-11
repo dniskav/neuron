@@ -34,6 +34,16 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { validateDataset } from './Validation'
+
+// Loop equivalent of a Math.max spread: a spread of >~125 000 arguments overflows
+// the stack. Same result, including -Infinity for [] and NaN if any element is NaN.
+function _maxOf(values: number[]): number {
+  let m = -Infinity;
+  for (const v of values) m = Math.max(m, v);
+  return m;
+}
+
 export class GaussianNaiveBayes {
   // Per-class, per-feature statistics
   private _means:     Map<number, number[]> = new Map();
@@ -49,14 +59,10 @@ export class GaussianNaiveBayes {
   // when a feature is perfectly constant within a class.
 
   fit(X: number[][], y: number[]): void {
-    if (X.length === 0) throw new Error("GaussianNaiveBayes.fit: X is empty");
-    if (X.length !== y.length) {
-      throw new Error(
-        `GaussianNaiveBayes.fit: X has ${X.length} rows but y has ${y.length} labels`
-      );
-    }
+    // Rectangular, finite X and finite y: checked before any state is touched.
+    const nFeatures = validateDataset(X, y, "GaussianNaiveBayes.fit");
 
-    this._nFeatures = X[0].length;
+    this._nFeatures = nFeatures;
     const m = X.length;
 
     // Collect unique classes
@@ -163,7 +169,7 @@ export class GaussianNaiveBayes {
 
     // log-sum-exp for normalisation
     const scores = [...logScores.values()];
-    const maxScore = Math.max(...scores);
+    const maxScore = _maxOf(scores);
     const logSumExp = maxScore + Math.log(
       scores.reduce((sum, s) => sum + Math.exp(s - maxScore), 0)
     );
