@@ -55,6 +55,11 @@ export class Augmenter {
 
   // Randomly zero out features with probability `rate`.
   //
+  // Kept features are NOT rescaled: this is not inverted dropout. Each output
+  // feature has expected value (1 - rate) * x, so the augmented view is shrunk
+  // toward zero, and the shift grows with the input magnitude. Standardize the
+  // inputs if that matters for your data.
+  //
   // Analogous to masking in BERT or random crops in vision contrastive learning.
   // The encoder must learn representations that are robust to missing features —
   // it cannot simply memorize individual dimensions.

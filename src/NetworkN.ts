@@ -171,6 +171,9 @@ export class NetworkN {
 
   // ── Flat weight serialization ─────────────────────────────────────────────
   // Order: layer 0 (all neurons), layer 1, ..., layer N.
+  // Also clears the saved dropout masks (see setWeights). After getWeights(), a
+  // trainWithDeltas or inputGradient call with reuseMasks = true throws "needs the
+  // dropout masks"; call predict(x, true) again before using reuseMasks.
   getWeights(): number[] {
     // Reset dropout masks to avoid stale state
     for (const d of this._dropouts) d.resetMask();
@@ -187,6 +190,9 @@ export class NetworkN {
 
   // Validates the total length BEFORE resetting dropout masks or writing, so a
   // rejected call leaves the network exactly as it was (T010, I2).
+  // A successful call also clears the saved dropout masks, as getWeights() does: a
+  // following trainWithDeltas or inputGradient with reuseMasks = true throws "needs
+  // the dropout masks" until predict(x, true) is called again.
   setWeights(weights: number[]): void {
     validateArray(weights, this._weightCount(), 'NetworkN.setWeights');
     // Reset dropout masks to avoid stale state

@@ -148,6 +148,10 @@ export class Trainer {
   }
 
   // ── Set external validation data (for early stopping) ────────────────────
+  // The validation data is used ONLY with earlyStopping (and restoreBestWeights,
+  // which requires it). Without earlyStopping it is stored and ignored: no
+  // validation loss is computed, and computeMetrics uses only the training data.
+  // With earlyStopping, train() throws if no validation data was set.
   setValidationData(dataset: DataPair): void {
     if (dataset.inputs.length !== dataset.targets.length) {
       throw new Error(
