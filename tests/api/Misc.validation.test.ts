@@ -163,8 +163,14 @@ describe('PositionalEncoding: validación', () => {
     expect(() => PositionalEncoding.encode(pos, 4)).toThrow(/^PositionalEncoding\.encode: pos/)
   })
 
-  it.each([3, 0, -2, 1.5])('encode con dModel %s lanza (par, entero >= 2)', (dModel) => {
+  it.each([0, -2, 1.5, NaN])('encode con dModel %s lanza (entero >= 1)', (dModel) => {
     expect(() => PositionalEncoding.encode(1, dModel)).toThrow(/^PositionalEncoding\.encode: dModel/)
+  })
+
+  it('encode con dModel impar 3 es válido (T064): encode(1, 3)[2] = sin(1/10000^(2/3))', () => {
+    const pe = PositionalEncoding.encode(1, 3)
+    expect(pe.length).toBe(3)
+    expect(pe[2]).toBeCloseTo(0.002154433023365604, 12)
   })
 
   it.each([-1, 2.5, NaN])('encodeSequence con seqLen %s lanza (entero >= 0)', (seqLen) => {
@@ -173,12 +179,14 @@ describe('PositionalEncoding: validación', () => {
     )
   })
 
-  it('encodeSequence con dModel impar lanza', () => {
-    expect(() => PositionalEncoding.encodeSequence(2, 3)).toThrow(/^PositionalEncoding\.encodeSequence: dModel/)
+  it('encodeSequence con dModel impar 3 es válido (T064): 2 filas de longitud 3', () => {
+    const seq = PositionalEncoding.encodeSequence(2, 3)
+    expect(seq.length).toBe(2)
+    expect(seq.every((row) => row.length === 3)).toBe(true)
   })
 
-  it('apply hereda la validación de dModel (apply usa encodeSequence)', () => {
-    expect(() => PositionalEncoding.apply([[0, 0, 0]])).toThrow(/dModel/)
+  it('apply hereda la validación de dModel (apply usa encodeSequence): dModel 0 lanza', () => {
+    expect(() => PositionalEncoding.apply([[]])).toThrow(/^PositionalEncoding\.encodeSequence: dModel/)
   })
 
   it('encodeSequence(0, 4) es válido y devuelve []', () => {

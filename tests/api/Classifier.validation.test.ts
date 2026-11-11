@@ -124,8 +124,17 @@ describe('DecisionTree constructor validation', () => {
     expect(() => new DecisionTree({ maxDepth: NaN })).toThrow('maxDepth must be positive')
   })
 
+  it('rejects maxDepth -Infinity and mentions that Infinity is valid', () => {
+    expect(() => new DecisionTree({ maxDepth: -Infinity })).toThrow('maxDepth must be positive')
+    expect(() => new DecisionTree({ maxDepth: -Infinity })).toThrow(/Infinity/)
+  })
+
   it('accepts maxDepth 1 (the smallest allowed value)', () => {
     expect(() => new DecisionTree({ maxDepth: 1 })).not.toThrow()
+  })
+
+  it('accepts maxDepth Infinity (no depth limit)', () => {
+    expect(() => new DecisionTree({ maxDepth: Infinity })).not.toThrow()
   })
 
   it('rejects non-integer minSamplesSplit', () => {

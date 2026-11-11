@@ -60,10 +60,11 @@
 // A model trained on sequences of length 512 can still process length 1024
 // because PE[pos] is well-defined for any pos. Learned encodings can't do this.
 //
-// dModel must be an even integer >= 2: each (sin, cos) pair fills two dimensions.
+// dModel must be an integer >= 1. Each (sin, cos) pair fills two dimensions; if
+// dModel is odd, the last dimension has no partner and gets only the sine term.
 function assertDModel(method: string, dModel: number): void {
-  if (!Number.isInteger(dModel) || dModel < 2 || dModel % 2 !== 0) {
-    throw new Error(`${method}: dModel must be an even integer >= 2, got ${dModel}`);
+  if (!Number.isInteger(dModel) || dModel < 1) {
+    throw new Error(`${method}: dModel must be an integer >= 1, got ${dModel}`);
   }
 }
 
@@ -80,11 +81,17 @@ export class PositionalEncoding {
     }
     assertDModel('PositionalEncoding.encode', dModel);
     const pe = new Array<number>(dModel);
-    for (let i = 0; i < dModel / 2; i++) {
+    for (let i = 0; i < Math.floor(dModel / 2); i++) {
       // Denominator grows geometrically: slow-varying at large i, fast at small i.
       const freq = Math.pow(10000, (2 * i) / dModel);
       pe[2 * i]     = Math.sin(pos / freq);   // even dimension → sine
       pe[2 * i + 1] = Math.cos(pos / freq);   // odd  dimension → cosine
+    }
+    // Odd dModel: the last dimension gets only a sine term.
+    if (dModel % 2 !== 0) {
+      const i    = Math.floor(dModel / 2);
+      const freq = Math.pow(10000, (2 * i) / dModel);
+      pe[dModel - 1] = Math.sin(pos / freq);
     }
     return pe;
   }
