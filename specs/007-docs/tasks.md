@@ -152,3 +152,9 @@ El usuario aceptó las propuestas de `breaking-changes.md`, con una excepción e
 - Estado: 2606 tests, 135 archivos; verde ×3 en Node 26 y ×1 en Node 20.19; cobertura 99.38 / 96.65 / 99.55 / 99.24. Solo queda T017.
 - Decisión del usuario (2026-11-12): el `CHANGELOG.md` NO lleva los ID del inventario. El orquestador quitó las 115 referencias (`G01`, `V27`, …) y reescribió las referencias cruzadas con el nombre de la sección o de la entrada; el rastreo queda en `specs/007-docs/breaking-changes.md` (por clase y método).
 
+## T017, parte local (2026-11-12, sobre 5c5d5bd; después solo cambió `CHANGELOG.md`, que ningún test lee)
+
+- 20 ejecuciones seguidas y 5 con `--sequence.shuffle` (Node 26), 3 bajo Node 20.19: las 28 verdes, 2606 tests. `npm run coverage` 5 veces en Node 26 y 1 en Node 20: todas verdes (99.38 / 96.65 / 99.55 / 99.24); el fallo aislado de un test `expectLearns` bajo cobertura visto 1 vez en T018 NO se reprodujo en 10 ejecuciones con cobertura en total. `tsc --noEmit -p .` y build limpios; ejemplos del README 36/36 ×3 en Node 26 y Node 20.19; 0 `it.fails`/`it.todo`; versión 0.3.2.
+- Falta: subir la rama, PR contra `master`, ver el mermaid renderizado en GitHub, CI en verde y merge con confirmación del usuario.
+- Regla del usuario (2026-11-12): las tareas repetitivas y largas (baterías, verificación mecánica, ediciones masivas) van a agentes Haiku; redacción y revisión, a Sonnet; la sesión principal se reserva para decisiones y razonamiento difícil.
+
