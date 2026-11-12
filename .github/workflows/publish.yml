@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -33,27 +37,40 @@ jobs:
       - name: Test
         run: npm test
 
+      # Decision: "does THIS exact version already exist in the registry?".
+      # Asking for `latest` instead would publish an older version and move
+      # the `latest` tag. Fails closed: only a 404 for the exact version
+      # allows publishing; any other error (network, 401, odd output) fails
+      # the job without publishing.
+      # NODE_AUTH_TOKEN written by setup-node is a placeholder; the real
+      # secret is passed only to the Publish step below.
       - name: Check if version is already published
         id: version_check
         run: |
           LOCAL=$(node -p "require('./package.json').version")
+          echo "local version: $LOCAL"
+          # Informational only: a failure here never changes the decision.
+          LATEST=$(npm view @dniskav/neuron version 2>/dev/null) || LATEST="(unavailable)"
+          echo "latest in registry (informational): ${LATEST:-empty}"
           ERR_FILE=$(mktemp)
-          if OUT=$(npm view @dniskav/neuron version 2>"$ERR_FILE"); then
-            REMOTE="$OUT"
+          STATUS=0
+          OUT=$(npm view "@dniskav/neuron@$LOCAL" version 2>"$ERR_FILE") || STATUS=$?
+          if [ "$STATUS" -eq 0 ]; then
+            if [ "$OUT" = "$LOCAL" ]; then
+              echo "decision: skip (version $LOCAL already exists in the registry)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::npm view @dniskav/neuron@$LOCAL returned unexpected output: '$OUT'. Aborting without publishing." >&2
+              cat "$ERR_FILE" >&2
+              exit 1
+            fi
           elif grep -Eq 'E404|404 Not Found' "$ERR_FILE"; then
-            # Package not published yet: the first publish is always allowed.
-            REMOTE="0.0.0"
+            echo "decision: publish (version $LOCAL not found in the registry)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::npm view @dniskav/neuron failed (not a 404). Aborting." >&2
+            echo "::error::npm view @dniskav/neuron@$LOCAL failed (not a 404). Aborting without publishing." >&2
             cat "$ERR_FILE" >&2
             exit 1
-          fi
-          echo "local=$LOCAL" >> $GITHUB_OUTPUT
-          echo "remote=$REMOTE" >> $GITHUB_OUTPUT
-          if [ "$LOCAL" = "$REMOTE" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Publish
