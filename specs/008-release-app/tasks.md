@@ -194,3 +194,13 @@ Los lotes 6 y 7 podrían ejecutarse a la vez que 4 y 5 si hay hueco (máximo 4 a
 ## Notas por lote
 
 (Se rellenan al integrar cada lote.)
+
+## Decisiones del usuario (2026-11-12) y estado
+
+- Q2 (base de la rama de la app): `main` LOCAL (incluye b4d139c) más `origin/main`; no empujar `main`.
+- Q5 (pruebas de demos): script `npm run test:demos` con vitest, aparte del test rápido.
+- Q6 (publicación): PR de release, con un PR previo que endurece `publish.yml` (T007).
+- Q1/Q3 (cambios sin commitear de la app y cómo probarla): el usuario NO eligió opción; respondió, textualmente: «neuron app debe terner la ultima version de neuron en la que hemos trabajado, inluco si hay que modificar neuron app, se haria un sdd de esto para orquetarlo con agentes economicos, y deberia usarse la version de npm que ya deberia estar publicada». Lectura del orquestador (A CONFIRMAR con el usuario, no asumida): (1) la app debe quedar en la 0.4.0 aunque haya que modificarla; (2) debe consumir la versión del REGISTRO npm, no un tarball local; (3) el trabajo de la app se orquesta con su propia spec y agentes económicos (Haiku). Esto INVIERTE el orden de `plan.md` (que probaba la app con un tarball ANTES de publicar): habría que publicar primero. La 0.4.0 NO está publicada (npm: 0.3.2). Qué hacer con los cambios sin commitear sigue SIN respuesta: mientras tanto no se tocan (worktree aparte).
+- Lanzado sin esperar (no depende de esa respuesta): Lote 1 (T004, T005, T006, Haiku) y T007 (Sonnet).
+- Regla del usuario: lo repetitivo y largo, a agentes Haiku; redacción, diagnóstico y revisión, a Sonnet; la sesión principal decide e integra.
+
