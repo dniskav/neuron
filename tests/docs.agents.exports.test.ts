@@ -64,7 +64,8 @@ function duplicados(nombres: string[]): string[] {
 
 /** `nombre` aparece como palabra completa: no rodeado de letras, dígitos, `_` o `$`. Sensible a mayúsculas. */
 function aparece(texto: string, nombre: string): boolean {
-  const escapado = nombre.replace(/\$/g, "\\$");
+  // Escapa TODOS los metacaracteres de regex (incluida la barra invertida), no solo `$`.
+  const escapado = nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(?<![\\w$])${escapado}(?![\\w$])`).test(texto);
 }
 
