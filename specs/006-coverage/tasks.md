@@ -424,3 +424,7 @@ El usuario aceptó las recomendaciones del orquestador para todas las preguntas 
 - Orquestador: `ci.yml` ejecuta `npm run coverage` y `src/PCA.ts` documenta la deflación redundante.
 - Estado: 2495 tests, 132 archivos; verde ×3 en Node 26 y ×1 en Node 20.19 tras cada merge. Única tarea abierta de la 006: T066 (ejes nulos de `PCA`), PROPUESTA.
 
+### Batería final tras T060/T064/T065 (2026-11-11, sobre 35d4140, el contenido del PR #10)
+
+- 20 ejecuciones seguidas, 5 con `--sequence.shuffle` (Node 26) y 3 bajo Node 20.19: las 28 verdes, 2495 tests. `npm run coverage` bajo Node 20: 99.38 % líneas, 96.56 % ramas, 99.55 % funciones, 99.23 % sentencias (umbral 97/94/97/97). `tsc --noEmit -p .` limpio, 0 `it.fails`/`it.todo`. En `master` (1a5ccc0): CI, «Push on master» y «Publish to npm» (con `Publish: skipped`) en verde.
+

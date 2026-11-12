@@ -59,7 +59,7 @@ export interface TrainMetrics {
   accuracy: number;
   precision: number;   // macro-average across classes
   recall: number;      // macro-average across classes
-  f1: number;          // macro-average across classes
+  f1: number;          // mean of the per-class F1 (as Metrics.f1Score), NOT 2PR/(P+R) of the macro P and R
 }
 
 // Loop equivalents of a Math.max spread and of indexOf over that max. A spread
@@ -148,6 +148,10 @@ export class Trainer {
   }
 
   // ── Set external validation data (for early stopping) ────────────────────
+  // The validation data is used ONLY with earlyStopping (and restoreBestWeights,
+  // which requires it). Without earlyStopping it is stored and ignored: no
+  // validation loss is computed, and computeMetrics uses only the training data.
+  // With earlyStopping, train() throws if no validation data was set.
   setValidationData(dataset: DataPair): void {
     if (dataset.inputs.length !== dataset.targets.length) {
       throw new Error(
@@ -447,6 +451,7 @@ export class Trainer {
     let totalSamples = 0;
     const precisions: number[] = [];
     const recalls: number[] = [];
+    const f1s: number[] = [];
 
     for (let c = 0; c < nClasses; c++) {
       const tp = confusion[c][c];
@@ -460,8 +465,12 @@ export class Trainer {
       }
       totalSamples += rowSum;
 
-      precisions.push(colSum > 0 ? tp / colSum : 0);
-      recalls.push(rowSum > 0 ? tp / rowSum : 0);
+      const p = colSum > 0 ? tp / colSum : 0;
+      const r = rowSum > 0 ? tp / rowSum : 0;
+      precisions.push(p);
+      recalls.push(r);
+      // F1 of class c = 2pr/(p+r); 0 when p + r = 0 (no 0/0)
+      f1s.push(p + r > 0 ? (2 * p * r) / (p + r) : 0);
     }
 
     const accuracy = totalSamples > 0 ? totalCorrect / totalSamples : 0;
@@ -469,10 +478,13 @@ export class Trainer {
       precisions.reduce((a, b) => a + b, 0) / nClasses;
     const macroRecall =
       recalls.reduce((a, b) => a + b, 0) / nClasses;
-    const f1 =
-      macroPrecision + macroRecall > 0
-        ? (2 * macroPrecision * macroRecall) / (macroPrecision + macroRecall)
-        : 0;
+    // Macro F1 = MEAN of the per-class F1 (sklearn average='macro', same as
+    // Metrics.f1Score), not the harmonic mean of macroPrecision and macroRecall.
+    // Difference with Metrics: here K = nClasses (target width, 2 for a single
+    // output), so a class with no samples and no predictions counts as F1 0 in
+    // the mean; Metrics uses K = max label + 1 over the data, which leaves out
+    // trailing empty classes.
+    const f1 = f1s.reduce((a, b) => a + b, 0) / nClasses;
 
     return {
       accuracy,

@@ -106,6 +106,10 @@ export class NetworkLSTM {
   // trajectory or a row does not measure the output size. An empty episode with
   // empty targets is a no-op, as before.
   train(targets: number[][], lr: number): void {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkLSTM.train: lr must be a finite number >= 0, got ${lr}`);
+    }
     const T = this._acts.length;
     if (!Array.isArray(targets)) {
       throw new Error(`NetworkLSTM.train: expected targets array, got ${typeof targets}`);

@@ -61,13 +61,13 @@ export class ModelSaver {
   }
 
   // ── Deserialize from JSON string ──────────────────────────────────────────
-  // Valida todo ANTES de escribir: si algo no cuadra, lanza y el modelo queda intacto.
+  // Validates everything BEFORE writing: on any mismatch it throws and the model is left untouched.
   static fromJSON(model: Serializable, json: string): void {
     let parsed: unknown
     try {
       parsed = JSON.parse(json)
     } catch (e) {
-      throw new Error(`ModelSaver.fromJSON: el texto no es JSON válido (${(e as Error).message})`)
+      throw new Error(`ModelSaver.fromJSON: the text is not valid JSON (${(e as Error).message})`)
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new Error('ModelSaver.fromJSON: invalid model data')
@@ -75,7 +75,7 @@ export class ModelSaver {
     const data = parsed as Record<string, unknown>
 
     if (data.format !== undefined && data.format !== FORMAT_VERSION) {
-      throw new Error(`ModelSaver.fromJSON: formato ${show(data.format)} no soportado (se espera ${FORMAT_VERSION})`)
+      throw new Error(`ModelSaver.fromJSON: unsupported format ${show(data.format)} (expected ${FORMAT_VERSION})`)
     }
 
     if (!Array.isArray(data.weights)) {
@@ -86,31 +86,31 @@ export class ModelSaver {
       const w = weights[i]
       if (typeof w !== 'number' || !Number.isFinite(w)) {
         throw new Error(
-          `ModelSaver.fromJSON: weights[${i}] no es un número finito (valor: ${show(w)}); NaN e Infinity se guardan como null`,
+          `ModelSaver.fromJSON: weights[${i}] is not a finite number (value: ${show(w)}); NaN and Infinity are saved as null`,
         )
       }
     }
 
     if (data.length !== undefined && data.length !== weights.length) {
       throw new Error(
-        `ModelSaver.fromJSON: length (${show(data.length)}) no coincide con weights (${weights.length})`,
+        `ModelSaver.fromJSON: length (${show(data.length)}) does not match weights (${weights.length})`,
       )
     }
 
     const expected = model.getWeights().length
     if (weights.length !== expected) {
       throw new Error(
-        `ModelSaver.fromJSON: el modelo espera ${expected} pesos y el archivo trae ${weights.length}`,
+        `ModelSaver.fromJSON: the model expects ${expected} weights and the file has ${weights.length}`,
       )
     }
 
     if (data.structure !== undefined) {
       if (!isNumericArray(data.structure)) {
-        throw new Error('ModelSaver.fromJSON: structure debe ser un array de números')
+        throw new Error('ModelSaver.fromJSON: structure must be an array of numbers')
       }
       if (isNumericArray(model.structure) && !sameNumbers(data.structure, model.structure)) {
         throw new Error(
-          `ModelSaver.fromJSON: structure del archivo [${data.structure.join(',')}] no coincide con la del modelo [${model.structure.join(',')}]`,
+          `ModelSaver.fromJSON: file structure [${data.structure.join(',')}] does not match the model structure [${model.structure.join(',')}]`,
         )
       }
     }

@@ -153,6 +153,10 @@ export class GRULayer {
   // trajectory or a row does not measure hiddenSize. An empty trajectory with an
   // empty dh_seq is a no-op, as before.
   backprop(dh_seq: number[][], lr: number): void {
+    // lr must be finite and >= 0 (0 is a valid no-op); checked before anything is touched.
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`GRULayer.backprop: lr must be a finite number >= 0, got ${lr}`);
+    }
     const T = this._traj.length;
     if (!Array.isArray(dh_seq)) {
       throw new Error(`GRULayer.backprop: expected dh_seq array, got ${typeof dh_seq}`);
