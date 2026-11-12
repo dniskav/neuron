@@ -156,7 +156,7 @@ Everything is exported from `src/index.ts` (126 names: 97 values, 29 types). The
 - **Optimizers use the ascent convention.** `Optimizer.step` returns `w + lr * g`, so models pass `g = -dL/dw`. Keep this when adding a model or a custom delta.
 - **Transformer outputs are unbounded.** `NetworkTransformer.predict` returns raw logits (`seqLen * nClasses`, flattened); apply `softmax` externally for probabilities.
 - **`NetworkTransformer.train` uses softmax + cross-entropy**, not MSE. The logit gradient is `prob_c - target_c`, divided by the number of positions that count (`mask`), so it is the gradient of the MEAN cross-entropy that the method returns.
-- **Step scale of `NetworkN.train` and `Network.train`.** They give the step of the gradient of the MEAN squared error they return, `(2/n)(t - p)` with `n` outputs, so with one output the step is twice that of 0.3.2 (`lr_new = lr_old * n / 2` reproduces the old dynamics). `trainWithDeltas` and `inputGradient` take caller-computed deltas and do not rescale. `Autoencoder.train` uses `(2/d)` with `d = inputSize`.
+- **Step scale of `NetworkN.train` and `Network.train`.** They give the step of the gradient of the MEAN squared error they return, `(2/n)(t - p)` with `n` outputs, so with one output the step is twice that of 0.3.2 (`lr_new = lr_old * n / 2` reproduces the old dynamics with SGD or `Momentum`, without `residual` or dropout; with `Adam` keep `lr`). `trainWithDeltas` and `inputGradient` take caller-computed deltas and do not rescale. `Autoencoder.train` uses `(2/d)` with `d = inputSize`.
 
 ## Validation contract
 

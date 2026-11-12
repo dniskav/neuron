@@ -1616,7 +1616,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 0.4.0 changes how several models train, so 0.3.2 results are not directly comparable:
 
 - Weights and learning rates tuned with 0.3.2 are not a good starting point. Retrain, and re-tune `lr`.
-- `NetworkN.train` and `Network.train` with `n` outputs: `lr_new = lr_old × n / 2`. `Network.train` with several outputs has no recipe, so retrain.
+- `NetworkN.train` with `n` outputs, and `Network.train` with one output: `lr_new = lr_old × n / 2` reproduces the old step with the default optimizer or `Momentum` (with `Adam`, keep `lr`). `Network.train` with several outputs and `NetworkN` with `residual` have no recipe, so retrain.
 - Many methods now throw on invalid input (empty data, wrong lengths, `NaN`, invalid options) instead of failing silently.
 - `Trainer` rejects `lr = 0`, and the `clipValue` option is gone: use `ClippedOptimizerFactory`.
 

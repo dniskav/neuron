@@ -15,8 +15,11 @@ If you are upgrading from 0.3.2, these are the points that matter most:
 3. **The step size of `NetworkN.train`, `Network.train` and `Autoencoder.train` changed.** They now take the gradient step of the mean squared error that they return. Scale recipes:
 
    ```ts
-   // NetworkN.train and Network.train with n outputs (exact):
+   // NetworkN.train with n outputs, and Network.train with ONE output:
    //   lr_new = lr_old * n / 2
+   // Exact with the default optimizer (SGD) or Momentum, without `residual` and with
+   // dropoutRate 0. With Adam keep the same lr (Adam is insensitive to the gradient scale).
+   // With `residual` there is no recipe, and with dropout it is only approximate.
    // n = 1 doubles the effective step, so lr_new = lr_old / 2 gives the old dynamics.
    const lrNew = lrOld * nOutputs / 2
 
@@ -24,7 +27,7 @@ If you are upgrading from 0.3.2, these are the points that matter most:
    const lrNewApprox = lrOld * inputSize / 2
    ```
 
-   For `Network.train` with several outputs there is no recipe: 0.3.2 only trained output 0. Retrain. For `Autoencoder` the recipe keeps the step of the decoder but not that of the encoder, because the encoder gradient also changed. Retraining is recommended.
+   For `Network.train` with several outputs there is no recipe: 0.3.2 only trained output 0. Retrain. For `Autoencoder` the recipe reproduces the first step of the decoder but not that of the encoder, because the encoder gradient also changed; after a few steps the decoder differs too. Retraining is recommended.
 4. **`lr = 0` is a valid no-op** in the networks and in the generative and sequence models, but it **throws** in `Trainer` (0.3.2 accepted it) and in `Perceptron.train`, `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (they already rejected it). NaN, Infinity and negative `lr` throw in all of them (V27).
 5. **Many methods now throw on invalid input** (empty data, wrong lengths, NaN, bad options) before touching any state. Code that relied on silent behavior must now handle or avoid the error.
 
@@ -56,7 +59,7 @@ The following changes alter the numbers a training run produces. There is no `lr
 - **`NetworkTransformer.train` (G02).**
   - Before: the cross-entropy gradient was not divided by the number of positions.
   - Now: it is divided by `count`, so the direct SGD step (embeddings, LayerNorm, biases) is `count` times smaller. Measured with `count` = 4: the change in `tokenEmb` after one step went from 4.162e-2 to 1.038e-2. Adam on the weight matrices is invariant to this scale.
-  - Migrate: with a mask (for example Sudoku), raise `lr` by about the number of masked positions to keep the direct SGD step.
+  - Migrate: with a mask (for example Sudoku), raise `lr` by about the number of masked positions to keep the SIZE of the direct SGD step. The direction is not comparable: in 0.3.2 that step went the wrong way (see G01).
 - **`Seq2Seq.trainStep`, `LSTMLayer.backprop` (G04).**
   - Before: the encoder did not receive the exact decoder gradient. `LSTMLayer.backprop(dh_seq, lr)` returned `undefined`.
   - Now: the encoder receives the exact gradient (full BPTT) with scale `lr * T_in / T_out`. `LSTMLayer.backprop(dh_seq, lr, dcFinal?)` returns `{ dh0, dc0 }`.
@@ -113,7 +116,7 @@ The following changes alter the numbers a training run produces. There is no `lr
   - Now: exact gradient of the pair; the same case goes from 1.814 to 1.681.
   - Migrate: retrain. Low `lr` values chosen to avoid the divergence can be raised.
 - **`MaxPool2D.backward` (G16).**
-  - Before: with overlapping windows (`stride < poolSize`) it added gradient to positions that were not the maximum of the window. `MaxPool2D(2, 1)` on a 3x3 input gave a gradient sum of 5.
+  - Before: with overlapping windows (`stride < poolSize`) it added gradient to positions that were not the maximum of the window. `MaxPool2D(2, 1)` on a 3x3 input with an all-ones output gradient gave a gradient sum above the number of windows (4), depending on the input (9 for the input 1..9).
   - Now: the gradient sum equals the number of windows (4 in that case).
   - Migrate: retrain networks with overlapping `MaxPool2D`. No change when `stride = poolSize`.
 - **`PCA` (G17).**
@@ -147,7 +150,7 @@ The following changes alter the numbers a training run produces. There is no `lr
 - **`NetworkN.train` (E01).**
   - Before: output delta `(t - p) * dfn`, the gradient of `0.5 * Σ(t - p)²`.
   - Now: output delta `(2/n)(t - p) * dfn`, the gradient of the mean squared error it returns (n = number of outputs). The step is `2/n` times the old one; with one output the effective `lr` doubles. `trainWithDeltas` and `inputGradient` do NOT change scale.
-  - Migrate: `lr_new = lr_old * n / 2` reproduces the old dynamics. Checked on `[2,3,n]` with n = 1, 2, 3, 4 (20 epochs of XOR, `lr` 0.2, fixed seed): maximum weight difference 0, 0, 2.2e-16 and 0 with the recipe.
+  - Migrate: `lr_new = lr_old * n / 2` reproduces the old dynamics with the default optimizer (SGD) or `Momentum`, without `residual` and with `dropoutRate` 0. With `Adam` keep the same `lr`; with `residual` there is no recipe (the gradient changed, G08); with dropout the recipe is approximate. Checked on `[2,3,n]` with n = 1, 2, 3, 4 (20 epochs of XOR, `lr` 0.2, fixed seed): maximum weight difference 0, 0, 2.2e-16 and 0 with the recipe.
 
     ```ts
     // before (0.3.2)
@@ -162,7 +165,7 @@ The following changes alter the numbers a training run produces. There is no `lr
 - **`Autoencoder.train` and `trainBatch` (E03).**
   - Before: output delta `(x - x̂) * dfn`.
   - Now: output delta `(2/d)(x - x̂) * dfn`, where `d` is `inputSize` (the length of `x`, not `latentSize`). The step is `d/2` times smaller.
-  - Migrate: `lr * d / 2` keeps the step of the decoder but it is only APPROXIMATE, because the encoder gradient also changed (G07). Measured with `lr_old` 0.1 and `lr_new = 0.1 * d / 2`, after 30 epochs the weights still differ (up to 1.3e-1 in the encoder and 4.8e-3 in the decoder in the smallest case). Retraining is recommended.
+  - Migrate: `lr * d / 2` reproduces the first step of the decoder but it is only APPROXIMATE, because the encoder gradient also changed (G07). Measured with `lr_old` 0.1 and `lr_new = 0.1 * d / 2`, after 30 epochs the weights still differ (up to 1.3e-1 in the encoder and 4.8e-3 in the decoder in the smallest case). Retraining is recommended.
 - **`TCN` stable `lr` (E04).** Because training was broken in 0.3.2, there was no valid `lr` to compare with. In one measured case (`TCN(1,4,2,2,1)`, `x = sin(1.3t + 0.4)`, 16 steps, 300 updates, 5 seeds) the loss went down for `lr` between 0.21 and 0.65, went up at 1.0 and diverged from 2.0. Use `lr` around 0.2 to 0.4 for this kind of task. This is one measured case, not a law.
 - **`VAE` `klWeight` (E05).**
   - Before: the KL term had a fixed weight of 1.
@@ -277,10 +280,10 @@ Every new validation throws `Error('Class.method: ...')` BEFORE touching any sta
 
 1. **Retrain** every model listed in G01 and G07 to G14. Do not reuse 0.3.2 weights as a starting point and do not carry over the old `lr` (S06).
 2. **Rescale `lr`** where you keep an old setting:
-   - `NetworkN.train` and `Network.train` with n outputs: `lr_new = lr_old * n / 2` (exact; E01, E02).
+   - `NetworkN.train` with n outputs, and `Network.train` with one output: `lr_new = lr_old * n / 2` (exact with SGD or `Momentum`, no `residual`, no dropout; with `Adam` keep `lr`; E01, E02).
    - `Network.train` with several outputs: no recipe; retrain (G21).
    - `Autoencoder`: `lr_new = lr_old * inputSize / 2` is approximate (it preserves the decoder step, not the encoder step); retrain (E03).
-   - `NetworkTransformer.train` with masks: raise `lr` by about the number of masked positions to keep the direct SGD step (G02).
+   - `NetworkTransformer.train` with masks: raise `lr` by about the number of masked positions to keep the size of the direct SGD step (G02).
    - `VAE` decoder: no factor exists (G14).
 3. **Remove `residual` from the last layer** of `NetworkN`, and from the output layer of `Autoencoder`, `VAE` and `GAN` (G08).
 4. **End the `GAN` discriminator with sigmoid** (V22).
