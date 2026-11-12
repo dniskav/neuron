@@ -1,3 +1,5 @@
+# @dniskav/neuron
+
 [![npm](https://img.shields.io/npm/v/@dniskav/neuron)](https://www.npmjs.com/package/@dniskav/neuron)
 [![license](https://img.shields.io/npm/l/@dniskav/neuron)](LICENSE)
 
