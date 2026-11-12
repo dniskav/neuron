@@ -60,10 +60,10 @@
 
 ## Lote 5
 
-- [ ] T015 [P] [H] [files: tests/docs.readme.exports.test.ts] FR-013/US7. Test que lee `src/index.ts`, extrae todos los nombres exportados (cada `export { … }` y `export type { … }`, multilínea, con `as` si lo hubiera) y comprueba que cada uno aparece como palabra completa (`\bNombre\b`, sensible a mayúsculas) en `README.md`; el mensaje de fallo lista los que faltan. Sin dependencias; rutas con `import.meta.url`/`process.cwd()` coherentes con los otros tests de `tests/` (leer `tests/coverage.modules.test.ts` como modelo). Mutantes (≥ 3, sobre una copia en memoria del README, y sobre el parser): quitar `Trainer` del texto; quitar un tipo (`TrainerOptions`); ignorar los bloques `export type`; parser que no ve `export {` multilínea.
+- [x] T015 [P] [H] [files: tests/docs.readme.exports.test.ts] FR-013/US7. Test que lee `src/index.ts`, extrae todos los nombres exportados (cada `export { … }` y `export type { … }`, multilínea, con `as` si lo hubiera) y comprueba que cada uno aparece como palabra completa (`\bNombre\b`, sensible a mayúsculas) en `README.md`; el mensaje de fallo lista los que faltan. Sin dependencias; rutas con `import.meta.url`/`process.cwd()` coherentes con los otros tests de `tests/` (leer `tests/coverage.modules.test.ts` como modelo). Mutantes (≥ 3, sobre una copia en memoria del README, y sobre el parser): quitar `Trainer` del texto; quitar un tipo (`TrainerOptions`); ignorar los bloques `export type`; parser que no ve `export {` multilínea.
       Gate: `npx vitest run tests/docs.readme.exports.test.ts && npm run typecheck && npx vitest run` (suite completa, una vez) `&& GC-SRC`.
 
-- [ ] T016 [P] [H] [files: tests/docs.agents.exports.test.ts] **BLOQUEADA** hasta que T012 esté integrada (pregunta 2). Igual que T015 contra `AGENTS.md`.
+- [x] T016 [P] [H] [files: tests/docs.agents.exports.test.ts] **BLOQUEADA** hasta que T012 esté integrada (pregunta 2). Igual que T015 contra `AGENTS.md`.
       Gate: `npx vitest run tests/docs.agents.exports.test.ts && npm run typecheck && GC-SRC`.
 
 ## Lote 6 (serie, cierre)
@@ -143,4 +143,11 @@ El usuario aceptó las propuestas de `breaking-changes.md`, con una excepción e
 - T014 (`migration-evidence.md`, Sonnet, contra un build de 723fa58 = 0.3.2 con pesos iniciales idénticos): `lr·n/2` de `NetworkN.train` EXACTA (máx. 3.3e-16) con SGD y con Momentum; FALSA con Adam (hay que mantener `lr`) y con `residual`; aproximada con dropout. `Network.train` con una salida, `lr/2`: exacta; con varias, la 0.3.2 solo movía la capa oculta y la salida 0 (sin receta). `Autoencoder` `lr·inputSize/2`: el decoder coincide solo en el PRIMER paso (5.6e-17); tras 50 pasos difiere (hasta 2.9e-1) y el encoder desde el primero. `trainWithDeltas` no cambia de escala; `inputGradient` no existía en la 0.3.2. `Seq2Seq` y el factor `count` de `NetworkTransformer`: exactos en magnitud. Sube → baja confirmado en los 5 modelos y 3 semillas (p. ej. `RNN(1,4,1)` lr 0.05, 60 pasos: 0.2632 → 4.07e18 en 0.3.2 y → 0.0791 ahora).
 - El orquestador aplicó las cinco correcciones de T014 al `CHANGELOG.md` (alcance de la receta `n/2`: SGD o Momentum, sin `residual` ni dropout, Adam mantiene `lr`; `Network.train` solo con una salida; `Autoencoder` «primer paso del decoder»; G02 «tamaño del paso»; G16 sin la cifra «5») y ajustó en consecuencia `06-cierre.md` (README reensamblado) y `AGENTS.md`.
 - No verificadas por T014 (datos sin especificar o fuera de alcance): cifras de G01 y G05, E05, E06, G10, G17, V26, G03, G06 y que Adam sea invariante a la escala en `NetworkTransformer`.
+
+## Notas del Lote 5 (integrado 2026-11-12: T015, T016)
+
+- T015 (`tests/docs.readme.exports.test.ts`, 14 tests, 4 mutantes): cada export de `src/index.ts` aparece en `README.md` como palabra completa, y `README.md` es byte a byte la concatenación de las 6 partes (una edición a mano hace fallar el test: regenerar con `node specs/007-docs/tools/assemble-readme.mjs`). Límite conocido: un export con nombre de palabra común (`Layer`, `Value`) puede quedar «cubierto» por prosa.
+- T016 (`tests/docs.agents.exports.test.ts`, 9 tests, 5 mutantes): cada export aparece en `AGENTS.md`; no reaparecen 5 frases ya falsas; los 65 archivos citados existen. No cuenta `export *` (hoy no hay).
+- El orquestador repitió un mutante de cada uno (quitar `Serializable` de `AGENTS.md`; añadir una línea a mano al README): ambos detectados.
+- Estado: 2606 tests, 135 archivos; verde ×3 en Node 26 y ×1 en Node 20.19; cobertura 99.38 / 96.65 / 99.55 / 99.24. Solo queda T017.
 
