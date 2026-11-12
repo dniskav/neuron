@@ -150,4 +150,5 @@ El usuario aceptó las propuestas de `breaking-changes.md`, con una excepción e
 - T016 (`tests/docs.agents.exports.test.ts`, 9 tests, 5 mutantes): cada export aparece en `AGENTS.md`; no reaparecen 5 frases ya falsas; los 65 archivos citados existen. No cuenta `export *` (hoy no hay).
 - El orquestador repitió un mutante de cada uno (quitar `Serializable` de `AGENTS.md`; añadir una línea a mano al README): ambos detectados.
 - Estado: 2606 tests, 135 archivos; verde ×3 en Node 26 y ×1 en Node 20.19; cobertura 99.38 / 96.65 / 99.55 / 99.24. Solo queda T017.
+- Decisión del usuario (2026-11-12): el `CHANGELOG.md` NO lleva los ID del inventario. El orquestador quitó las 115 referencias (`G01`, `V27`, …) y reescribió las referencias cruzadas con el nombre de la sección o de la entrada; el rastreo queda en `specs/007-docs/breaking-changes.md` (por clase y método).
 
