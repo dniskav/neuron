@@ -233,7 +233,7 @@ Convolutions, data loaders, loss functions, optimizers (`SGD`, `Momentum`, `Adam
 
 ## Working on this codebase
 
-- Scripts (`package.json`): `npm run build` (tsup, CJS + ESM + types into `dist/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.3.2; the 0.4.0 changes are listed as unreleased in `CHANGELOG.md`.
+- Scripts (`package.json`): `npm run build` (tsup, CJS + ESM + types into `dist/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0; the changes since 0.3.2 are listed in `CHANGELOG.md`.
 - Tests live in `tests/` (vitest). `tests/setup.ts` seeds `Math.random` before every test (`tests/helpers/seed.ts`).
 - Gradient oracles: `tests/oracle/` compares each model's real update with finite differences (helpers in `tests/helpers/gradientOracle.ts`). `tests/helpers/learns.ts` is the helper for "the loss goes down" tests.
 - `tests/coverage.modules.test.ts` requires a test file per `src/` module (case-sensitive name, searched in `tests/`, `tests/oracle/` and `tests/api/`, with documented exceptions).

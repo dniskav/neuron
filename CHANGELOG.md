@@ -4,7 +4,7 @@ All notable changes to `@dniskav/neuron` are documented here. The format is loos
 
 Most numeric claims in the 0.4.0 section were checked by running the same case against 0.3.2 and the current code.
 
-## 0.4.0 — unreleased
+## 0.4.0 — 2026-11-13
 
 ### Read this first
 
