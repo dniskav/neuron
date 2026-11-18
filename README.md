@@ -1717,6 +1717,24 @@ console.log(model.kind, model.predict(x)[0] === net.predict(x)[0]); // NetworkN 
 if (model.predict(x)[0] !== net.predict(x)[0]) throw new Error("infer and the model disagree");
 console.log(model.predictBatch([x, [1, 0]]).length); // 2
 ```
+
+### Your own embeddings in NetworkTransformer
+
+Vectors computed elsewhere (another model, yours or a paid one) can go into the token table: `setTokenEmbeddings(rows, { freeze: true })` checks that there is one row per token, `d_model` wide and finite, before writing anything, and `freeze` keeps training from changing it. The option `freezeEmbeddings` (`true`, or `{ token, position }`) does the same at construction, and format 2 saves it. If your vectors have another size, use `NetworkTransformerRL`, which projects any `inputDim`, or reduce them first with `PCA`; a plain `NetworkN` can also take each vector as its input.
+
+```ts
+import { NetworkTransformer } from "@dniskav/neuron";
+
+const net = new NetworkTransformer(3, { vocabSize: 4, d_model: 8, nHeads: 2, nClasses: 2 });
+const mine = Array.from({ length: 4 }, (_, i) => Array.from({ length: 8 }, (_, j) => Math.sin(i + j)));
+net.setTokenEmbeddings(mine, { freeze: true });
+
+const before = net.tokenEmb.getWeights();
+for (let i = 0; i < 20; i++) net.train([1, 2, 3], [0, 1, 0], 0.01);
+const same = net.tokenEmb.getWeights().every((w, k) => w === before[k]);
+console.log(same); // true
+if (!same) throw new Error("the frozen embeddings changed");
+```
 ## How it works
 
 The neural classes, from `Neuron` to `NetworkN`, apply an **activation function** to the weighted sum of their inputs and use **gradient descent** to adjust the weights. For one sigmoid output neuron with plain SGD, the update is:
