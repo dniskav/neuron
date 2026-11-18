@@ -46,16 +46,27 @@ export interface Serializable {
   kind?: string
 }
 
-/** Lo que `ModelSaver.save` necesita de un modelo. */
-export interface Saveable {
-  kind?: string
-  toConfig(): unknown
-  getWeights(): number[]
+/** Pesos planos: `getWeightsFlat` / `setWeightsFlat` (p. ej. NetworkLSTM). */
+export interface FlatWeightsModel {
+  getWeightsFlat(): number[]
+  setWeightsFlat(weights: number[]): void
 }
+
+/** Pesos como array: `getWeights` / `setWeights`. */
+export interface ArrayWeightsModel {
+  getWeights(): number[]
+  setWeights(weights: number[]): void
+}
+
+/** Un modelo tiene uno de los dos pares. Si tiene el plano, format 2 lo usa. */
+export type WeightsModel = FlatWeightsModel | ArrayWeightsModel
+
+/** Lo que `ModelSaver.save` necesita de un modelo. */
+export type Saveable = { kind?: string; toConfig(): unknown } & WeightsModel
 
 /** Lo que `ModelSaver.register` necesita de una clase. */
 export interface Registrable {
-  fromConfig(config: unknown): { setWeights(w: number[]): void; getWeights(): number[] }
+  fromConfig(config: unknown): WeightsModel
 }
 
 export interface SaveOptions {
@@ -83,6 +94,18 @@ function hasCustom(spec: OptimizerSpec | undefined): boolean {
 }
 
 const FORMAT_VERSION = 1
+
+// Format 2 uses the flat pair when the model has both of its methods; otherwise the array pair.
+function usesFlat(m: WeightsModel): m is FlatWeightsModel {
+  const f = m as Partial<FlatWeightsModel>
+  return typeof f.getWeightsFlat === 'function' && typeof f.setWeightsFlat === 'function'
+}
+
+function weightIO(m: WeightsModel): { read(): number[]; write(w: number[]): void } {
+  if (usesFlat(m)) return { read: () => m.getWeightsFlat(), write: w => m.setWeightsFlat(w) }
+  const a = m as ArrayWeightsModel
+  return { read: () => a.getWeights(), write: w => a.setWeights(w) }
+}
 
 function isNumericArray(v: unknown): v is readonly number[] {
   return Array.isArray(v) && v.every(x => typeof x === 'number')
@@ -120,7 +143,7 @@ export class ModelSaver {
         '(the loaded model will use SGD)',
       )
     }
-    const weights = model.getWeights()
+    const weights = weightIO(model).read()
     const saved: SavedModel = {
       format: 2,
       kind: model.kind,
@@ -145,21 +168,22 @@ export class ModelSaver {
         'Register the class with ModelSaver.register(kind, Class)',
       )
     }
-    let model: ReturnType<Registrable['fromConfig']>
+    let model: WeightsModel
     try {
       model = entry.fromConfig(config)
     } catch (e) {
       const msg = (e as Error).message
       throw new Error(msg.startsWith('ModelSaver.load:') ? msg : `ModelSaver.load: invalid config for ${kind}: ${msg}`)
     }
-    const expected = model.getWeights().length
+    const io = weightIO(model)
+    const expected = io.read().length
     if (weights.length !== expected) {
       throw new Error(`ModelSaver.load: the ${kind} in the file expects ${expected} weights and the file has ${weights.length}`)
     }
     if (hasCustom(optimizerOf(config))) {
       console.warn(`ModelSaver.load: ${kind} was saved with a custom optimizer; the loaded model uses SGD`)
     }
-    model.setWeights(weights)
+    io.write(weights)
     return model
   }
 
