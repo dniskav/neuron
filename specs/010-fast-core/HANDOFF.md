@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** Lotes 1–3 integrados (T001–T011 y T001b, todas verificadas). NetworkFast ×10,7 más rápido que NetworkN y 32,4 bytes/param (heap+arrayBuffers); NetworkN con Adam 30,6 (antes 136,7). Suite: 142 archivos, 2982 tests. En marcha: T012 (lotes) y T014 (formato 2). NFR-3 subido a ≤ 36 (el usuario delegó la decisión).
+**Estado (2026-11-18):** todas las tareas de código y documentación integradas en `feat/0.5-core` (T001–T023, T025, T027–T029; T024 aplazada a 011 por Q7). T025 (revisión matemática) halló un fallo real (subclases de optimizadores ignoradas por vecFromFactory), corregido en T028. Suite: 152 archivos, 3231 tests. Pendiente: T026 (benchmark oficial y estabilidad, sin agentes en paralelo) y decisión del usuario sobre el límite de 12 KB de infer (ver T019).
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 
