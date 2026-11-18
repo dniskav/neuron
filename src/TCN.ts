@@ -27,7 +27,7 @@
 // large for the problem, not that backprop is wrong. The stable range depends on
 // the task, sequence length and initialization. One measured case, not a law:
 // x[t] = sin(1.3 t + 0.4), target y[t] = x[t-1], T = 16, TCN(1, 4, 2, 2, 1),
-// 300 train() calls per run, Math.random seeded with 1-5:
+// 300 train() calls per run, random() (Math.random por defecto) seeded with 1-5:
 //   lr 0.1 - 0.39: final loss <= 6e-3 in all 5 seeds (start 0.48 - 0.85), with
 //                  no spike above 1.5x the initial loss.
 //   lr 0.5:        loss spikes to about 1.4 on the way but ends <= 1e-2.

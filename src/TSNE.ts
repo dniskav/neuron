@@ -368,7 +368,7 @@ function _computeQ(
 
 // ─── MULBERRY32 PRNG ──────────────────────────────────────────────────────────
 // A fast, seedable 32-bit pseudo-random number generator.
-// Returns a function that produces values in [0, 1), matching Math.random()'s API.
+// Returns a function that produces values in [0, 1), matching the API of random() (Math.random por defecto).
 // Reference: https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
 function _mulberry32(seed: number): () => number {
   let s = seed >>> 0;
