@@ -719,3 +719,107 @@ describe('NetworkFast 0.5: subclasses of built-ins take the scalar path (T028)',
     movedSub.forEach((v, i) => expect(v).toBeCloseTo(2 * movedPlain[i], 12))
   })
 })
+
+// ─── T031: predict (inference path) is bit for bit the one of NetworkN ─────────
+describe('NetworkFast.predict equals NetworkN.predict (Object.is), T031', () => {
+  // Weights and biases that are all non zero (the init has bias 0, which would hide a
+  // forgotten bias), and inputs of both signs.
+  const filled = (s: number[], extra: Partial<NetworkNOptions>) => {
+    const n = new NetworkN(s, extra)
+    const f = new NetworkFast(s, extra)
+    const r = mulberry32(77)
+    n.setWeights(n.getWeights().map(() => r() * 2 - 1))
+    f.setWeights(n.getWeights())
+    return { n, f, r }
+  }
+  const same = (a: number[], b: number[]) => {
+    expect(a.length).toBe(b.length)
+    a.forEach((v, i) => expect(Object.is(v, b[i])).toBe(true))
+  }
+
+  // 6 neurons per layer: a block of 4 and a remainder of 2; [7,6,6,1] and [3,5,2] also
+  // cover the sizes that are not a multiple of 4 with no residual.
+  const SHAPES: [string, number[], boolean][] = [
+    ['[6,6,6,6] residual', [6, 6, 6, 6], true],
+    ['[6,6,6,6] plain', [6, 6, 6, 6], false],
+    ['[7,6,5,1] plain', [7, 6, 5, 1], false],
+    ['[3,8,4] plain', [3, 8, 4], false],
+  ]
+  for (const [an, act] of ACTS) {
+    for (const [sn, s, residual] of SHAPES) {
+      it(`${an}, ${sn}`, () => {
+        const { n, f, r } = filled(s, opts(s, act, () => new SGD(), { residual }))
+        for (let i = 0; i < 5; i++) {
+          const x = Array.from({ length: s[0] }, () => r() * 4 - 2)
+          same(f.predict(x), n.predict(x))
+        }
+      })
+    }
+  }
+
+  it('a different activation in each layer (the one of layer l is applied in layer l)', () => {
+    const s = [5, 8, 8, 3]
+    const o: NetworkNOptions = { activations: [tanh, relu, sigmoid] }
+    const { n, f, r } = filled(s, o)
+    for (let i = 0; i < 5; i++) {
+      const x = Array.from({ length: 5 }, () => r() * 4 - 2)
+      same(f.predict(x), n.predict(x))
+    }
+    // and it is not the output of other activations
+    const other = new NetworkFast(s, { activations: [relu, tanh, sigmoid] })
+    other.setWeights(f.getWeights())
+    expect(other.predict([1, -1, 0.5, 2, -2])).not.toEqual(f.predict([1, -1, 0.5, 2, -2]))
+  })
+
+  it('the bias is added (non zero biases, one layer)', () => {
+    const f = new NetworkFast([2, 2], { activations: [linear] })
+    f.setWeights([1, 2, 10, 3, 4, -20]) // w00 w01 b0, w10 w11 b1
+    expect(f.predict([1, 1])).toEqual([13, -13])
+  })
+
+  it('the default backend path and a custom matVec path give the same bits', () => {
+    const s = [6, 9, 6, 2]
+    const o: NetworkNOptions = { activations: [elu, tanh, sigmoid] }
+    const { f, r } = filled(s, o)
+    const g = new NetworkFast(s, { ...o, backend: { matVec: (...a) => defaultBackend.matVec(...a) } })
+    g.setWeights(f.getWeights())
+    for (let i = 0; i < 5; i++) {
+      const x = Array.from({ length: 6 }, () => r() * 4 - 2)
+      same(f.predict(x), g.predict(x))
+    }
+  })
+
+  it('predict does not touch the weights and returns a new array of the output layer', () => {
+    const { f } = filled([4, 8, 8, 3], {})
+    const w = f.getWeights()
+    const a = f.predict([1, 2, 3, 4])
+    expect(a).toHaveLength(3)
+    expect(f.predict([1, 2, 3, 4])).not.toBe(a)
+    same(f.getWeights(), w)
+  })
+
+  it('does not use Dropout in inference, still clears the saved masks, and equals NetworkN', () => {
+    const s = [4, 8, 8, 3]
+    const o: NetworkNOptions = { activations: [relu, relu, sigmoid], dropoutRate: 0.4 }
+    const { n, f } = filled(s, o)
+    const x = [0.3, -0.7, 1.1, 0.2]
+    const fwd = vi.spyOn(Dropout.prototype, 'forward')
+    same(f.predict(x), n.predict(x))
+    // only the NetworkN call may reach Dropout.forward
+    expect(fwd.mock.calls.length).toBe(2)
+    fwd.mockRestore()
+    f.predict(x, true)
+    f.predict(x) // inference: the masks are gone
+    expect(() => f.trainWithDeltas(x, [0.1, 0.1, 0.1], 0.1, true)).toThrow(/dropout masks/)
+  })
+
+  it('predict(x, true) with dropout still draws from random() in the order of NetworkN', () => {
+    const s = [4, 8, 8, 3]
+    const o: NetworkNOptions = { dropoutRate: 0.4 }
+    const { n, f } = filled(s, o)
+    const x = [0.3, -0.7, 1.1, 0.2]
+    const a = withSeed(9, () => n.predict(x, true))
+    const b = withSeed(9, () => f.predict(x, true))
+    same(b, a)
+  })
+})
