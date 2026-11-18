@@ -1581,7 +1581,7 @@ if (message === null) throw new Error("NaN was not rejected");
 ```
 ## Seeds, vectorized optimizers and the numeric core (0.5, in progress)
 
-These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; the fast network that uses them (`NetworkFast`) is still in progress.
+These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; batch training and the full model format are still in progress.
 
 ### setRandom — a global, injectable random generator
 
@@ -1658,6 +1658,30 @@ const wrong = checkBackend({
 });
 console.log(wrong.ok, wrong.failures[0].op); // false matVec
 if (wrong.ok || wrong.failures[0].op !== "matVec") throw new Error("checkBackend missed a wrong matVec");
+```
+
+### NetworkFast — the same network, about 10 times faster
+
+`NetworkFast` has the same constructor, options (`NetworkFastOptions` adds `backend`), methods and weight order as `NetworkN`, and with the same seed it builds and trains to the same weights. It keeps the weights in `Float64Array` buffers and updates them with the vectorized optimizers, so it trains about 10 times faster and uses about a quarter of the memory with Adam. `NetworkN` stays as the readable version.
+
+```ts
+import { NetworkN, NetworkFast, relu, sigmoid, Adam, setRandom, seededRandom } from "@dniskav/neuron";
+
+const opts = { activations: [relu, sigmoid], optimizer: () => new Adam() };
+setRandom(seededRandom(1));
+const slow = new NetworkN([2, 8, 1], opts);
+setRandom(seededRandom(1));
+const fast = new NetworkFast([2, 8, 1], opts);
+setRandom(null);
+
+const data: [number[], number[]][] = [[[0, 0], [0]], [[0, 1], [1]], [[1, 0], [1]], [[1, 1], [0]]];
+for (let epoch = 0; epoch < 200; epoch++)
+  for (const [x, t] of data) { slow.train(x, t, 0.05); fast.train(x, t, 0.05); }
+
+const a = slow.getWeights(), b = fast.getWeights();
+const maxDiff = Math.max(...a.map((w, i) => Math.abs(w - b[i])));
+console.log(maxDiff < 1e-12); // true
+if (!(maxDiff < 1e-12)) throw new Error(`NetworkFast drifted from NetworkN: ${maxDiff}`);
 ```
 ## How it works
 

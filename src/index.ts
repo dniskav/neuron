@@ -129,3 +129,7 @@ export { defaultBackend } from "./core/tensor";
 export { setBackend, getBackend, checkBackend } from "./core/backend";
 export type { BackendReport } from "./core/backend";
 export type { Backend } from "./core/tensor";
+
+// Fast dense network (0.5): same API and weight order as NetworkN, Float64Array buffers
+export { NetworkFast } from "./NetworkFast";
+export type { NetworkFastOptions } from "./NetworkFast";

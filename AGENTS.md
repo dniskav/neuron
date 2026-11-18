@@ -6,7 +6,7 @@ This file is for AI agents and LLMs working with this codebase. Every claim belo
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (145 names: 112 values, 33 types). The map below lists all of them.
+Everything is exported from `src/index.ts` (147 names: 113 values, 34 types). The map below lists all of them.
 
 ## Module map
 
@@ -19,6 +19,7 @@ Everything is exported from `src/index.ts` (145 names: 112 values, 33 types). Th
 | `Layer` | `Layer.ts` | Array of `NeuronN` sharing the same inputs. |
 | `Network` | `Network.ts` | Fixed two-layer network (hidden + output), sigmoid, backprop. |
 | `NetworkN` | `NetworkN.ts` | Any depth `[inputs, ...hidden, outputs]`; per-layer activations, optimizer factory, `residual`, `dropoutRate`; `trainWithDeltas`, `inputGradient`. |
+| `NetworkFast` | `NetworkFast.ts` | Same API, options, validation and weight order as `NetworkN`, on `Float64Array` buffers with vectorized optimizers and the swappable backend (`options.backend`); same seed gives the same weights as `NetworkN`. About 10x faster to train. |
 
 ### Recurrent
 
@@ -125,7 +126,7 @@ Everything is exported from `src/index.ts` (145 names: 112 values, 33 types). Th
 ### Types (all in `src/index.ts` via `export type`)
 
 - Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`, `VecOptimizer` (`src/core/optim.ts`).
-- Model options: `NetworkNOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
+- Model options: `NetworkNOptions`, `NetworkFastOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
 - Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`.
 - Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`), `BackendReport` (`src/core/backend.ts`).
 

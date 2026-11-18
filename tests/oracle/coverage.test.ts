@@ -26,6 +26,7 @@ const COVERED: Record<string, string[]> = {
   Layer: ["Layer.oracle.test.ts"],
   Network: ["Network.oracle.test.ts"],
   NetworkN: ["NetworkN.oracle.test.ts"],
+  NetworkFast: ["NetworkFast.oracle.test.ts"],
   LSTMLayer: ["LSTMLayer.oracle.test.ts"],
   GRULayer: ["GRU.oracle.test.ts"],
   Conv1D: ["Conv1D.oracle.test.ts"],
