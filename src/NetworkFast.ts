@@ -4,7 +4,7 @@ import { OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray }                      from "./Validation";
 import { random }                             from "./random";
 import { getBackend }                         from "./core/backend";
-import { Backend, Vec }                       from "./core/tensor";
+import { Backend, Vec, defaultBackend }       from "./core/tensor";
 import { VecOptimizer, vecFromFactory }       from "./core/optim";
 import type { NetworkNOptions }               from "./NetworkN";
 import { describeOptimizer, optimizerFromSpec } from "./NetworkN";
@@ -151,7 +151,8 @@ export class NetworkFast {
     validateArray(inputs, this.structure[0], 'NetworkFast.predict');
     const be = this._backend();
     this._computeResidual();
-    this._forward(be, inputs, training, false);
+    if (training) this._forward(be, inputs, true, false);
+    else this._forwardInfer(be, inputs);
     return Array.from(this._a[this._L]);
   }
 
@@ -513,6 +514,63 @@ export class NetworkFast {
         const cur = Array.from(out);
         const masked = reuseMasks ? d.reuseMask(cur) : d.forward(cur, training);
         for (let k = 0; k < nOut; k++) out[k] = masked[k];
+      }
+    }
+  }
+
+  // Inference forward (predict with training = false): the same numbers as _forward, with
+  // no copies and no Dropout calls. Dropout.forward(x, false) only clears the saved mask,
+  // so that is all that is done here (as NetworkN, an inference predict clears the masks).
+  // The activation is applied right after the sum of each neuron, and the residual is
+  // added in the same step: out = f(sum) (+ x[k]), the same operations in the same order.
+  // pre[] is not written (only the training passes read it).
+  // With the default matVec the product is done here with four neurons at a time. Each
+  // neuron keeps its own sum, in the order of matVec (starts at b[k], j increasing), so
+  // the result is bit for bit the same; the four independent sums only hide the latency
+  // of the additions. A backend that replaces matVec is called as before.
+  private _forwardInfer(be: Backend, inputs: number[]): void {
+    const L = this._L, sz = this.structure;
+    const a0 = this._a[0];
+    for (let i = 0; i < a0.length; i++) a0[i] = inputs[i];
+    for (const d of this._dropouts) d.resetMask();
+
+    const inline = be.matVec === defaultBackend.matVec;
+    for (let l = 0; l < L; l++) {
+      const nIn = sz[l], nOut = sz[l + 1];
+      const x = this._a[l], out = this._a[l + 1];
+      const f = this._acts[l];
+      const res = this._res[l] === 1;
+      if (!inline) {
+        const p = this._pre[l];
+        be.matVec(this._W[l], nOut, nIn, x, this._b[l], p);
+        for (let k = 0; k < nOut; k++) {
+          const v = f.fn(p[k]);
+          out[k] = res ? v + x[k] : v;
+        }
+        continue;
+      }
+      const W = this._W[l], b = this._b[l];
+      let k = 0;
+      for (; k + 4 <= nOut; k += 4) {
+        let s0 = b[k], s1 = b[k + 1], s2 = b[k + 2], s3 = b[k + 3];
+        const r0 = k * nIn, r1 = r0 + nIn, r2 = r1 + nIn, r3 = r2 + nIn;
+        for (let j = 0; j < nIn; j++) {
+          const xj = x[j];
+          s0 += W[r0 + j] * xj;
+          s1 += W[r1 + j] * xj;
+          s2 += W[r2 + j] * xj;
+          s3 += W[r3 + j] * xj;
+        }
+        out[k]     = res ? f.fn(s0) + x[k]     : f.fn(s0);
+        out[k + 1] = res ? f.fn(s1) + x[k + 1] : f.fn(s1);
+        out[k + 2] = res ? f.fn(s2) + x[k + 2] : f.fn(s2);
+        out[k + 3] = res ? f.fn(s3) + x[k + 3] : f.fn(s3);
+      }
+      for (; k < nOut; k++) {
+        let s = b[k];
+        const r = k * nIn;
+        for (let j = 0; j < nIn; j++) s += W[r + j] * x[j];
+        out[k] = res ? f.fn(s) + x[k] : f.fn(s);
       }
     }
   }
