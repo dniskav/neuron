@@ -25,7 +25,7 @@ The `Value` class implements **reverse-mode automatic differentiation**: every o
 - **`PCA`:** with rank-deficient data, the axes with zero variance can have a norm close to 0, so they are not an orthonormal basis. Do not use them as one.
 - **`TSNE`:** with a small number of points, the default `lr` of 200 diverges. The stable range depends on the number of points (`src/TSNE.ts`).
 - **`TCN`:** sensitive to `lr`. The header of `src/TCN.ts` lists the measured range.
-- **Randomness:** `setRandom(seededRandom(seed))` makes the whole library reproducible once the 0.5 migration of every class to `random()` lands; until then some classes still call `Math.random` directly (`KMeans` and `TSNE` also take their own `seed`). The examples in this README fix `Math.random` in their own block.
+- **Randomness:** every random draw goes through `random()`, which uses `Math.random` unless you install a generator: `setRandom(seededRandom(seed))` makes the whole library reproducible (`KMeans` and `TSNE` also take their own `seed`). The examples in this README fix `Math.random` in their own block.
 - **Training:** most training is online (one sample per update) and runs on the CPU in plain JavaScript. There is no GPU backend.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list.

@@ -1,6 +1,6 @@
 ## Seeds, vectorized optimizers and the numeric core (0.5, in progress)
 
-These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested, but the models do not use them all yet.
+These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; the fast network that uses them (`NetworkFast`) is still in progress.
 
 ### setRandom — a global, injectable random generator
 
@@ -57,4 +57,24 @@ getBackend().matVec(W, 2, 3, new Float64Array(3), null, new Float64Array(2));
 setBackend(null);
 console.log(calls, getBackend() === defaultBackend || getBackend().matVec === defaultBackend.matVec); // 1 true
 if (calls !== 1) throw new Error("the custom matVec was not used");
+```
+
+`checkBackend(backend)` runs the conformance cases (several sizes and batches, zeros, negatives, very small and very large values) against the default backend and returns a `BackendReport` (`{ ok, failures }`). Use it before plugging your own implementation in.
+
+```ts
+import { checkBackend, defaultBackend } from "@dniskav/neuron";
+
+console.log(checkBackend(defaultBackend).ok); // true
+if (!checkBackend(defaultBackend).ok) throw new Error("the default backend failed its own checks");
+
+// A matVec that is slightly off is caught.
+const wrong = checkBackend({
+  matVec: (W, rows, cols, x, b, out) => {
+    defaultBackend.matVec(W, rows, cols, x, b, out);
+    for (let k = 0; k < rows; k++) out[k] += 1e-6;
+    return out;
+  },
+});
+console.log(wrong.ok, wrong.failures[0].op); // false matVec
+if (wrong.ok || wrong.failures[0].op !== "matVec") throw new Error("checkBackend missed a wrong matVec");
 ```

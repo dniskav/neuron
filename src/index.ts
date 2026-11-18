@@ -126,5 +126,6 @@ export type { VecOptimizer } from "./core/optim";
 
 // Numeric core (0.5): Float64Array operations behind a swappable backend
 export { defaultBackend } from "./core/tensor";
-export { setBackend, getBackend } from "./core/backend";
+export { setBackend, getBackend, checkBackend } from "./core/backend";
+export type { BackendReport } from "./core/backend";
 export type { Backend } from "./core/tensor";

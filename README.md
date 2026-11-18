@@ -1581,7 +1581,7 @@ if (message === null) throw new Error("NaN was not rejected");
 ```
 ## Seeds, vectorized optimizers and the numeric core (0.5, in progress)
 
-These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested, but the models do not use them all yet.
+These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; the fast network that uses them (`NetworkFast`) is still in progress.
 
 ### setRandom — a global, injectable random generator
 
@@ -1639,6 +1639,26 @@ setBackend(null);
 console.log(calls, getBackend() === defaultBackend || getBackend().matVec === defaultBackend.matVec); // 1 true
 if (calls !== 1) throw new Error("the custom matVec was not used");
 ```
+
+`checkBackend(backend)` runs the conformance cases (several sizes and batches, zeros, negatives, very small and very large values) against the default backend and returns a `BackendReport` (`{ ok, failures }`). Use it before plugging your own implementation in.
+
+```ts
+import { checkBackend, defaultBackend } from "@dniskav/neuron";
+
+console.log(checkBackend(defaultBackend).ok); // true
+if (!checkBackend(defaultBackend).ok) throw new Error("the default backend failed its own checks");
+
+// A matVec that is slightly off is caught.
+const wrong = checkBackend({
+  matVec: (W, rows, cols, x, b, out) => {
+    defaultBackend.matVec(W, rows, cols, x, b, out);
+    for (let k = 0; k < rows; k++) out[k] += 1e-6;
+    return out;
+  },
+});
+console.log(wrong.ok, wrong.failures[0].op); // false matVec
+if (wrong.ok || wrong.failures[0].op !== "matVec") throw new Error("checkBackend missed a wrong matVec");
+```
 ## How it works
 
 The neural classes, from `Neuron` to `NetworkN`, apply an **activation function** to the weighted sum of their inputs and use **gradient descent** to adjust the weights. For one sigmoid output neuron with plain SGD, the update is:
@@ -1666,7 +1686,7 @@ The `Value` class implements **reverse-mode automatic differentiation**: every o
 - **`PCA`:** with rank-deficient data, the axes with zero variance can have a norm close to 0, so they are not an orthonormal basis. Do not use them as one.
 - **`TSNE`:** with a small number of points, the default `lr` of 200 diverges. The stable range depends on the number of points (`src/TSNE.ts`).
 - **`TCN`:** sensitive to `lr`. The header of `src/TCN.ts` lists the measured range.
-- **Randomness:** `setRandom(seededRandom(seed))` makes the whole library reproducible once the 0.5 migration of every class to `random()` lands; until then some classes still call `Math.random` directly (`KMeans` and `TSNE` also take their own `seed`). The examples in this README fix `Math.random` in their own block.
+- **Randomness:** every random draw goes through `random()`, which uses `Math.random` unless you install a generator: `setRandom(seededRandom(seed))` makes the whole library reproducible (`KMeans` and `TSNE` also take their own `seed`). The examples in this README fix `Math.random` in their own block.
 - **Training:** most training is online (one sample per update) and runs on the CPU in plain JavaScript. There is no GPU backend.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list.

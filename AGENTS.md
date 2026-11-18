@@ -6,7 +6,7 @@ This file is for AI agents and LLMs working with this codebase. Every claim belo
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (143 names: 111 values, 32 types). The map below lists all of them.
+Everything is exported from `src/index.ts` (145 names: 112 values, 33 types). The map below lists all of them.
 
 ## Module map
 
@@ -120,14 +120,14 @@ Everything is exported from `src/index.ts` (143 names: 111 values, 32 types). Th
 | `Tokenizer` | `Tokenizer.ts` | `char`, `word` or `whitespace` vocabulary; `encode`, `decode`, `oneHot`, snapshots. |
 | `validateArray` `validateArrayMinLength` `validate2DArray` `validateNumber` | `Validation.ts` | Throw `Error('<method>: ...')` on bad arrays or numbers. |
 | `random` `setRandom` `getRandom` `seededRandom` `withRandom` | `random.ts` | Injectable RNG: `random()` calls `Math.random` at call time unless `setRandom(fn)` installed a generator; `seededRandom(seed)` is mulberry32. |
-| `defaultBackend` `setBackend` `getBackend` | `src/core/tensor.ts`, `src/core/backend.ts` | Row-major `Float64Array` kernels (`matVec`, `matTVec`, `addOuter` and their batch versions) behind a swappable backend; `setBackend(partial)` merges with the default, `setBackend(null)` restores it. |
+| `defaultBackend` `setBackend` `getBackend` `checkBackend` | `src/core/tensor.ts`, `src/core/backend.ts` | Row-major `Float64Array` kernels (`matVec`, `matTVec`, `addOuter` and their batch versions) behind a swappable backend; `setBackend(partial)` merges with the default, `setBackend(null)` restores it; `checkBackend(b)` runs the conformance cases against the default and returns a `BackendReport`. |
 
 ### Types (all in `src/index.ts` via `export type`)
 
 - Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`, `VecOptimizer` (`src/core/optim.ts`).
 - Model options: `NetworkNOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
 - Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`.
-- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`).
+- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`), `BackendReport` (`src/core/backend.ts`).
 
 ## When to use each class
 
@@ -155,7 +155,7 @@ Everything is exported from `src/index.ts` (143 names: 111 values, 32 types). Th
 - **No batching in the models.** Training is online: one sample (or one sequence or episode) per call. `NetworkLSTM` accumulates gradients across an episode; `NetworkTransformer.train` processes one sequence per call. `DataLoader` only slices data into batches and `Autoencoder.trainBatch` trains on the rows of a batch one after another (it returns the mean MSE); neither vectorizes.
 - **Gradients are hand-coded**, one backward pass per class. `Value` is the only autograd and it is standalone.
 - **No GPU, no native code, no dependencies.**
-- **There is no global random seed.** Initialization and sampling use `Math.random`. Only `TSNE` (`options.seed`, mulberry32 in `TSNE.ts`) and `KMeans` (`options.seed`, `KMeans.ts`) accept a `seed`. To make anything else reproducible, replace `Math.random` before constructing and training (the tests do this with `tests/helpers/seed.ts`).
+- **Random numbers go through `random()` (`src/random.ts`).** It calls `Math.random` at call time unless `setRandom(fn)` installed a generator; `setRandom(seededRandom(seed))` makes construction and training reproducible, and `setRandom(null)` restores `Math.random`. `TSNE` and `KMeans` also accept their own `options.seed`. No file of `src/` other than `random.ts` calls `Math.random` (the tests still seed `Math.random`, which `random()` picks up).
 - **Optimizers use the ascent convention.** `Optimizer.step` returns `w + lr * g`, so models pass `g = -dL/dw`. Keep this when adding a model or a custom delta.
 - **Transformer outputs are unbounded.** `NetworkTransformer.predict` returns raw logits (`seqLen * nClasses`, flattened); apply `softmax` externally for probabilities.
 - **`NetworkTransformer.train` uses softmax + cross-entropy**, not MSE. The logit gradient is `prob_c - target_c`, divided by the number of positions that count (`mask`), so it is the gradient of the MEAN cross-entropy that the method returns.
@@ -227,7 +227,7 @@ These are documented behaviors, not bugs to fix silently (also listed in `CHANGE
 
 - No GPU acceleration and no native or WASM code.
 - No vectorized batch training: models train one sample, sequence or episode per call (`DataLoader`, `DataAugmentation` and `Trainer` loop over data).
-- No global random seed or injectable RNG (only `TSNE` and `KMeans` take `seed`).
+- No per-instance RNG option: the generator is global (`setRandom`), plus `options.seed` in `TSNE` and `KMeans`.
 - No automatic differentiation inside the models: `Value` is a separate scalar tool; every other class has its own hand-coded backward pass.
 - No file I/O: `ModelSaver` and `DatasetLoader` work on strings (`saveToFile` / `loadFromFile` receive the read/write function).
 - No gradient clipping inside `Trainer`; clip through the optimizer (`ClippedOptimizerFactory`).
