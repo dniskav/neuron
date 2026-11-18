@@ -123,3 +123,8 @@ export type { RandomFn } from "./random";
 // Vectorized optimizers (0.5): one state buffer per parameter block, exact equivalent of the scalar ones
 export { VecSGD, VecMomentum, VecAdam, VecClip, ScalarArrayOptimizer, vecFromFactory } from "./core/optim";
 export type { VecOptimizer } from "./core/optim";
+
+// Numeric core (0.5): Float64Array operations behind a swappable backend
+export { defaultBackend } from "./core/tensor";
+export { setBackend, getBackend } from "./core/backend";
+export type { Backend } from "./core/tensor";
