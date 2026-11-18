@@ -1,7 +1,7 @@
 {
   "node": "v26.12.1",
   "cpu": "Apple M3",
-  "date": "2026-11-18T10:52:46.397Z",
+  "date": "2026-11-18T11:10:57.565Z",
   "rows": [
     {
       "model": "NetworkN",
@@ -13,9 +13,10 @@
       ],
       "optimizer": "sgd",
       "params": 134154,
-      "bytesPerParam": 40.74594868583866,
-      "trainMs": 2.8590458000000014,
-      "predictMs": 0.16935835000000452
+      "bytesPerParam": 40.7641367383753,
+      "heapOnlyBytesPerParam": 40.7641367383753,
+      "trainMs": 3.532720800000001,
+      "predictMs": 0.17130000000000223
     },
     {
       "model": "NetworkN",
@@ -27,9 +28,10 @@
       ],
       "optimizer": "adam",
       "params": 134154,
-      "bytesPerParam": 136.67993500007455,
-      "trainMs": 5.185114599999997,
-      "predictMs": 0.16405209999999215
+      "bytesPerParam": 136.68071022854332,
+      "heapOnlyBytesPerParam": 136.68071022854332,
+      "trainMs": 6.2774166499999975,
+      "predictMs": 0.19412499999999683
     },
     {
       "model": "NetworkN",
@@ -41,9 +43,10 @@
       ],
       "optimizer": "sgd",
       "params": 530442,
-      "bytesPerParam": 40.31685273790537,
-      "trainMs": 7.759006250000016,
-      "predictMs": 0.702322950000007
+      "bytesPerParam": 40.322417908084205,
+      "heapOnlyBytesPerParam": 40.322417908084205,
+      "trainMs": 8.894831249999992,
+      "predictMs": 0.7850333499999806
     },
     {
       "model": "NetworkN",
@@ -55,9 +58,10 @@
       ],
       "optimizer": "adam",
       "params": 530442,
-      "bytesPerParam": 136.31514849879912,
-      "trainMs": 20.747616649999962,
-      "predictMs": 0.6569041499999912
+      "bytesPerParam": 136.31570652399319,
+      "heapOnlyBytesPerParam": 136.31570652399319,
+      "trainMs": 44.11520829999999,
+      "predictMs": 1.6040750000000117
     }
   ]
 }
