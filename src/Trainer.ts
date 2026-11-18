@@ -52,6 +52,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { DataPair } from "./DataLoader";
+import { random } from "./random";
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ export class Trainer {
       // Shuffle indices
       const indices = Array.from({ length: n }, (_, i) => i);
       for (let i = n - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(random() * (i + 1));
         [indices[i], indices[j]] = [indices[j], indices[i]];
       }
 

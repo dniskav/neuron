@@ -39,6 +39,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { validateArray, validateDataset } from './Validation'
+import { random } from './random'
 
 export class PCA {
   /** Eigenvectors (principal components), shape [nComponents][nFeatures]. */
@@ -201,7 +202,7 @@ export class PCA {
   ): { eigenvector: number[]; eigenvalue: number } {
     // Initialize with a random unit vector orthogonal to the previous components
     let v = this._normalize(this._orthogonalize(
-      Array.from({ length: p }, () => Math.random() - 0.5), prev));
+      Array.from({ length: p }, () => random() - 0.5), prev));
 
     for (let iter = 0; iter < maxIter; iter++) {
       const Mv = this._matvec(M, v);

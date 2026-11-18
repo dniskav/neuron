@@ -1,6 +1,7 @@
 import { Activation, sigmoid }          from "./activations";
 import { Optimizer, OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray }                from "./Validation";
+import { random }                       from "./random";
 
 // ─── N-INPUT NEURON ───────────────────────────────────────────────────────────
 // Generalized version of Neuron: accepts any number of inputs.
@@ -24,7 +25,7 @@ export class NeuronN {
     optimizerFactory: OptimizerFactory = defaultOptimizer,
   ) {
     const limit = Math.sqrt(1 / nInputs);
-    this.weights = Array.from({ length: nInputs }, () => (Math.random() * 2 - 1) * limit);
+    this.weights = Array.from({ length: nInputs }, () => (random() * 2 - 1) * limit);
     this.bias = 0;
     this.activation = activation;
     this._opts = Array.from({ length: nInputs + 1 }, optimizerFactory);

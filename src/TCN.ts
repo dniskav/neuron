@@ -42,6 +42,7 @@
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { relu as reluActivation } from "./activations";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 // ── Input checks (T040). Run before any cache or weight is touched.
 function checkLr(where: string, lr: number): void {
@@ -121,7 +122,7 @@ export class CausalConv1D {
     const limit = Math.sqrt(2 / (kernelSize * inputChannels));
     this.kernels = Array.from({ length: outputChannels }, () =>
       Array.from({ length: kernelSize }, () =>
-        Array.from({ length: inputChannels }, () => (Math.random() * 2 - 1) * limit)
+        Array.from({ length: inputChannels }, () => (random() * 2 - 1) * limit)
       )
     );
     this.biases = new Array(outputChannels).fill(0);
@@ -302,7 +303,7 @@ export class TCN {
     // Linear output projection: channels → outputSize
     const outLimit = Math.sqrt(2 / channels);
     this._outputW = Array.from({ length: outputSize }, () =>
-      Array.from({ length: channels }, () => (Math.random() * 2 - 1) * outLimit)
+      Array.from({ length: channels }, () => (random() * 2 - 1) * outLimit)
     );
     this._outputB = new Array(outputSize).fill(0);
 

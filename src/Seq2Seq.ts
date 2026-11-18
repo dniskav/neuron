@@ -39,6 +39,7 @@
 import { LSTMLayer } from "./LSTMLayer";
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 // ── Input checks (T040). Run before any LSTM state or weight is touched.
 function checkLr(where: string, lr: number): void {
@@ -112,7 +113,7 @@ export class Seq2Seq {
     // Xavier initialization for linear projection
     const limit = Math.sqrt(2 / hiddenSize);
     this.W_out = Array.from({ length: outputSize }, () =>
-      Array.from({ length: hiddenSize }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: hiddenSize }, () => (random() * 2 - 1) * limit)
     );
     this.b_out = new Array(outputSize).fill(0);
 

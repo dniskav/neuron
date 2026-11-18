@@ -62,6 +62,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { random } from "./random";
+
 export interface TSNEOptions {
   /** Dimensionality of the output embedding. Default 2. */
   nComponents?: number;
@@ -91,7 +93,7 @@ export interface TSNEOptions {
   nIter?: number;
   /**
    * Seed for the pseudo-random number generator.
-   * Set to any integer for reproducible results. Default uses Math.random.
+   * Set to any integer for reproducible results. Default draws from random() (src/random.ts).
    */
   seed?: number;
 }
@@ -132,7 +134,7 @@ export class TSNE {
       );
     }
 
-    const rng = this._seed !== undefined ? _mulberry32(this._seed) : Math.random;
+    const rng = this._seed !== undefined ? _mulberry32(this._seed) : random;
 
     // ── Step 1: pairwise squared distances in high-D ────────────────────────
     const distSq = _pairwiseDistSq(X, n);

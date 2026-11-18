@@ -5,6 +5,7 @@ function sigmoid(x: number): number {
 }
 
 import { validateNumber } from "./Validation";
+import { random } from "./random";
 
 // ─── NEURON (single input) ────────────────────────────────────────────────────
 // Educational version: one input, one weight.
@@ -14,8 +15,8 @@ export class Neuron {
   bias: number;
 
   constructor() {
-    this.weight = Math.random() * 0.1;
-    this.bias   = Math.random() * 0.1;
+    this.weight = random() * 0.1;
+    this.bias   = random() * 0.1;
   }
 
   predict(input: number): number {

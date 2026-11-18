@@ -42,6 +42,7 @@
 import { NetworkN, NetworkNOptions } from "./NetworkN";
 import { linear, sigmoid } from "./activations";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 // ─── VAE ─────────────────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export class VAE {
     reconLoss: number;
     klLoss: number;
   } {
-    // Validated before any Math.random draw or weight change: input width and finiteness, and
+    // Validated before any random() draw or weight change: input width and finiteness, and
     // lr finite and >= 0 (lr = 0 is a valid no-op).
     validateArray(x, this.encoder.structure[0], 'VAE.train: x');
     if (!(Number.isFinite(lr) && lr >= 0)) {
@@ -162,7 +163,7 @@ export class VAE {
     }
 
     // Training forward (dropout ACTIVE, one mask per sub-network, reused below; Q9). Same
-    // Math.random order as forward(): encoder masks, eps, decoder masks. With dropoutRate = 0
+    // random() order as forward(): encoder masks, eps, decoder masks. With dropoutRate = 0
     // it is exactly forward().
     const encOut = this.encoder.predict(x, true);
     const mu     = encOut.slice(0, this.latentDim);
@@ -223,8 +224,8 @@ export class VAE {
 
   // Box-Muller transform: samples one value from N(0, 1).
   private _sampleNormal(): number {
-    const u1 = Math.random();
-    const u2 = Math.random();
+    const u1 = random();
+    const u2 = random();
     return Math.sqrt(-2 * Math.log(u1 + 1e-15)) * Math.cos(2 * Math.PI * u2);
   }
 }
