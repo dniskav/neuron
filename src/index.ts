@@ -148,3 +148,5 @@ import { NetworkTransformer as _NetworkTransformer } from "./NetworkTransformer"
 import { NetworkTransformerRL as _NetworkTransformerRL } from "./NetworkTransformerRL";
 _ModelSaver.register("NetworkTransformer", _NetworkTransformer);
 _ModelSaver.register("NetworkTransformerRL", _NetworkTransformerRL);
+import { NetworkFast as _NetworkFast } from "./NetworkFast";
+_ModelSaver.register("NetworkFast", _NetworkFast);
