@@ -6,7 +6,7 @@ This file is for AI agents and LLMs working with this codebase. Every claim belo
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (132 names: 102 values, 30 types). The map below lists all of them.
+Everything is exported from `src/index.ts` (139 names: 108 values, 31 types). The map below lists all of them.
 
 ## Module map
 
@@ -67,6 +67,7 @@ Everything is exported from `src/index.ts` (132 names: 102 values, 30 types). Th
 | `SGD` `Momentum` `Adam` | `optimizers.ts` | One instance per scalar weight; `step(weight, gradient, lr)` returns `w + lr*g`. |
 | `ClipOptimizer` `ClippedOptimizerFactory` | `optimizers.ts` | Clip each gradient to `[-clipValue, clipValue]` before delegating. |
 | `defaultOptimizer` | `optimizers.ts` | Factory `() => new SGD()`; the default of `NeuronN`, `Layer`, `NetworkN`, `NetworkLSTM`. |
+| `VecSGD` `VecMomentum` `VecAdam` `VecClip` `ScalarArrayOptimizer` `vecFromFactory` | `core/optim.ts` | Vectorized optimizers over a whole buffer (`step(params, grads, lr)`), exactly equal to N scalar ones; `vecFromFactory` recognizes the built-ins and falls back to `ScalarArrayOptimizer` for custom ones. |
 | `mse` `crossEntropy` | `losses.ts` | Scalar losses for evaluation (`crossEntropy` is binary and averaged). |
 | `mseDelta` `crossEntropyDelta` `crossEntropyDeltaRaw` | `losses.ts` | Output deltas for `trainWithDeltas`; NOT rescaled (`mseDelta` is `actual - predicted`). |
 
@@ -122,7 +123,7 @@ Everything is exported from `src/index.ts` (132 names: 102 values, 30 types). Th
 
 ### Types (all in `src/index.ts` via `export type`)
 
-- Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`.
+- Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`, `VecOptimizer` (`core/optim.ts`).
 - Model options: `NetworkNOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
 - Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`.
 - Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`.

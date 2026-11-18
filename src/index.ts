@@ -119,3 +119,7 @@ export { DataAugmentation } from "./DataAugmentation";
 // Random number generator (0.5): injectable, Math.random by default
 export { random, setRandom, getRandom, seededRandom, withRandom } from "./random";
 export type { RandomFn } from "./random";
+
+// Vectorized optimizers (0.5): one state buffer per parameter block, exact equivalent of the scalar ones
+export { VecSGD, VecMomentum, VecAdam, VecClip, ScalarArrayOptimizer, vecFromFactory } from "./core/optim";
+export type { VecOptimizer } from "./core/optim";
