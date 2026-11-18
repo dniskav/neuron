@@ -22,7 +22,12 @@
 //
 // Notes:
 //  - weightDecay multiplies EVERY weight returned by getWeights(), biases
-//    included, by (1 - lr * weightDecay) before each sample.
+//    included, by (1 - lr * weightDecay) before each sample (before each batch
+//    step when batchSize > 1).
+//  - batchSize (default 1) > 1 needs a model with trainBatch(X, T, lr) returning
+//    the mean MSE of the batch (NetworkFast). The epoch is cut into chunks of
+//    batchSize examples (the last one may be smaller); the epoch loss is still
+//    the mean per example, so each chunk counts by its size.
 //  - restoreBestWeights (default false) keeps getWeights() at each validation
 //    improvement and restores it when training ends, by early stopping or by
 //    reaching epochs. Optimizer state (Adam moments, etc.) is NOT restored, only
@@ -91,6 +96,7 @@ export interface TrainerOptions {
     minDelta: number;     // minimum improvement required
   };
   computeMetrics?: boolean; // compute classification metrics each epoch
+  batchSize?: number;     // integer >= 1, default 1. > 1 needs a model with trainBatch()
   restoreBestWeights?: boolean; // default false. Requires earlyStopping + validation data:
                                 // on finish, restore the weights of the best validation epoch
 }
@@ -102,6 +108,9 @@ export interface TrainDataset {
 
 export interface TrainableNetwork {
   train(inputs: number[], targets: number[], lr: number): number;
+  /** Optional: one optimizer step on a batch; returns the mean loss of the batch.
+   *  Required when batchSize > 1. */
+  trainBatch?(inputs: number[][], targets: number[][], lr: number): number;
 }
 
 /** Extended interface for networks that support weight access and prediction.
@@ -122,6 +131,7 @@ export class Trainer {
   readonly verbose: boolean;
   readonly weightDecay: number;
   readonly restoreBestWeights: boolean;
+  readonly batchSize: number;
 
   private _history: number[] = [];
 
@@ -146,6 +156,17 @@ export class Trainer {
     this._earlyStopping = options.earlyStopping;
     this._computeMetrics = options.computeMetrics ?? false;
     this.restoreBestWeights = options.restoreBestWeights ?? false;
+
+    this.batchSize = options.batchSize ?? 1;
+    if (!(Number.isInteger(this.batchSize) && this.batchSize >= 1)) {
+      throw new Error(`Trainer: batchSize must be an integer >= 1, got ${this.batchSize}`);
+    }
+    if (
+      this.batchSize > 1 &&
+      typeof (network as { trainBatch?: unknown }).trainBatch !== 'function'
+    ) {
+      throw new Error('Trainer: batchSize > 1 needs a model with trainBatch()');
+    }
   }
 
   // ── Set external validation data (for early stopping) ────────────────────
@@ -223,18 +244,39 @@ export class Trainer {
         [indices[i], indices[j]] = [indices[j], indices[i]];
       }
 
-      // Train on each sample
       let epochLoss = 0;
-      for (const i of indices) {
-        // Apply weight decay before each training step (L2 equivalent)
-        if (canDecay) {
-          const w = netExt!.getWeights();
-          for (let j = 0; j < w.length; j++) {
-            w[j] *= 1 - lr * this.weightDecay;
+      if (this.batchSize > 1) {
+        // Chunks of batchSize examples, one trainBatch() step each. The chunk
+        // loss is a mean, so it is weighted by the chunk size (the last one may be smaller).
+        const batchNet = this.network as TrainableNetwork & {
+          trainBatch(inputs: number[][], targets: number[][], lr: number): number;
+        };
+        for (let s = 0; s < n; s += this.batchSize) {
+          const chunk = indices.slice(s, s + this.batchSize);
+          if (canDecay) {
+            const w = netExt!.getWeights();
+            for (let j = 0; j < w.length; j++) {
+              w[j] *= 1 - lr * this.weightDecay;
+            }
+            netExt!.setWeights(w);
           }
-          netExt!.setWeights(w);
+          const X = chunk.map((i) => inputs[i]);
+          const T = chunk.map((i) => targets[i]);
+          epochLoss += batchNet.trainBatch(X, T, lr) * chunk.length;
         }
-        epochLoss += this.network.train(inputs[i], targets[i], lr);
+      } else {
+        // Train on each sample
+        for (const i of indices) {
+          // Apply weight decay before each training step (L2 equivalent)
+          if (canDecay) {
+            const w = netExt!.getWeights();
+            for (let j = 0; j < w.length; j++) {
+              w[j] *= 1 - lr * this.weightDecay;
+            }
+            netExt!.setWeights(w);
+          }
+          epochLoss += this.network.train(inputs[i], targets[i], lr);
+        }
       }
       epochLoss /= n;
       this._history.push(epochLoss);
