@@ -115,6 +115,8 @@ ModelSaver.load(json: string): unknown          // instancia nueva
 ModelSaver.register(kind: string, entry: { fromConfig(config: unknown): { setWeights(w: number[]): void; getWeights(): number[] } }): void
 ```
 
+Pesos planos (decisión del orquestador, T016): si el modelo tiene `getWeightsFlat()` / `setWeightsFlat()` (p. ej. `NetworkLSTM`, cuyo `getWeights()` devuelve un objeto estructurado), `save` y `load` usan esos métodos; si no, `getWeights()` / `setWeights()`. `Saveable` y `Registrable` aceptan cualquiera de los dos pares.
+
 Cada clase con formato 2 expone `static readonly kind = '<Nombre>'` y un getter de instancia `kind` que lo devuelve. El nombre de la clase no se lee de `constructor.name`, porque los empaquetadores lo minimizan. Las activaciones integradas ganan `readonly name` (y `alpha` las de fábrica). Para guardar el optimizador, `NetworkN` y `NetworkFast` conservan la fábrica que recibieron y la inspeccionan igual que `vecFromFactory`.
 
 ## 7. `src/infer.ts` → `@dniskav/neuron/infer`
