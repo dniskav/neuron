@@ -6,7 +6,7 @@ This file is for AI agents and LLMs working with this codebase. Every claim belo
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (147 names: 113 values, 34 types). The map below lists all of them.
+Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). The map below lists all of them.
 
 ## Module map
 
@@ -83,7 +83,7 @@ Everything is exported from `src/index.ts` (147 names: 113 values, 34 types). Th
 | `DatasetLoader` | `DatasetLoader.ts` | `fromCSV`, `fromJSON`; one-hot encodes string columns. |
 | `DataAugmentation` | `DataAugmentation.ts` | Noise, jitter, flip, normalize, standardize, `shuffle`, `split`. |
 | `LossPlotter` | `LossPlotter.ts` | ASCII loss curve. |
-| `ModelSaver` | `ModelSaver.ts` | JSON save/load through `getWeights()` / `setWeights()`. |
+| `ModelSaver` | `ModelSaver.ts` | JSON save/load through `getWeights()` / `setWeights()`. (format 1); `save`/`load` write and read format 2 (`{ format: 2, kind, config, weights }`) and return a new instance; `register(kind, { fromConfig })` adds your own classes. |
 
 ### Classical ML, unsupervised, generative
 
@@ -127,7 +127,7 @@ Everything is exported from `src/index.ts` (147 names: 113 values, 34 types). Th
 
 - Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`, `VecOptimizer` (`src/core/optim.ts`).
 - Model options: `NetworkNOptions`, `NetworkFastOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
-- Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`.
+- Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`, `Saveable`, `Registrable`, `SaveOptions`, and from `src/core/format2.ts` `NetworkNConfig`, `ActivationSpec`, `OptimizerSpec`, `SavedModel`.
 - Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`), `BackendReport` (`src/core/backend.ts`).
 
 ## When to use each class

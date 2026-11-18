@@ -1,6 +1,6 @@
 ## Seeds, vectorized optimizers and the numeric core (0.5, in progress)
 
-These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; batch training and the full model format are still in progress.
+These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; batch training and the inference-only entry are still in progress.
 
 ### setRandom — a global, injectable random generator
 
@@ -101,4 +101,22 @@ const a = slow.getWeights(), b = fast.getWeights();
 const maxDiff = Math.max(...a.map((w, i) => Math.abs(w - b[i])));
 console.log(maxDiff < 1e-12); // true
 if (!(maxDiff < 1e-12)) throw new Error(`NetworkFast drifted from NetworkN: ${maxDiff}`);
+```
+
+### ModelSaver.save and load — the whole model, not only the weights
+
+Format 1 (`toJSON` / `fromJSON`) saves only the weights, so you must rebuild the same model before loading. Format 2 saves the class (`kind`), its configuration and the weights: `ModelSaver.save(model)` writes it and `ModelSaver.load(json)` returns a new instance ready to predict and to keep training (the optimizer state is not saved; it starts from zero). Activations are saved by name (`ActivationSpec`), the optimizer with its settings (`OptimizerSpec`) and the configuration of `NetworkN` as a `NetworkNConfig`; the parsed file is a `SavedModel`. A model you can save is a `Saveable`; `ModelSaver.register(kind, entry)` adds your own class (a `Registrable`). A custom optimizer only saves with `SaveOptions` `{ allowCustomOptimizer: true }` and loads as SGD.
+
+```ts
+import { ModelSaver, NetworkN, makeLeakyRelu, linear, Adam } from "@dniskav/neuron";
+
+const net = new NetworkN([3, 6, 2], { activations: [makeLeakyRelu(0.2), linear], optimizer: () => new Adam() });
+for (let i = 0; i < 50; i++) net.train([0.1, 0.5, -0.3], [1, -1], 0.01);
+
+const json = ModelSaver.save(net);
+const copy = ModelSaver.load(json) as NetworkN;
+const a = net.predict([0.2, 0.1, 0.4]), b = copy.predict([0.2, 0.1, 0.4]);
+console.log(copy instanceof NetworkN, a[0] === b[0] && a[1] === b[1]); // true true
+if (!(copy instanceof NetworkN) || a[0] !== b[0] || a[1] !== b[1]) throw new Error("load did not restore the model");
+console.log(JSON.parse(json).kind); // NetworkN
 ```
