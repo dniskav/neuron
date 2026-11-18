@@ -33,7 +33,7 @@ describe('NetworkTransformer format 2', () => {
 
   it('toConfig gives the effective defaults, not the options left out', () => {
     expect(new NetworkTransformer(6).toConfig()).toEqual({
-      seqLen: 6, vocabSize: 10, d_model: 64, nHeads: 4, d_ff: 128, nBlocks: 4, nClasses: 9,
+      seqLen: 6, vocabSize: 10, d_model: 64, nHeads: 4, d_ff: 128, nBlocks: 4, nClasses: 9, freezeEmbeddings: false,
     })
   })
 
@@ -42,7 +42,7 @@ describe('NetworkTransformer format 2', () => {
       vocabSize: 5, d_model: 8, nHeads: 2, d_ff: 16, nBlocks: 2, nClasses: 3,
     })
     expect(net.toConfig()).toEqual({
-      seqLen: 6, vocabSize: 5, d_model: 8, nHeads: 2, d_ff: 16, nBlocks: 2, nClasses: 3,
+      seqLen: 6, vocabSize: 5, d_model: 8, nHeads: 2, d_ff: 16, nBlocks: 2, nClasses: 3, freezeEmbeddings: false,
     })
   })
 
