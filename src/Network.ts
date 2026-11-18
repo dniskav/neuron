@@ -9,6 +9,10 @@ export class Network {
   hiddenLayer: Layer;
   outputLayer: Layer;
 
+  /** Class name for ModelSaver format 2 (not read from constructor.name: bundlers rename it). */
+  static readonly kind = 'Network';
+  get kind(): string { return Network.kind; }
+
   constructor(nInputs: number, nHidden: number, nOutputs: number) {
     this.hiddenLayer = new Layer(nHidden, nInputs);
     this.outputLayer = new Layer(nOutputs, nHidden);
@@ -97,6 +101,26 @@ export class Network {
       }
     }
     return target;
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Network has fixed sigmoid and SGD, so the sizes are the whole config.
+  toConfig(): { nInputs: number; nHidden: number; nOutputs: number } {
+    return {
+      nInputs: this.hiddenLayer.neurons[0].weights.length,
+      nHidden: this.hiddenLayer.neurons.length,
+      nOutputs: this.outputLayer.neurons.length,
+    };
+  }
+
+  /** New network from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): Network {
+    const c = config as Record<string, unknown> | null;
+    const ok = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+    if (typeof c !== 'object' || c === null || !ok(c.nInputs) || !ok(c.nHidden) || !ok(c.nOutputs)) {
+      throw new Error('Network.fromConfig: config needs integer nInputs, nHidden and nOutputs >= 1');
+    }
+    return new Network(c.nInputs, c.nHidden, c.nOutputs);
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────

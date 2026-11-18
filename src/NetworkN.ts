@@ -1,8 +1,49 @@
 import { Layer }                            from "./Layer";
 import { Dropout }                          from "./Dropout";
 import { Activation, sigmoid }              from "./activations";
-import { OptimizerFactory, defaultOptimizer } from "./optimizers";
+import {
+  OptimizerFactory, defaultOptimizer, SGD, Momentum, Adam, ClipOptimizer, ClippedOptimizerFactory,
+  type Optimizer,
+} from "./optimizers";
 import { validateArray }                    from "./Validation";
+import {
+  activationFromSpec, activationToSpec, validateNetworkNConfig,
+  type NetworkNConfig, type OptimizerSpec,
+} from "./core/format2";
+
+export type { NetworkNConfig };
+
+// Describes what an optimizer instance is (format 2). Anything that is not exactly a
+// built-in class is 'custom'. Subclasses count as custom: their extra state is unknown.
+function optimizerToSpec(o: Optimizer): OptimizerSpec {
+  const ctor = (o as object).constructor;
+  if (ctor === SGD) return { name: 'sgd' };
+  if (ctor === Momentum) return { name: 'momentum', beta: (o as Momentum).beta };
+  if (ctor === Adam) {
+    const a = o as Adam;
+    return { name: 'adam', beta1: a.beta1, beta2: a.beta2, epsilon: a.epsilon };
+  }
+  if (ctor === ClipOptimizer) {
+    const c = o as ClipOptimizer;
+    return { name: 'clip', clipValue: c.clipValue, inner: optimizerToSpec(c.inner) };
+  }
+  return { name: 'custom' };
+}
+
+/** Describes an optimizer factory by calling it once. */
+export function describeOptimizer(factory: OptimizerFactory): OptimizerSpec {
+  return optimizerToSpec(factory());
+}
+
+/** Builds a factory from a spec. 'custom' falls back to SGD (the caller warns). */
+export function optimizerFromSpec(spec: OptimizerSpec): OptimizerFactory {
+  switch (spec.name) {
+    case 'momentum': return () => new Momentum(spec.beta);
+    case 'adam':     return () => new Adam(spec.beta1, spec.beta2, spec.epsilon);
+    case 'clip':     return ClippedOptimizerFactory(optimizerFromSpec(spec.inner), spec.clipValue);
+    default:         return defaultOptimizer;
+  }
+}
 
 export interface NetworkNOptions {
   // One activation per layer (hidden layers + output layer).
@@ -34,6 +75,12 @@ export class NetworkN {
   layers: Layer[];
   private _dropouts: Dropout[];
   private _residual: boolean | ((layerIndex: number) => boolean);
+  private _optimizerFactory: OptimizerFactory;
+  private _dropoutRate: number;
+
+  /** Class name for ModelSaver format 2 (not read from constructor.name: bundlers rename it). */
+  static readonly kind = 'NetworkN';
+  get kind(): string { return NetworkN.kind; }
 
   constructor(readonly structure: number[], options: NetworkNOptions = {}) {
     const nLayers    = structure.length - 1;
@@ -50,6 +97,8 @@ export class NetworkN {
     }
 
     this._residual = options.residual ?? false;
+    this._optimizerFactory = optimizer;
+    this._dropoutRate = dropoutRate;
 
     this.layers = [];
     for (let i = 1; i < structure.length; i++) {
@@ -175,6 +224,34 @@ export class NetworkN {
     if (reuseMasks) this._assertMasksSaved('inputGradient');
     const { act, pre } = this._forwardAll(inputs, true, reuseMasks);
     return this._backward(act, pre, null, outputDeltas, null);
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Everything needed to rebuild an equal network, except the weights and the optimizer
+  // state (Q4). `residual` is saved evaluated, one boolean per layer. Throws if an
+  // activation has no name. A custom optimizer is saved as { name: 'custom' }; ModelSaver
+  // refuses it unless allowCustomOptimizer.
+  toConfig(): NetworkNConfig {
+    return {
+      structure: [...this.structure],
+      activations: this.layers.map((l, i) =>
+        activationToSpec(l.neurons[0].activation, `NetworkN.toConfig: activations[${i}]`)),
+      optimizer: describeOptimizer(this._optimizerFactory),
+      residual: this.layers.map((_, i) => this._shouldResidual(i)),
+      dropoutRate: this._dropoutRate,
+    };
+  }
+
+  /** New network from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): NetworkN {
+    const c = validateNetworkNConfig(config, 'NetworkN.fromConfig');
+    const residual = c.residual;
+    return new NetworkN(c.structure, {
+      activations: c.activations.map(activationFromSpec),
+      optimizer: optimizerFromSpec(c.optimizer),
+      residual: (i: number) => residual[i],
+      dropoutRate: c.dropoutRate,
+    });
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
