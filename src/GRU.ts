@@ -16,7 +16,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validate2DArray, validateArray } from "./Validation";
 import { random } from "./random";
 
@@ -77,14 +78,16 @@ export class GRULayer {
   updateGate: Gate;
   newGate: Gate;
 
-  // Per-scalar optimizers — one per weight and bias
+  // Vector optimizers (src/core/optim.ts): one per weight row (size inputSize + hSize)
+  // and one per bias vector (size hSize). backprop updates EVERY element of each
+  // row and bias on every step, so one shared Adam step counter per row is exact.
   private _optimizers: {
-    resetW:  Optimizer[][];
-    resetB:  Optimizer[];
-    updateW: Optimizer[][];
-    updateB: Optimizer[];
-    newW:    Optimizer[][];
-    newB:    Optimizer[];
+    resetW:  VecOptimizer[];
+    resetB:  VecOptimizer;
+    updateW: VecOptimizer[];
+    updateB: VecOptimizer;
+    newW:    VecOptimizer[];
+    newB:    VecOptimizer;
   };
 
   private _traj: Step[] = [];
@@ -101,21 +104,17 @@ export class GRULayer {
     this.updateGate = new Gate(inputSize, hiddenSize);
     this.newGate = new Gate(inputSize, hiddenSize);
 
-    // Initialize per-scalar optimizers
+    // Vector optimizers: one per row of W and one per bias vector, per gate
     const combSize = inputSize + hiddenSize;
+    const rows = (): VecOptimizer[] =>
+      Array.from({ length: hiddenSize }, () => vecFromFactory(optimizerFactory, combSize));
     this._optimizers = {
-      resetW:  Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      resetB:  Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      updateW: Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      updateB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      newW:    Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      newB:    Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      resetW:  rows(),
+      resetB:  vecFromFactory(optimizerFactory, hiddenSize),
+      updateW: rows(),
+      updateB: vecFromFactory(optimizerFactory, hiddenSize),
+      newW:    rows(),
+      newB:    vecFromFactory(optimizerFactory, hiddenSize),
     };
   }
 
@@ -238,18 +237,16 @@ export class GRULayer {
       }
     }
 
-    // Apply averaged gradient update via per-scalar optimizers
+    // Apply averaged gradient update: each row and bias vector in place (every element is updated)
     const scale = lr / T;
     for (let k = 0; k < hSize; k++) {
-      for (let j = 0; j < combSize; j++) {
-        this.resetGate.W[k][j]  = this._optimizers.resetW[k][j].step(this.resetGate.W[k][j], dWr[k][j], scale);
-        this.updateGate.W[k][j] = this._optimizers.updateW[k][j].step(this.updateGate.W[k][j], dWz[k][j], scale);
-        this.newGate.W[k][j]    = this._optimizers.newW[k][j].step(this.newGate.W[k][j], dWn[k][j], scale);
-      }
-      this.resetGate.b[k]  = this._optimizers.resetB[k].step(this.resetGate.b[k], dbr[k], scale);
-      this.updateGate.b[k] = this._optimizers.updateB[k].step(this.updateGate.b[k], dbz[k], scale);
-      this.newGate.b[k]    = this._optimizers.newB[k].step(this.newGate.b[k], dbn[k], scale);
+      this._optimizers.resetW[k].step(this.resetGate.W[k], dWr[k], scale);
+      this._optimizers.updateW[k].step(this.updateGate.W[k], dWz[k], scale);
+      this._optimizers.newW[k].step(this.newGate.W[k], dWn[k], scale);
     }
+    this._optimizers.resetB.step(this.resetGate.b, dbr, scale);
+    this._optimizers.updateB.step(this.updateGate.b, dbz, scale);
+    this._optimizers.newB.step(this.newGate.b, dbn, scale);
 
     this._traj = [];
   }
