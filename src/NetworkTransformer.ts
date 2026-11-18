@@ -38,11 +38,33 @@ export interface NetworkTransformerOptions {
   nClasses?:  number    // default: 9
 }
 
+// Format 2 config (ModelSaver.save / load): every constructor option with its effective value.
+export interface NetworkTransformerConfig {
+  seqLen:    number
+  vocabSize: number
+  d_model:   number
+  nHeads:    number
+  d_ff:      number
+  nBlocks:   number
+  nClasses:  number
+}
+
+const CONFIG_FIELDS = ['seqLen', 'vocabSize', 'd_model', 'nHeads', 'd_ff', 'nBlocks', 'nClasses'] as const
+
 export class NetworkTransformer {
   readonly seqLen:    number
   readonly vocabSize: number
   readonly d_model:   number
   readonly nClasses:  number
+
+  // Options the constructor does not keep elsewhere (needed by toConfig)
+  private readonly _nHeads:  number
+  private readonly _d_ff:    number
+  private readonly _nBlocks: number
+
+  // Format 2 (ModelSaver.save / load)
+  static readonly kind = 'NetworkTransformer'
+  get kind(): string { return NetworkTransformer.kind }
 
   // Embeddings
   tokenEmb: EmbeddingMatrix   // vocabSize × d_model
@@ -69,6 +91,9 @@ export class NetworkTransformer {
     this.vocabSize = vocabSize
     this.d_model   = d_model
     this.nClasses  = nClasses
+    this._nHeads   = nHeads
+    this._d_ff     = d_ff
+    this._nBlocks  = nBlocks
 
     this.tokenEmb = new EmbeddingMatrix(vocabSize, d_model)
     this.posEmb   = new EmbeddingMatrix(seqLen,    d_model)
@@ -191,6 +216,45 @@ export class NetworkTransformer {
   // Returns: nBlocks × nHeads × seqLen × seqLen  (nulls if not yet run)
   getAttentionWeights(): (number[][] | null)[][] {
     return this.blocks.map(b => b.getAttentionWeights())
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Every constructor option with its effective value (defaults included), so
+  // fromConfig rebuilds the same architecture. Weights and optimizer state are not included.
+  toConfig(): NetworkTransformerConfig {
+    return {
+      seqLen:    this.seqLen,
+      vocabSize: this.vocabSize,
+      d_model:   this.d_model,
+      nHeads:    this._nHeads,
+      d_ff:      this._d_ff,
+      nBlocks:   this._nBlocks,
+      nClasses:  this.nClasses,
+    }
+  }
+
+  /** New model from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): NetworkTransformer {
+    const c = config as Record<string, unknown> | null
+    const out = {} as NetworkTransformerConfig
+    if (typeof c !== 'object' || c === null) {
+      throw new Error(`NetworkTransformer.fromConfig: config must be an object with integers >= 1 for ${CONFIG_FIELDS.join(', ')}`)
+    }
+    for (const f of CONFIG_FIELDS) {
+      const v = c[f]
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+        throw new Error(`NetworkTransformer.fromConfig: ${f} must be an integer >= 1, got ${JSON.stringify(v) ?? String(v)}`)
+      }
+      out[f] = v
+    }
+    return new NetworkTransformer(out.seqLen, {
+      vocabSize: out.vocabSize,
+      d_model:   out.d_model,
+      nHeads:    out.nHeads,
+      d_ff:      out.d_ff,
+      nBlocks:   out.nBlocks,
+      nClasses:  out.nClasses,
+    })
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
