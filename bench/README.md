@@ -7,7 +7,7 @@ Mide memoria y tiempo de `NetworkN` y de `NetworkFast` sobre el build de `dist/i
 Desde la raíz del repo, después de compilar:
 
 ```sh
-npm run build
+npm run build   # también genera dist/infer.min.mjs y los sourcemaps; el benchmark solo usa dist/index.mjs
 node --expose-gc bench/run.mjs            # estructuras [256,256,256,10] y [512,512,512,10]
 node --expose-gc bench/run.mjs --quick    # solo [256,256,256,10]
 node --expose-gc bench/run.mjs --dist <ruta>   # otro build; <ruta> es el directorio que contiene index.mjs
