@@ -21,6 +21,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { random } from "./random";
+
 export interface DataPair {
   inputs: number[][]
   targets: number[][]
@@ -55,7 +57,7 @@ export class DataLoader {
     const fullIndices = Array.from({ length: data.inputs.length }, (_, i) => i)
     // Fisher-Yates shuffle
     for (let i = fullIndices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [fullIndices[i], fullIndices[j]] = [fullIndices[j], fullIndices[i]]
     }
 
@@ -76,7 +78,7 @@ export class DataLoader {
   // ── Shuffle the training data ──────────────────────────────────────────────
   shuffle(): void {
     for (let i = this._trainIndices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [this._trainIndices[i], this._trainIndices[j]] = [this._trainIndices[j], this._trainIndices[i]]
     }
     this._indices = [...this._trainIndices]

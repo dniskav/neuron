@@ -22,6 +22,7 @@ import { NetworkN }          from './NetworkN';
 import { NetworkNOptions }   from './NetworkN';
 import { relu, linear }      from './activations';
 import { validateArray }     from './Validation';
+import { random }            from './random';
 
 // ─── AUGMENTER ────────────────────────────────────────────────────────────────
 //
@@ -46,8 +47,8 @@ export class Augmenter {
   static addNoise(x: number[], sigma = 0.05): number[] {
     return x.map(v => {
       // Box-Muller: generates one N(0,1) sample per input dimension.
-      const u1 = Math.max(1e-10, Math.random()); // guard against log(0)
-      const u2 = Math.random();
+      const u1 = Math.max(1e-10, random()); // guard against log(0)
+      const u2 = random();
       const z  = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       return v + sigma * z;
     });
@@ -64,7 +65,7 @@ export class Augmenter {
   // The encoder must learn representations that are robust to missing features —
   // it cannot simply memorize individual dimensions.
   static dropoutFeatures(x: number[], rate = 0.1): number[] {
-    return x.map(v => (Math.random() < rate ? 0 : v));
+    return x.map(v => (random() < rate ? 0 : v));
   }
 
   // Apply both noise and feature dropout in sequence.

@@ -24,6 +24,7 @@
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { validate2DArray, validateArray } from "./Validation";
+import { random } from "./random";
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -46,7 +47,7 @@ class Gate {
     const n     = inputSize + hSize;
     const limit = Math.sqrt(2 / (n + hSize));  // Xavier fan-in+out for sigmoid/tanh gates
     this.W = Array.from({ length: hSize }, () =>
-      Array.from({ length: n }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: n }, () => (random() * 2 - 1) * limit)
     );
     this.b = new Array(hSize).fill(initBias);
   }

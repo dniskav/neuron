@@ -30,6 +30,8 @@
 
 // ─── DataAugmentation ────────────────────────────────────────────────────────
 
+import { random } from "./random";
+
 export class DataAugmentation {
   // ── Noise / Perturbation ─────────────────────────────────────────────────
 
@@ -42,7 +44,7 @@ export class DataAugmentation {
   // Uniform jitter: x'ᵢ = xᵢ + U(-delta, delta).
   // delta: half-width of the uniform perturbation (default: 0.01).
   static jitter(x: number[], delta = 0.01): number[] {
-    return x.map((v) => v + (Math.random() * 2 - 1) * delta);
+    return x.map((v) => v + (random() * 2 - 1) * delta);
   }
 
   // Reverses the order of the feature vector.
@@ -163,7 +165,7 @@ export class DataAugmentation {
     }
     const indices = Array.from({ length: X.length }, (_, i) => i);
     for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
     return {
@@ -216,7 +218,7 @@ export class DataAugmentation {
 
 // Box-Muller transform: one sample from N(0, 1).
 function _sampleNormal(): number {
-  const u1 = Math.random();
-  const u2 = Math.random();
+  const u1 = random();
+  const u2 = random();
   return Math.sqrt(-2 * Math.log(u1 + 1e-15)) * Math.cos(2 * Math.PI * u2);
 }
