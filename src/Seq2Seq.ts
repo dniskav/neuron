@@ -37,7 +37,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { LSTMLayer } from "./LSTMLayer";
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validateArray } from "./Validation";
 import { random } from "./random";
 
@@ -81,9 +82,10 @@ export class Seq2Seq {
   readonly hiddenSize: number;
   readonly outputSize: number;
 
-  // Per-scalar optimizers for the output projection
-  private _wOutOpts: Optimizer[][];  // [outputSize][hiddenSize]
-  private _bOutOpts: Optimizer[];    // [outputSize]
+  // Vector optimizers for the output projection (the encoder and decoder keep
+  // their own optimizers inside LSTMLayer). Every element is updated on each trainStep.
+  private _wOutOpts: VecOptimizer[];  // one per row of W_out, size hiddenSize
+  private _bOutOpts: VecOptimizer;    // size outputSize
 
   constructor(
     inputSize:  number,
@@ -117,10 +119,8 @@ export class Seq2Seq {
     );
     this.b_out = new Array(outputSize).fill(0);
 
-    this._wOutOpts = Array.from({ length: outputSize }, () =>
-      Array.from({ length: hiddenSize }, () => factory())
-    );
-    this._bOutOpts = Array.from({ length: outputSize }, () => factory());
+    this._wOutOpts = Array.from({ length: outputSize }, () => vecFromFactory(factory, hiddenSize));
+    this._bOutOpts = vecFromFactory(factory, outputSize);
   }
 
   // ── Linear projection ─────────────────────────────────────────────────────
@@ -252,13 +252,12 @@ export class Seq2Seq {
     }
 
     // Apply output projection updates
+    // In place: each row of W_out and b_out keeps its array.
     const scale = lr / T;
     for (let i = 0; i < this.outputSize; i++) {
-      for (let j = 0; j < this.hiddenSize; j++) {
-        this.W_out[i][j] = this._wOutOpts[i][j].step(this.W_out[i][j], dWout[i][j], scale);
-      }
-      this.b_out[i] = this._bOutOpts[i].step(this.b_out[i], dbOut[i], scale);
+      this._wOutOpts[i].step(this.W_out[i], dWout[i], scale);
     }
+    this._bOutOpts.step(this.b_out, dbOut, scale);
 
     // ── Decoder BPTT ─────────────────────────────────────────────────────
     // Returns the (unscaled) gradient w.r.t. the decoder's initial state, which is

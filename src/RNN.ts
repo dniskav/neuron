@@ -30,7 +30,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validateArray } from "./Validation";
 import { random } from "./random";
 
@@ -94,13 +95,15 @@ export class RNN {
   private _traj: RNNStep[] = [];
   private _outputs: number[][] = [];
 
-  // Per-scalar optimizers
+  // One vector optimizer per row of each weight matrix and one per bias vector.
+  // backward() updates every element of each of them on every call, so the state
+  // of each vector optimizer covers exactly the elements it updates.
   private _opts: {
-    Wxh: Optimizer[][];
-    Whh: Optimizer[][];
-    Why: Optimizer[][];
-    bh:  Optimizer[];
-    by:  Optimizer[];
+    Wxh: VecOptimizer[];  // one per row, size inputSize
+    Whh: VecOptimizer[];  // one per row, size hiddenSize
+    Why: VecOptimizer[];  // one per row, size hiddenSize
+    bh:  VecOptimizer;    // size hiddenSize
+    by:  VecOptimizer;    // size outputSize
   };
 
   constructor(
@@ -135,19 +138,13 @@ export class RNN {
 
     this._h = new Array(hiddenSize).fill(0);
 
-    // Initialize per-scalar optimizers
+    // Vector optimizers: one per weight row and one per bias vector
     this._opts = {
-      Wxh: Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: inputSize  }, () => optimizerFactory())
-      ),
-      Whh: Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: hiddenSize }, () => optimizerFactory())
-      ),
-      Why: Array.from({ length: outputSize }, () =>
-        Array.from({ length: hiddenSize }, () => optimizerFactory())
-      ),
-      bh: Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      by: Array.from({ length: outputSize }, () => optimizerFactory()),
+      Wxh: Array.from({ length: hiddenSize }, () => vecFromFactory(optimizerFactory, inputSize)),
+      Whh: Array.from({ length: hiddenSize }, () => vecFromFactory(optimizerFactory, hiddenSize)),
+      Why: Array.from({ length: outputSize }, () => vecFromFactory(optimizerFactory, hiddenSize)),
+      bh: vecFromFactory(optimizerFactory, hiddenSize),
+      by: vecFromFactory(optimizerFactory, outputSize),
     };
   }
 
@@ -293,22 +290,17 @@ export class RNN {
     }
 
     // ── Apply optimizer updates ───────────────────────────────────────────
+    // Each step writes into the existing row arrays (in place).
     const scale = lr / T;
     for (let i = 0; i < this.hiddenSize; i++) {
-      for (let j = 0; j < this.inputSize; j++) {
-        this.Wxh[i][j] = this._opts.Wxh[i][j].step(this.Wxh[i][j], dWxh[i][j], scale);
-      }
-      for (let j = 0; j < this.hiddenSize; j++) {
-        this.Whh[i][j] = this._opts.Whh[i][j].step(this.Whh[i][j], dWhh[i][j], scale);
-      }
-      this.bh[i] = this._opts.bh[i].step(this.bh[i], dbh[i], scale);
+      this._opts.Wxh[i].step(this.Wxh[i], dWxh[i], scale);
+      this._opts.Whh[i].step(this.Whh[i], dWhh[i], scale);
     }
+    this._opts.bh.step(this.bh, dbh, scale);
     for (let i = 0; i < this.outputSize; i++) {
-      for (let j = 0; j < this.hiddenSize; j++) {
-        this.Why[i][j] = this._opts.Why[i][j].step(this.Why[i][j], dWhy[i][j], scale);
-      }
-      this.by[i] = this._opts.by[i].step(this.by[i], dby[i], scale);
+      this._opts.Why[i].step(this.Why[i], dWhy[i], scale);
     }
+    this._opts.by.step(this.by, dby, scale);
 
     this._traj = [];
     this._outputs = [];
