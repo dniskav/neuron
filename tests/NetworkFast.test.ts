@@ -653,3 +653,69 @@ describe('NetworkFast.trainBatch / predictBatch', () => {
     expect(calls).toEqual(['mm', 'mm'])
   })
 })
+
+// ─── T028: subclasses of the built-ins take the scalar path ───────────────────
+// NetworkN and NetworkFast both build their weights through vecFromFactory, so
+// comparing them with each other cannot show a wrong choice of path. The
+// reference here is the built-in class with twice the lr: for SGD and Adam the
+// step is linear in lr, so a subclass that doubles the move must match it.
+class DblSGD extends SGD {
+  step(w: number, g: number, lr: number): number {
+    return w + 2 * lr * g
+  }
+}
+
+class DblAdam extends Adam {
+  step(w: number, g: number, lr: number): number {
+    const moved = super.step(w, g, lr)
+    return w + 2 * (moved - w)
+  }
+}
+
+describe('NetworkFast 0.5: subclasses of built-ins take the scalar path (T028)', () => {
+  const trainWith = (s: number[], factory: OptimizerFactory, lr: number) =>
+    withSeed(17, () => {
+      const net = new NetworkFast(s, { activations: s.slice(1).map(() => tanh), optimizer: factory })
+      const d = data(s[0], s[s.length - 1])
+      for (let i = 0; i < 50; i++) net.train(d.x(), d.t(), lr)
+      return net.getWeights()
+    })
+
+  for (const s of [[2, 3, 1], [4, 8, 3]]) {
+    it(`[${s}] subclass of SGD at lr 0.05 = SGD at lr 0.1 (50 steps, <= 1e-12)`, () =>
+      expectSameWeights(
+        trainWith(s, () => new DblSGD(), 0.05),
+        trainWith(s, () => new SGD(), 0.1),
+        1e-12,
+      ))
+
+    it(`[${s}] subclass of Adam at lr 0.05 = Adam at lr 0.1 (50 steps, <= 1e-12)`, () =>
+      expectSameWeights(
+        trainWith(s, () => new DblAdam(), 0.05),
+        trainWith(s, () => new Adam(), 0.1),
+        1e-12,
+      ))
+
+    it(`[${s}] Clip(subclass of SGD) at lr 0.05 = Clip(SGD) at lr 0.1 (50 steps, <= 1e-12)`, () =>
+      expectSameWeights(
+        trainWith(s, () => new ClipOptimizer(new DblSGD(), 0.5), 0.05),
+        trainWith(s, () => new ClipOptimizer(new SGD(), 0.5), 0.1),
+        1e-12,
+      ))
+  }
+
+  it('a subclass of SGD moves the weights twice as far as SGD with the same lr', () => {
+    const s = [3, 4, 2]
+    const sub = new NetworkFast(s, { optimizer: () => new DblSGD() })
+    const plain = new NetworkFast(s, { optimizer: () => new SGD() })
+    plain.setWeights(sub.getWeights())
+    const w0 = sub.getWeights()
+    const x = [0.2, -0.4, 0.6]
+    const t = [1, 0]
+    sub.train(x, t, 0.05)
+    plain.train(x, t, 0.05)
+    const movedSub = sub.getWeights().map((v, i) => v - w0[i])
+    const movedPlain = plain.getWeights().map((v, i) => v - w0[i])
+    movedSub.forEach((v, i) => expect(v).toBeCloseTo(2 * movedPlain[i], 12))
+  })
+})

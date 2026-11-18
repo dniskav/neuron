@@ -207,3 +207,95 @@ describe('NeuronN 0.5: order of calls to the optimizer factory', () => {
     same(p.fresh, p.ref)
   })
 })
+
+// ─── T028: subclasses of the built-ins move exactly as in 0.4 ─────────────────
+class DblSGD extends SGD {
+  step(w: number, g: number, lr: number): number {
+    return w + 2 * lr * g
+  }
+}
+
+class DblAdam extends Adam {
+  step(w: number, g: number, lr: number): number {
+    const moved = super.step(w, g, lr)
+    return w + 2 * (moved - w)
+  }
+}
+
+const subclassFactories: Array<[string, OptimizerFactory]> = [
+  ['subclass of SGD', () => new DblSGD()],
+  ['subclass of Adam', () => new DblAdam()],
+  ['Clip(subclass of SGD)', ClippedOptimizerFactory(() => new DblSGD(), 0.05)],
+]
+
+describe('NeuronN 0.5: subclasses of built-ins are not replaced by the parent vector class', () => {
+  for (const [name, factory] of subclassFactories) {
+    it(`${name}: 300 train steps give identical weights and bias (0.4 reference)`, () => {
+      const { fresh, ref } = pair(factory, 5)
+      const rnd = seededRandom(31)
+      for (let k = 0; k < 300; k++) {
+        const x = Array.from({ length: 5 }, () => rnd() * 2 - 1)
+        const t = rnd() * 2 - 1
+        fresh.train(x, t, 0.05)
+        ref.train(x, t, 0.05)
+      }
+      same(fresh, ref)
+    })
+
+    it(`${name}: 300 _update steps with random gradients are identical (0.4 reference)`, () => {
+      const { fresh, ref } = pair(factory, 6)
+      const rnd = seededRandom(37)
+      for (let k = 0; k < 300; k++) {
+        const g = Array.from({ length: 6 }, () => (rnd() - 0.5) * 0.4)
+        const gb = (rnd() - 0.5) * 0.4
+        fresh._update(g, gb, 0.01)
+        ref._update(g, gb, 0.01)
+      }
+      same(fresh, ref)
+    })
+  }
+
+  it('a subclass of SGD moves each weight twice as far as plain SGD does', () => {
+    const plain = new NeuronN(3, sigmoid, () => new SGD())
+    const sub = new NeuronN(3, sigmoid, () => new DblSGD())
+    sub.weights = [...plain.weights]
+    const w0 = [...plain.weights]
+    plain._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    sub._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    for (let i = 0; i < 3; i++) {
+      const movedPlain = plain.weights[i] - w0[i]
+      const movedSub = sub.weights[i] - w0[i]
+      expect(movedSub).toBeCloseTo(2 * movedPlain, 12)
+    }
+  })
+})
+
+// ─── T028 (follow-up): own step on the instance ───────────────────────────────
+describe('NeuronN 0.5: an own step on the optimizer instance is used', () => {
+  const ownStep: OptimizerFactory = () =>
+    Object.assign(new SGD(), { step: (w: number, g: number, lr: number) => w + 2 * lr * g })
+
+  it('moves each weight twice as far as plain SGD', () => {
+    const plain = new NeuronN(3, sigmoid, () => new SGD())
+    const own = new NeuronN(3, sigmoid, ownStep)
+    own.weights = [...plain.weights]
+    const w0 = [...plain.weights]
+    plain._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    own._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    for (let i = 0; i < 3; i++) {
+      expect(own.weights[i] - w0[i]).toBeCloseTo(2 * (plain.weights[i] - w0[i]), 12)
+    }
+  })
+
+  it('300 train steps give identical weights and bias (0.4 reference)', () => {
+    const { fresh, ref } = pair(ownStep, 5)
+    const rnd = seededRandom(41)
+    for (let k = 0; k < 300; k++) {
+      const x = Array.from({ length: 5 }, () => rnd() * 2 - 1)
+      const t = rnd() * 2 - 1
+      fresh.train(x, t, 0.05)
+      ref.train(x, t, 0.05)
+    }
+    same(fresh, ref)
+  })
+})

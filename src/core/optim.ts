@@ -149,19 +149,34 @@ export class ScalarArrayOptimizer implements VecOptimizer {
   }
 }
 
+// Only the exact built-in classes are recognized (prototype identity, not
+// `instanceof`). A subclass may override `step`, and the vector classes never
+// call `step`, so mapping a subclass to its parent would silently ignore it.
+// A ClipOptimizer is recognized only when its `inner` is an exact built-in too.
+// An own `step` on the instance (e.g. Object.assign(new SGD(), { step })) is
+// also a reason to take the scalar path: the vector classes would ignore it.
 function fromInstance(inst: Optimizer, size: number): VecOptimizer | null {
-  if (inst instanceof SGD) return new VecSGD(size)
-  if (inst instanceof Momentum) return new VecMomentum(size, inst.beta)
-  if (inst instanceof Adam) return new VecAdam(size, inst.beta1, inst.beta2, inst.epsilon)
-  if (inst instanceof ClipOptimizer) {
-    const inner = fromInstance(inst.inner, size)
-    return inner ? new VecClip(inner, inst.clipValue) : null
+  if (Object.prototype.hasOwnProperty.call(inst, 'step')) return null
+  const proto = Object.getPrototypeOf(inst)
+  if (proto === SGD.prototype) return new VecSGD(size)
+  if (proto === Momentum.prototype) return new VecMomentum(size, (inst as Momentum).beta)
+  if (proto === Adam.prototype) {
+    const a = inst as Adam
+    return new VecAdam(size, a.beta1, a.beta2, a.epsilon)
+  }
+  if (proto === ClipOptimizer.prototype) {
+    const c = inst as ClipOptimizer
+    const inner = fromInstance(c.inner, size)
+    return inner ? new VecClip(inner, c.clipValue) : null
   }
   return null
 }
 
 // Picks the vector class that matches the built-in optimizer the factory makes
 // (copying its hyperparameters), or ScalarArrayOptimizer for anything else.
+// Only the exact built-in classes are recognized: a subclass of SGD, Momentum,
+// Adam or ClipOptimizer, and a ClipOptimizer around one, takes the scalar path
+// (ScalarArrayOptimizer), so its own `step` is the one that runs.
 // Side effect: it calls `factory()` ONE extra time to inspect the instance; a
 // factory that counts its instances will see one more call.
 export function vecFromFactory(factory: OptimizerFactory, size: number): VecOptimizer {
