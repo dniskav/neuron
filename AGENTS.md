@@ -20,7 +20,7 @@ Everything except the `infer` entry is exported from `src/index.ts` (154 names: 
 | `Network` | `Network.ts` | Fixed two-layer network (hidden + output), sigmoid, backprop. |
 | `NetworkN` | `NetworkN.ts` | Any depth `[inputs, ...hidden, outputs]`; per-layer activations, optimizer factory, `residual`, `dropoutRate`; `trainWithDeltas`, `inputGradient`. |
 | `NetworkFast` | `NetworkFast.ts` | Same API, options, validation and weight order as `NetworkN`, on `Float64Array` buffers with vectorized optimizers and the swappable backend (`options.backend`); same seed gives the same weights as `NetworkN`. About 10x faster to train. |
-| `loadForInference` (entry `@dniskav/neuron/infer`) | `src/infer.ts` | Predict-only reader of format 2 for dense models (`NetworkN`, `NetworkFast`, `Network`): `predict`, `predictBatch`; imports no optimizer, backprop, `Trainer` or `random`. Not exported from `src/index.ts`. |
+| `loadForInference` (entry `@dniskav/neuron/infer`) | `src/infer.ts` | Predict-only reader of format 2 for dense models (`NetworkN`, `NetworkFast`, `Network`): `predict`, `predictBatch`; imports no optimizer, backprop, `Trainer` or `random`. Not exported from `src/index.ts`. A minified ESM build is `@dniskav/neuron/infer/min`. |
 
 ### Recurrent
 
@@ -69,7 +69,7 @@ Everything except the `infer` entry is exported from `src/index.ts` (154 names: 
 | `SGD` `Momentum` `Adam` | `optimizers.ts` | Scalar optimizers; `step(weight, gradient, lr)` returns `w + lr*g`. Used on their own, one instance per weight. The library does not do that for its built-ins: `vecFromFactory` turns them into the vector versions below. |
 | `ClipOptimizer` `ClippedOptimizerFactory` | `optimizers.ts` | Clip each gradient to `[-clipValue, clipValue]` before delegating. |
 | `defaultOptimizer` | `optimizers.ts` | Factory `() => new SGD()`; the default of `NeuronN`, `Layer`, `NetworkN`, `NetworkFast`, `NetworkLSTM`. |
-| `VecSGD` `VecMomentum` `VecAdam` `VecClip` `ScalarArrayOptimizer` `vecFromFactory` | `src/core/optim.ts` | Vectorized optimizers over a whole buffer (`step(params, grads, lr)`), exactly equal to N scalar ones; `vecFromFactory` recognizes the built-ins and falls back to `ScalarArrayOptimizer` for custom ones. |
+| `VecSGD` `VecMomentum` `VecAdam` `VecClip` `ScalarArrayOptimizer` `vecFromFactory` | `src/core/optim.ts` | Vectorized optimizers over a whole buffer (`step(params, grads, lr)`), exactly equal to N scalar ones; `vecFromFactory` vectorizes only the exact built-in classes and falls back to `ScalarArrayOptimizer` for custom ones, subclasses and instances with their own `step`. |
 | `mse` `crossEntropy` | `losses.ts` | Scalar losses for evaluation (`crossEntropy` is binary and averaged). |
 | `mseDelta` `crossEntropyDelta` `crossEntropyDeltaRaw` | `losses.ts` | Output deltas for `trainWithDeltas`; NOT rescaled (`mseDelta` is `actual - predicted`). |
 
@@ -244,7 +244,7 @@ Convolutions, data loaders, loss functions, optimizers (`SGD`, `Momentum`, `Adam
 
 ## Working on this codebase
 
-- Scripts (`package.json`): `npm run build` (tsup, CJS + ESM + types into `dist/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0, the last release. 0.5.0 is unreleased: its changes are in the `## 0.5.0 — unreleased` section of `CHANGELOG.md`, and `package.json` changes at release time.
+- Scripts (`package.json`): `npm run build` (tsup with `tsup.config.ts`: CJS + ESM + types + sourcemaps into `dist/` for `src/index.ts` and `src/infer.ts`, then esbuild for the minified `dist/infer.min.mjs`; the package also ships `src/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0, the last release. 0.5.0 is unreleased: its changes are in the `## 0.5.0 — unreleased` section of `CHANGELOG.md`, and `package.json` changes at release time.
 - Tests live in `tests/` (vitest). `tests/setup.ts` seeds `Math.random` before every test (`tests/helpers/seed.ts`).
 - Gradient oracles: `tests/oracle/` compares each model's real update with finite differences (helpers in `tests/helpers/gradientOracle.ts`). `tests/helpers/learns.ts` is the helper for "the loss goes down" tests.
 - `tests/coverage.modules.test.ts` requires a test file per `src/` module (case-sensitive name, searched in `tests/`, `tests/oracle/` and `tests/api/`, with documented exceptions).

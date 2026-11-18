@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** todo integrado y verificado en `feat/0.5-core` (152 archivos, 3231 tests; estabilidad y Node 20.19 OK). T026: NFR-1 a NFR-4 y NFR-6 pasan; NFR-5 (predict) falla: NetworkFast.predict es 1,22 veces el de NetworkN 0.4. Pendientes del usuario: NFR-5, el límite de 12 KB de infer y la propuesta T030 (src y sourcemaps en el paquete, build minificado).
+**Estado (2026-11-18):** feature 010 TERMINADA en `feat/0.5-core` (sin push). Todas las tareas integradas y verificadas salvo T024 (aplazada a 011). NFR-1 a NFR-6 pasan (NFR-5 tras T031: 0,59). Suite: 153 archivos, 3269 tests; estable en Node 20.19 y 26. Pendiente SOLO con aprobación del usuario: push, PR a master, subir a 0.5.0 y publicar en npm.
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 

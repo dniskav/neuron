@@ -26,8 +26,9 @@ Nothing else changes for existing code. The new features are below, and the migr
 - **`Trainer` option `batchSize`** (integer >= 1, default 1). Above 1 it needs a model with `trainBatch(X, T, lr)`, and the constructor throws otherwise. With 1 nothing changes.
 - **Format 2 in `ModelSaver`.** `ModelSaver.save(model, opts?)` writes `{ format: 2, kind, config, length, weights, timestamp }`. `ModelSaver.load(json)` returns a new instance, ready to predict and to keep training; the optimizer state starts at zero and is not saved. `ModelSaver.register(kind, { fromConfig })` adds your own class. Built-in kinds: `NetworkN`, `Network`, `NetworkLSTM`, `NetworkTransformer`, `NetworkTransformerRL` and `NetworkFast`. Types: `Saveable`, `Registrable`, `SaveOptions`, `NetworkNConfig`, `ActivationSpec`, `OptimizerSpec` and `SavedModel`. In format 2 `weights` is the flat vector of the model: `getWeightsFlat()` when the class has it, `getWeights()` otherwise.
 - **Format 1 is unchanged.** `toJSON` and `fromJSON` still write and read `{ format: 1, ... }`. `fromJSON` also accepts a format 2 text when its `kind` and structure match the model.
-- **Inference entry `@dniskav/neuron/infer`** (`src/infer.ts`). `loadForInference(json, opts?)` reads format 2 of `NetworkN`, `NetworkFast` and `Network`, and returns `{ kind, structure, predict, predictBatch }`. It imports no optimizer, backpropagation, `Trainer` or random generator. The bundle `dist/infer.mjs` is 3.8 KB unminified. It is not exported from `src/index.ts`. Transformers and LSTM models are not supported for inference in 0.5. Other kinds throw and point to `ModelSaver.load`.
+- **Inference entry `@dniskav/neuron/infer`** (`src/infer.ts`). `loadForInference(json, opts?)` reads format 2 of `NetworkN`, `NetworkFast` and `Network`, and returns `{ kind, structure, predict, predictBatch }`. It imports no optimizer, backpropagation, `Trainer` or random generator. A minified ESM build is published as `@dniskav/neuron/infer/min` (`dist/infer.min.mjs`, 7.2 KB; ESM only). It is not exported from `src/index.ts`. Transformers and LSTM models are not supported for inference in 0.5. Other kinds throw and point to `ModelSaver.load`.
 - **Your own embeddings in `NetworkTransformer`.** `NetworkTransformerOptions.freezeEmbeddings` (`true`, or `{ token?, position? }`, default `false`) keeps `train` from changing the frozen tables. `NetworkTransformer.setTokenEmbeddings(rows, { freeze? })` checks that there is one row per token, that each row has `d_model` values and that all values are finite, before it writes anything. Format 2 saves the option.
+- **The package ships `src/` and sourcemaps** (without embedded sources), so "go to definition" and stack traces land on the commented TypeScript. The tarball grows from 232 KB to 494 KB; nothing of it reaches an app bundle. `esbuild` is now a declared devDependency (it builds the minified entry).
 - **Benchmark** (`bench/run.mjs`, `bench/README.md`). Node only, runs on `dist/`. It reports memory per parameter, time per example for `train` and `predict`, and time per example for `trainBatch(32)` in `NetworkFast`.
 
 ### Observable changes
@@ -37,16 +38,22 @@ Nothing else changes for existing code. The new features are below, and the migr
 - No file in `src/` calls `Math.random` except `src/random.ts`. Every random draw goes through `random()`, which reads `Math.random` at call time, so the tests that seed `Math.random` still work.
 - `vecFromFactory` calls the factory one extra time per call, to check whether it returns a built-in optimizer. `NeuronN` calls it twice per neuron (weights and bias), so a factory that counts its instances sees extra calls. The results do not change.
 - `BiasVector.update` throws when the gradient does not have the length of the vector: `VecAdam.step: params and grads must have length N, got N and M`. `NeuronN._update` throws in the same way when the gradient length is wrong (`VecSGD.step`, or `ScalarArrayOptimizer.step` for a custom optimizer).
+- `vecFromFactory` only vectorizes the exact built-in classes. A subclass of `SGD`, `Momentum`, `Adam` or `ClipOptimizer`, or an instance with its own `step`, keeps one scalar optimizer per weight, so its `step` is called as in 0.4.
 - `checkBackend` lives in `src/core/checkBackend.ts`, apart from `backend.ts`, so that the inference entry does not import the random generator.
 
 ### Performance
 
-Measured on an Apple M3 with Node 26 (v26.12.1). These are the figures from the development log. The official table comes from `bench/run.mjs`, run with no other agent running (T026), and will replace them.
+Official table (T026 and the re-check after T031): Apple M3, Node 26.12.1, `[256,256,256,10]`, activations `relu, relu, sigmoid`, Adam, median of alternated runs, compared with `NetworkN` of 0.4 built from the 0.4.0 tag. Memory is heap plus typed arrays.
 
-- **Memory with Adam**, `[256,256,256,10]`, activations `relu, relu, sigmoid`, measured as heap plus typed arrays, per parameter: `NetworkN` 136.7 bytes in 0.4; `NetworkN` about 30.6 to 30.8 bytes in 0.5 (30.6 and 30.8 in two development checks); `NetworkFast` about 32.4 bytes.
-- **Training speed**: `NetworkFast` trains about 10.7 times faster than `NetworkN` on the 0.5 branch.
-- The per-example time of `trainBatch(32)`, the `predict` times and the pass or fail of each target (NFR-1 to NFR-5, in `specs/010-fast-core/spec.md` section 4) come with the table of T026.
-- The raw 0.4 baseline is in `specs/010-fast-core/bench-baseline.json`.
+| Measure | 0.4 | 0.5 | Ratio |
+|---|---|---|---|
+| `NetworkFast.train`, ms per example | 4.20 | 0.64 | 0.15 |
+| `NetworkFast.trainBatch(32)`, ms per example | 4.20 | 0.34 | 0.08 |
+| `NetworkFast.predict`, ms per example | 0.142 | 0.084 | 0.59 |
+| `NetworkFast`, bytes per parameter | 136.7 | 32.3 | 0.24 |
+| `NetworkN`, bytes per parameter | 136.7 | 30.6 | 0.22 |
+
+With `[512,512,512,10]` the ratios are 0.15 (`train`), 0.09 (`trainBatch`) and 0.36 (`predict`). `NetworkN` itself trains about 3 times faster than in 0.4, because its optimizer state is now a buffer. The full suite runs in 21 s (0.4: 23 s) with 3231 tests (0.4: 2606). The raw 0.4 baseline is in `specs/010-fast-core/bench-baseline.json`.
 
 ### Migration
 

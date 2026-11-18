@@ -1728,7 +1728,7 @@ console.log(JSON.parse(json).kind); // NetworkN
 
 ### @dniskav/neuron/infer — predict only, without the training code
 
-For a server or a page that only predicts, import the `infer` entry: it reads a format 2 file of a dense model (`NetworkN`, `NetworkFast` or `Network`) and gives `predict` and `predictBatch`, without optimizers, backprop, `Trainer` or the random generator. Other kinds throw and point to `ModelSaver.load`.
+For a server or a page that only predicts, import the `infer` entry: it reads a format 2 file of a dense model (`NetworkN`, `NetworkFast` or `Network`) and gives `predict` and `predictBatch`, without optimizers, backprop, `Trainer` or the random generator. Other kinds throw and point to `ModelSaver.load`. For a page without a bundler there is a minified ESM build, `@dniskav/neuron/infer/min` (about 7 KB). The package also ships `src/` and sourcemaps, so "go to definition" in your editor opens the commented TypeScript.
 
 ```ts
 import { NetworkN, ModelSaver } from "@dniskav/neuron";
