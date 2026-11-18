@@ -11,6 +11,7 @@
 // on seed.ts); `withPlainSGD` is synchronous; failures throw `OracleError`
 // (with a `code`), including expectGradientMatches mismatches.
 import { Adam } from '../../src/optimizers'
+import { VecAdam } from '../../src/core/optim'
 
 export interface OracleOptions {
   getParams(): number[]
@@ -160,15 +161,30 @@ export function bindParams(...tensors: Tensor[]): {
   }
 }
 
-/** Runs fn with Adam.prototype.step replaced by plain `w + lr * g` (Q1); always restores. */
+/**
+ * Runs fn with the Adam steps replaced by plain `w + lr * g` (Q1); always restores.
+ * Covers both the scalar Adam (Adam.prototype.step, one weight at a time) and the
+ * vector one (VecAdam.prototype.step, a whole buffer), since WeightMatrix, BiasVector
+ * and NeuronN now run through VecAdam.
+ */
 export function withPlainSGD<T>(fn: () => T): T {
   const original = Adam.prototype.step
+  const originalVec = VecAdam.prototype.step
   Adam.prototype.step = function (_weight: number, gradient: number, lr: number): number {
     return _weight + lr * gradient
   }
+  VecAdam.prototype.step = function (
+    this: { size: number },
+    params: { [i: number]: number },
+    grads: { [i: number]: number },
+    lr: number,
+  ): void {
+    for (let i = 0; i < this.size; i++) params[i] = params[i] + lr * grads[i]
+  } as typeof VecAdam.prototype.step
   try {
     return fn()
   } finally {
     Adam.prototype.step = original
+    VecAdam.prototype.step = originalVec
   }
 }
