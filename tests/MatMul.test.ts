@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { matMul, transpose, softmax, softmaxBackward, WeightMatrix, EmbeddingMatrix } from '../src/MatMul'
+import { matMul, transpose, softmax, softmaxBackward, WeightMatrix, BiasVector, EmbeddingMatrix } from '../src/MatMul'
+import { Adam } from '../src/optimizers'
+import { VecAdam } from '../src/core/optim'
 
 describe('matMul', () => {
   it('multiplies two matrices correctly', () => {
@@ -129,5 +131,97 @@ describe('EmbeddingMatrix', () => {
     const modified = orig.map(v => v + 0.1)
     E.setWeights(modified)
     expect(E.getWeights()).toEqual(modified)
+  })
+})
+
+// ── WeightMatrix and BiasVector: exactness against the 0.4.0 scalar Adam ──────
+// The reference classes below are the 0.4.0 code, copied as it was: one scalar
+// Adam per element. The vectorized state must reproduce them bit for bit.
+
+class RefWeightMatrix {
+  W: number[][]
+  private opts: Adam[][]
+
+  constructor(init: number[][]) {
+    this.W = init.map(r => [...r])
+    this.opts = init.map(r => r.map(() => new Adam()))
+  }
+
+  update(dW: number[][], lr: number, clipValue = Infinity): void {
+    for (let i = 0; i < this.W.length; i++)
+      for (let j = 0; j < this.W[0].length; j++) {
+        const g = isFinite(clipValue)
+          ? Math.max(-clipValue, Math.min(clipValue, dW[i][j]))
+          : dW[i][j]
+        this.W[i][j] = this.opts[i][j].step(this.W[i][j], g, lr)
+      }
+  }
+}
+
+class RefBiasVector {
+  values: number[]
+  private opts: Adam[]
+
+  constructor(init: number[]) {
+    this.values = [...init]
+    this.opts = init.map(() => new Adam())
+  }
+
+  update(grad: number[], lr: number): void {
+    for (let i = 0; i < this.values.length; i++)
+      this.values[i] = this.opts[i].step(this.values[i], grad[i], lr)
+  }
+}
+
+// Deterministic gradients; magnitudes go above and below 0.5 so clipping is exercised.
+const gradAt = (step: number, i: number, j: number): number =>
+  3 * Math.sin(0.37 * step + 1.3 * i - 0.71 * j + 0.2)
+
+const grid = (rows: number, cols: number, f: (i: number, j: number) => number): number[][] =>
+  Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => f(i, j)))
+
+function expectSameBits(actual: number[], expected: number[], label: string): void {
+  expect(actual.length, `${label}: length`).toBe(expected.length)
+  actual.forEach((v, k) => {
+    expect(Object.is(v, expected[k]), `${label}[${k}]: ${v} vs ${expected[k]}`).toBe(true)
+  })
+}
+
+describe('WeightMatrix and BiasVector against the 0.4.0 scalar Adam', () => {
+  const cases = [
+    { rows: 3, cols: 3, clip: Infinity },
+    { rows: 3, cols: 3, clip: 0.5 },
+    { rows: 2, cols: 4, clip: Infinity },
+    { rows: 2, cols: 4, clip: 0.5 },
+  ]
+
+  it.each(cases)(
+    'is bit-identical after 200 interleaved steps ($rows x $cols, clipValue $clip)',
+    ({ rows, cols, clip }) => {
+      const W = new WeightMatrix(rows, cols)
+      const b = new BiasVector(rows)
+      const refW = new RefWeightMatrix(W.W)
+      const refB = new RefBiasVector(b.values)
+      const lr = 0.01
+      for (let step = 0; step < 200; step++) {
+        const dW = grid(rows, cols, (i, j) => gradAt(step, i, j))
+        const db = Array.from({ length: rows }, (_, i) => gradAt(step, i, cols + 1))
+        W.update(dW, lr, clip)
+        refW.update(dW, lr, clip)
+        b.update(db, lr)
+        refB.update(db, lr)
+        expectSameBits(W.W.flat(), refW.W.flat(), `W after step ${step}`)
+        expectSameBits(b.values, refB.values, `bias after step ${step}`)
+      }
+    },
+  )
+
+  it('keeps one VecAdam per row of WeightMatrix and one for BiasVector', () => {
+    const W = new WeightMatrix(3, 2)
+    const opts = (W as unknown as { opts: unknown[] }).opts
+    expect(opts).toHaveLength(3)
+    for (const o of opts) expect(o).toBeInstanceOf(VecAdam)
+    const b = new BiasVector(4)
+    expect((b as unknown as { opt: unknown }).opt).toBeInstanceOf(VecAdam)
   })
 })

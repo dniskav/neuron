@@ -9,6 +9,7 @@ import {
 } from './gradientOracle'
 import { WeightMatrix } from '../../src/MatMul'
 import { Adam } from '../../src/optimizers'
+import { VecAdam } from '../../src/core/optim'
 
 // Toy linear regression: y_hat = w . x, L = mean 0.5 (y_hat - y)^2
 const X = [
@@ -180,6 +181,17 @@ describe('withPlainSGD', () => {
     for (let i = 0; i < 2; i++)
       for (let j = 0; j < 3; j++) expect(wm.W[i][j]).toBeCloseTo(w0[i][j] + lr * g[i][j], 12)
     expect(Adam.prototype.step).toBe(before)
+  })
+
+  it('(g) makes VecAdam.step move a buffer exactly lr*g and restores VecAdam', () => {
+    const before = VecAdam.prototype.step
+    const v = new VecAdam(3)
+    const p = [1, 2, 3]
+    const g = [1, -2, 3]
+    const lr = 0.1
+    withPlainSGD(() => v.step(p, g, lr))
+    for (let i = 0; i < 3; i++) expect(p[i]).toBeCloseTo([1, 2, 3][i] + lr * g[i], 12)
+    expect(VecAdam.prototype.step).toBe(before)
   })
 
   it('restores Adam even if fn throws and returns fn result', () => {
