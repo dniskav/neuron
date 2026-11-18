@@ -32,11 +32,35 @@ export interface NetworkTransformerRLOptions {
   pooling?:  'avg' | 'max' | 'last' | 'weighted'  // pooling strategy (default: 'weighted')
 }
 
+// Format 2 config (ModelSaver.save / load): every constructor option with its effective value.
+export interface NetworkTransformerRLConfig {
+  seqLen:   number
+  inputDim: number
+  d_model:  number
+  nHeads:   number
+  d_ff:     number
+  nBlocks:  number
+  nActions: number
+  pooling:  'avg' | 'max' | 'last' | 'weighted'
+}
+
+const RL_CONFIG_FIELDS = ['seqLen', 'inputDim', 'd_model', 'nHeads', 'd_ff', 'nBlocks', 'nActions'] as const
+const POOLINGS = ['avg', 'max', 'last', 'weighted'] as const
+
 export class NetworkTransformerRL {
   readonly seqLen:   number
   readonly inputDim: number
   readonly d_model:  number
   readonly nActions: number
+
+  // Options the constructor does not keep elsewhere (needed by toConfig)
+  private readonly _nHeads:  number
+  private readonly _d_ff:    number
+  private readonly _nBlocks: number
+
+  // Format 2 (ModelSaver.save / load)
+  static readonly kind = 'NetworkTransformerRL'
+  get kind(): string { return NetworkTransformerRL.kind }
 
   // Proyección de entrada: inputDim → d_model
   inputProj: WeightMatrix
@@ -72,6 +96,9 @@ export class NetworkTransformerRL {
     this.d_model  = d_model
     this.nActions = nActions
     this._pooling = pooling
+    this._nHeads  = nHeads
+    this._d_ff    = d_ff
+    this._nBlocks = nBlocks
 
     // Proyección de entrada
     this.inputProj = new WeightMatrix(d_model, inputDim)
@@ -310,6 +337,51 @@ export class NetworkTransformerRL {
     })
     this.outputProj.W = data.outputProj.map(r => [...r])
     this.outputBias.setWeights(data.outputBias)
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Every constructor option with its effective value (defaults included), so
+  // fromConfig rebuilds the same architecture. Weights and optimizer state are not included.
+  toConfig(): NetworkTransformerRLConfig {
+    return {
+      seqLen:   this.seqLen,
+      inputDim: this.inputDim,
+      d_model:  this.d_model,
+      nHeads:   this._nHeads,
+      d_ff:     this._d_ff,
+      nBlocks:  this._nBlocks,
+      nActions: this.nActions,
+      pooling:  this._pooling,
+    }
+  }
+
+  /** New model from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): NetworkTransformerRL {
+    const m = 'NetworkTransformerRL.fromConfig'
+    const c = config as Record<string, unknown> | null
+    if (typeof c !== 'object' || c === null) {
+      throw new Error(`${m}: config must be an object with integers >= 1 for ${RL_CONFIG_FIELDS.join(', ')} and a pooling`)
+    }
+    const out = {} as Record<(typeof RL_CONFIG_FIELDS)[number], number>
+    for (const f of RL_CONFIG_FIELDS) {
+      const v = c[f]
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+        throw new Error(`${m}: ${f} must be an integer >= 1, got ${JSON.stringify(v) ?? String(v)}`)
+      }
+      out[f] = v
+    }
+    const pooling = c.pooling
+    if (!(POOLINGS as readonly unknown[]).includes(pooling)) {
+      throw new Error(`${m}: pooling must be one of ${POOLINGS.join(', ')}, got ${JSON.stringify(pooling) ?? String(pooling)}`)
+    }
+    return new NetworkTransformerRL(out.seqLen, out.inputDim, {
+      d_model:  out.d_model,
+      nHeads:   out.nHeads,
+      d_ff:     out.d_ff,
+      nBlocks:  out.nBlocks,
+      nActions: out.nActions,
+      pooling:  pooling as NetworkTransformerRLOptions['pooling'],
+    })
   }
 
   // ── Serializable interface (flat array) ────────────────────────────────────

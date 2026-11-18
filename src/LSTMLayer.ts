@@ -22,8 +22,10 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validate2DArray, validateArray } from "./Validation";
+import { random } from "./random";
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
@@ -46,7 +48,7 @@ class Gate {
     const n     = inputSize + hSize;
     const limit = Math.sqrt(2 / (n + hSize));  // Xavier fan-in+out for sigmoid/tanh gates
     this.W = Array.from({ length: hSize }, () =>
-      Array.from({ length: n }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: n }, () => (random() * 2 - 1) * limit)
     );
     this.b = new Array(hSize).fill(initBias);
   }
@@ -90,16 +92,18 @@ export class LSTMLayer {
   cellGate:   Gate;
   outputGate: Gate;
 
-  // Per-scalar optimizers — one per weight and bias
+  // Vector optimizers (src/core/optim.ts): one per weight row (size inputSize + hSize)
+  // and one per bias vector (size hSize). backprop updates EVERY element of each
+  // row and bias on every step, so one shared Adam step counter per row is exact.
   private _optimizers: {
-    forgetW: Optimizer[][];
-    forgetB: Optimizer[];
-    inputW:  Optimizer[][];
-    inputB:  Optimizer[];
-    cellW:   Optimizer[][];
-    cellB:   Optimizer[];
-    outputW: Optimizer[][];
-    outputB: Optimizer[];
+    forgetW: VecOptimizer[];
+    forgetB: VecOptimizer;
+    inputW:  VecOptimizer[];
+    inputB:  VecOptimizer;
+    cellW:   VecOptimizer[];
+    cellB:   VecOptimizer;
+    outputW: VecOptimizer[];
+    outputB: VecOptimizer;
   };
 
   private _traj: Step[] = [];
@@ -118,25 +122,19 @@ export class LSTMLayer {
     this.cellGate   = new Gate(inputSize, hiddenSize);
     this.outputGate = new Gate(inputSize, hiddenSize);
 
-    // Initialize per-scalar optimizers
+    // Vector optimizers: one per row of W and one per bias vector, per gate
     const combSize = inputSize + hiddenSize;
+    const rows = (): VecOptimizer[] =>
+      Array.from({ length: hiddenSize }, () => vecFromFactory(optimizerFactory, combSize));
     this._optimizers = {
-      forgetW: Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      forgetB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      inputW:  Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      inputB:  Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      cellW:   Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      cellB:   Array.from({ length: hiddenSize }, () => optimizerFactory()),
-      outputW: Array.from({ length: hiddenSize }, () =>
-        Array.from({ length: combSize }, () => optimizerFactory())
-      ),
-      outputB: Array.from({ length: hiddenSize }, () => optimizerFactory()),
+      forgetW: rows(),
+      forgetB: vecFromFactory(optimizerFactory, hiddenSize),
+      inputW:  rows(),
+      inputB:  vecFromFactory(optimizerFactory, hiddenSize),
+      cellW:   rows(),
+      cellB:   vecFromFactory(optimizerFactory, hiddenSize),
+      outputW: rows(),
+      outputB: vecFromFactory(optimizerFactory, hiddenSize),
     };
   }
 
@@ -284,20 +282,18 @@ export class LSTMLayer {
       dc_next = dc.map((d, k) => d * s.zf_a[k]);
     }
 
-    // Apply averaged gradient update via per-scalar optimizers
+    // Apply averaged gradient update: each row and bias vector in place (every element is updated)
     const scale = lr / T;
     for (let k = 0; k < hSize; k++) {
-      for (let j = 0; j < combSize; j++) {
-        this.forgetGate.W[k][j] = this._optimizers.forgetW[k][j].step(this.forgetGate.W[k][j], dWf[k][j], scale);
-        this.inputGate.W[k][j]  = this._optimizers.inputW[k][j].step(this.inputGate.W[k][j], dWi[k][j], scale);
-        this.cellGate.W[k][j]   = this._optimizers.cellW[k][j].step(this.cellGate.W[k][j], dWg[k][j], scale);
-        this.outputGate.W[k][j] = this._optimizers.outputW[k][j].step(this.outputGate.W[k][j], dWo[k][j], scale);
-      }
-      this.forgetGate.b[k] = this._optimizers.forgetB[k].step(this.forgetGate.b[k], dbf[k], scale);
-      this.inputGate.b[k]  = this._optimizers.inputB[k].step(this.inputGate.b[k], dbi[k], scale);
-      this.cellGate.b[k]   = this._optimizers.cellB[k].step(this.cellGate.b[k], dbg[k], scale);
-      this.outputGate.b[k] = this._optimizers.outputB[k].step(this.outputGate.b[k], dbo[k], scale);
+      this._optimizers.forgetW[k].step(this.forgetGate.W[k], dWf[k], scale);
+      this._optimizers.inputW[k].step(this.inputGate.W[k], dWi[k], scale);
+      this._optimizers.cellW[k].step(this.cellGate.W[k], dWg[k], scale);
+      this._optimizers.outputW[k].step(this.outputGate.W[k], dWo[k], scale);
     }
+    this._optimizers.forgetB.step(this.forgetGate.b, dbf, scale);
+    this._optimizers.inputB.step(this.inputGate.b, dbi, scale);
+    this._optimizers.cellB.step(this.cellGate.b, dbg, scale);
+    this._optimizers.outputB.step(this.outputGate.b, dbo, scale);
 
     this._traj = [];
     return { dh0: dh_next, dc0: dc_next };

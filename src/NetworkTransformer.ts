@@ -36,13 +36,44 @@ export interface NetworkTransformerOptions {
   d_ff?:      number    // default: 128
   nBlocks?:   number    // default: 4
   nClasses?:  number    // default: 9
+  // Keep the embedding tables fixed during train (default: false, as in 0.4).
+  // true freezes both tables; { token, position } freezes each one separately.
+  freezeEmbeddings?: boolean | { token?: boolean; position?: boolean }
 }
+
+// Format 2 config (ModelSaver.save / load): every constructor option with its effective value.
+export interface NetworkTransformerConfig {
+  seqLen:    number
+  vocabSize: number
+  d_model:   number
+  nHeads:    number
+  d_ff:      number
+  nBlocks:   number
+  nClasses:  number
+  // Effective value: a boolean when both tables share it, otherwise { token, position }.
+  freezeEmbeddings: boolean | { token: boolean; position: boolean }
+}
+
+const CONFIG_FIELDS = ['seqLen', 'vocabSize', 'd_model', 'nHeads', 'd_ff', 'nBlocks', 'nClasses'] as const
 
 export class NetworkTransformer {
   readonly seqLen:    number
   readonly vocabSize: number
   readonly d_model:   number
   readonly nClasses:  number
+
+  // Options the constructor does not keep elsewhere (needed by toConfig)
+  private readonly _nHeads:  number
+  private readonly _d_ff:    number
+  private readonly _nBlocks: number
+
+  // Frozen embedding tables (train skips their update when true)
+  private _freezeToken: boolean
+  private _freezePos:   boolean
+
+  // Format 2 (ModelSaver.save / load)
+  static readonly kind = 'NetworkTransformer'
+  get kind(): string { return NetworkTransformer.kind }
 
   // Embeddings
   tokenEmb: EmbeddingMatrix   // vocabSize × d_model
@@ -63,12 +94,31 @@ export class NetworkTransformer {
       d_ff      = 128,
       nBlocks   = 4,
       nClasses  = 9,
+      freezeEmbeddings = false,
     } = options
+
+    // Validate the freeze option before anything is built
+    if (typeof freezeEmbeddings === 'boolean') {
+      this._freezeToken = freezeEmbeddings
+      this._freezePos   = freezeEmbeddings
+    } else if (typeof freezeEmbeddings === 'object' && freezeEmbeddings !== null) {
+      const { token = false, position = false } = freezeEmbeddings
+      if (typeof token !== 'boolean' || typeof position !== 'boolean') {
+        throw new Error('NetworkTransformer.constructor: freezeEmbeddings.token and .position must be booleans')
+      }
+      this._freezeToken = token
+      this._freezePos   = position
+    } else {
+      throw new Error('NetworkTransformer.constructor: freezeEmbeddings must be a boolean or { token?, position? }')
+    }
 
     this.seqLen    = seqLen
     this.vocabSize = vocabSize
     this.d_model   = d_model
     this.nClasses  = nClasses
+    this._nHeads   = nHeads
+    this._d_ff     = d_ff
+    this._nBlocks  = nBlocks
 
     this.tokenEmb = new EmbeddingMatrix(vocabSize, d_model)
     this.posEmb   = new EmbeddingMatrix(seqLen,    d_model)
@@ -180,17 +230,104 @@ export class NetworkTransformer {
     // dX[i] is the gradient w.r.t. (tokenEmb[tokens[i]] + posEmb[i])
     // Both embeddings receive the same gradient.
     for (let i = 0; i < this.seqLen; i++) {
-      this.tokenEmb.update(tokens[i], dX[i], lr)
-      this.posEmb.update(i, dX[i], lr)
+      if (!this._freezeToken) this.tokenEmb.update(tokens[i], dX[i], lr)
+      if (!this._freezePos)   this.posEmb.update(i, dX[i], lr)
     }
 
     return loss
+  }
+
+  // Replace the token table with external embeddings (e.g. from another model).
+  // rows: vocabSize rows of d_model finite numbers. Everything is validated before
+  // any row is written. opts.freeze sets whether train keeps the table fixed;
+  // when absent, the current setting is kept.
+  setTokenEmbeddings(rows: number[][], opts: { freeze?: boolean } = {}): void {
+    const name = 'NetworkTransformer.setTokenEmbeddings'
+    if (!Array.isArray(rows)) {
+      throw new Error(`${name}: expected an array of ${this.vocabSize} rows, got ${typeof rows}`)
+    }
+    if (rows.length !== this.vocabSize) {
+      throw new Error(`${name}: expected ${this.vocabSize} rows (vocabSize), got ${rows.length}`)
+    }
+    if (opts.freeze !== undefined && typeof opts.freeze !== 'boolean') {
+      throw new Error(`${name}: opts.freeze must be a boolean`)
+    }
+    rows.forEach((row, i) => {
+      if (!Array.isArray(row) || row.length !== this.d_model) {
+        const got = Array.isArray(row) ? row.length : typeof row
+        throw new Error(
+          `${name}: row ${i} must have d_model = ${this.d_model} columns, got ${got}. ` +
+          `For embeddings of another size use NetworkTransformerRL (it projects any inputDim) ` +
+          `or reduce them to d_model first with PCA.`
+        )
+      }
+      for (let m = 0; m < row.length; m++) {
+        if (typeof row[m] !== 'number' || !Number.isFinite(row[m])) {
+          throw new Error(`${name}: invalid value at row ${i}, column ${m}: ${row[m]}`)
+        }
+      }
+    })
+    // All rows are valid: write them now
+    rows.forEach((row, i) => { this.tokenEmb.W[i] = [...row] })
+    if (opts.freeze !== undefined) this._freezeToken = opts.freeze
   }
 
   // Attention weights from every block for visualization.
   // Returns: nBlocks × nHeads × seqLen × seqLen  (nulls if not yet run)
   getAttentionWeights(): (number[][] | null)[][] {
     return this.blocks.map(b => b.getAttentionWeights())
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Every constructor option with its effective value (defaults included), so
+  // fromConfig rebuilds the same architecture. Weights and optimizer state are not included.
+  toConfig(): NetworkTransformerConfig {
+    return {
+      seqLen:    this.seqLen,
+      vocabSize: this.vocabSize,
+      d_model:   this.d_model,
+      nHeads:    this._nHeads,
+      d_ff:      this._d_ff,
+      nBlocks:   this._nBlocks,
+      nClasses:  this.nClasses,
+      freezeEmbeddings: this._freezeToken === this._freezePos
+        ? this._freezeToken
+        : { token: this._freezeToken, position: this._freezePos },
+    }
+  }
+
+  /** New model from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): NetworkTransformer {
+    const c = config as Record<string, unknown> | null
+    const out = {} as NetworkTransformerConfig
+    if (typeof c !== 'object' || c === null) {
+      throw new Error(`NetworkTransformer.fromConfig: config must be an object with integers >= 1 for ${CONFIG_FIELDS.join(', ')}`)
+    }
+    for (const f of CONFIG_FIELDS) {
+      const v = c[f]
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+        throw new Error(`NetworkTransformer.fromConfig: ${f} must be an integer >= 1, got ${JSON.stringify(v) ?? String(v)}`)
+      }
+      out[f] = v
+    }
+    // freezeEmbeddings: boolean, or { token, position } with booleans (what toConfig writes)
+    const fz = c.freezeEmbeddings
+    const okBool = (v: unknown) => typeof v === 'boolean'
+    const okFreeze = okBool(fz) ||
+      (typeof fz === 'object' && fz !== null && okBool((fz as Record<string, unknown>).token) &&
+        okBool((fz as Record<string, unknown>).position))
+    if (!okFreeze) {
+      throw new Error(`NetworkTransformer.fromConfig: freezeEmbeddings must be a boolean or { token: boolean, position: boolean }, got ${JSON.stringify(fz) ?? String(fz)}`)
+    }
+    return new NetworkTransformer(out.seqLen, {
+      vocabSize: out.vocabSize,
+      d_model:   out.d_model,
+      nHeads:    out.nHeads,
+      d_ff:      out.d_ff,
+      nBlocks:   out.nBlocks,
+      nClasses:  out.nClasses,
+      freezeEmbeddings: fz as boolean | { token: boolean; position: boolean },
+    })
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────

@@ -42,7 +42,8 @@ export { DatasetLoader } from "./DatasetLoader";
 export type { DatasetLoaderOptions, DatasetLoaderResult, CategoricalMap } from "./DatasetLoader";
 export { LRScheduler } from "./LRScheduler";
 export { ModelSaver }  from "./ModelSaver";
-export type { Serializable } from "./ModelSaver";
+export type { Serializable, Saveable, Registrable, SaveOptions } from "./ModelSaver";
+export type { NetworkNConfig, ActivationSpec, OptimizerSpec, SavedModel } from "./core/format2";
 
 // Validation
 export { validateArray, validateArrayMinLength, validate2DArray, validateNumber } from "./Validation";
@@ -115,3 +116,38 @@ export type { TokenizerMode, TokenizerOptions, EncodeOptions, EncodeBatchOptions
 export { EarlyStopping }    from "./EarlyStopping";
 export { LossPlotter }      from "./LossPlotter";
 export { DataAugmentation } from "./DataAugmentation";
+
+// Random number generator (0.5): injectable, Math.random by default
+export { random, setRandom, getRandom, seededRandom, withRandom } from "./random";
+export type { RandomFn } from "./random";
+
+// Vectorized optimizers (0.5): one state buffer per parameter block, exact equivalent of the scalar ones
+export { VecSGD, VecMomentum, VecAdam, VecClip, ScalarArrayOptimizer, vecFromFactory } from "./core/optim";
+export type { VecOptimizer } from "./core/optim";
+
+// Numeric core (0.5): Float64Array operations behind a swappable backend
+export { defaultBackend } from "./core/tensor";
+export { setBackend, getBackend } from "./core/backend";
+export { checkBackend } from "./core/checkBackend";
+export type { BackendReport } from "./core/checkBackend";
+export type { Backend } from "./core/tensor";
+
+// Fast dense network (0.5): same API and weight order as NetworkN, Float64Array buffers
+export { NetworkFast } from "./NetworkFast";
+export type { NetworkFastOptions } from "./NetworkFast";
+
+// Format 2 registry (0.5). The package declares sideEffects: false, so the built-in
+// classes are registered here, in the entry module, and not inside each class file.
+import { ModelSaver as _ModelSaver } from "./ModelSaver";
+import { NetworkN as _NetworkN } from "./NetworkN";
+import { Network as _Network } from "./Network";
+_ModelSaver.register("NetworkN", _NetworkN);
+_ModelSaver.register("Network", _Network);
+import { NetworkLSTM as _NetworkLSTM } from "./NetworkLSTM";
+_ModelSaver.register("NetworkLSTM", _NetworkLSTM);
+import { NetworkTransformer as _NetworkTransformer } from "./NetworkTransformer";
+import { NetworkTransformerRL as _NetworkTransformerRL } from "./NetworkTransformerRL";
+_ModelSaver.register("NetworkTransformer", _NetworkTransformer);
+_ModelSaver.register("NetworkTransformerRL", _NetworkTransformerRL);
+import { NetworkFast as _NetworkFast } from "./NetworkFast";
+_ModelSaver.register("NetworkFast", _NetworkFast);

@@ -1,6 +1,6 @@
 {
   "name": "@dniskav/neuron",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Minimal neural network from scratch — neuron, layer, network, backpropagation, classical ML, unsupervised, generative models, autograd. No dependencies.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -10,14 +10,24 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./infer": {
+      "types": "./dist/infer.d.ts",
+      "import": "./dist/infer.mjs",
+      "require": "./dist/infer.js"
+    },
+    "./infer/min": {
+      "types": "./dist/infer.d.ts",
+      "import": "./dist/infer.min.mjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "build": "tsup && esbuild src/infer.ts --bundle --minify --format=esm --sourcemap --sources-content=false --outfile=dist/infer.min.mjs",
+    "dev": "tsup src/index.ts src/infer.ts --format cjs,esm --dts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
@@ -33,6 +43,7 @@
   "license": "MIT",
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.12",
+    "esbuild": "0.27.2",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.12"

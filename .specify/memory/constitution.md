@@ -26,7 +26,7 @@ Se aceptan cambios incompatibles si corrigen un comportamiento incorrecto. Deben
 ## Restricciones de operación
 
 - **Publicación:** solo con aprobación explícita del usuario. Ningún agente ejecuta `npm publish`, sube a `master` ni cambia la versión por su cuenta.
-- **Git:** el trabajo se integra en `fix/v0.4`; solo el orquestador hace merge. Ningún agente fuerza un push ni reescribe historia compartida.
+- **Git:** el trabajo se integra en la rama de integración de la feature en curso (`fix/v0.4` hasta 0.4.0; `feat/0.5-core` en 010); solo el orquestador hace merge. Ningún agente fuerza un push ni reescribe historia compartida.
 - **Propiedad de archivos:** cada tarea declara sus archivos y un agente solo toca esos. `tasks.md`, `package.json`, `package-lock.json`, `src/index.ts` y el changelog son exclusivos del orquestador.
 - **Modelos:** Haiku por defecto, Sonnet cuando hace falta y Opus solo con permiso del usuario, según `specs/ORCHESTRATION.md`.
 
@@ -38,4 +38,4 @@ Una tarea está terminada cuando pasan `npx tsc --noEmit -p .`, `npm run build` 
 
 Esta constitución prevalece sobre las specs y los planes. Cambiarla requiere aprobación del usuario.
 
-**Versión**: 1.0.0 | **Ratificada**: 2026-11-08 | **Última enmienda**: 2026-11-08
+**Versión**: 1.1.0 | **Ratificada**: 2026-11-08 | **Última enmienda**: 2026-11-18 (rama de integración por feature, aprobada por el usuario en 010 Q2)

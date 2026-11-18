@@ -23,7 +23,8 @@ const EXPECTED = [
   '03-uso-modelos',
   '04-uso-secuencias',
   '05-uso-herramientas',
-  '06-cierre',
+  '06-nucleo-rapido',
+  '07-cierre',
 ];
 const USAGE = 'Uso: node specs/007-docs/tools/assemble-readme.mjs [--check] [--parts <dir>] [--out <archivo>]';
 

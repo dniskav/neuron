@@ -27,7 +27,7 @@
 // large for the problem, not that backprop is wrong. The stable range depends on
 // the task, sequence length and initialization. One measured case, not a law:
 // x[t] = sin(1.3 t + 0.4), target y[t] = x[t-1], T = 16, TCN(1, 4, 2, 2, 1),
-// 300 train() calls per run, Math.random seeded with 1-5:
+// 300 train() calls per run, random() (Math.random por defecto) seeded with 1-5:
 //   lr 0.1 - 0.39: final loss <= 6e-3 in all 5 seeds (start 0.48 - 0.85), with
 //                  no spike above 1.5x the initial loss.
 //   lr 0.5:        loss spikes to about 1.4 on the way but ends <= 1e-2.
@@ -39,9 +39,11 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { relu as reluActivation } from "./activations";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 // ── Input checks (T040). Run before any cache or weight is touched.
 function checkLr(where: string, lr: number): void {
@@ -93,9 +95,10 @@ export class CausalConv1D {
   kernels: number[][][];
   biases:  number[];
 
-  // Per-scalar optimizers
-  private _kOpts: Optimizer[][][];
-  private _bOpts: Optimizer[];
+  // Vector optimizers. _kOpts[f] updates the whole kernel of output channel f,
+  // flattened as index k * inputChannels + c; _bOpt updates all the biases at once.
+  private _kOpts: VecOptimizer[];
+  private _bOpt: VecOptimizer;
 
   // Cache for backward pass
   private _paddedInput: number[][] | null = null;
@@ -121,17 +124,15 @@ export class CausalConv1D {
     const limit = Math.sqrt(2 / (kernelSize * inputChannels));
     this.kernels = Array.from({ length: outputChannels }, () =>
       Array.from({ length: kernelSize }, () =>
-        Array.from({ length: inputChannels }, () => (Math.random() * 2 - 1) * limit)
+        Array.from({ length: inputChannels }, () => (random() * 2 - 1) * limit)
       )
     );
     this.biases = new Array(outputChannels).fill(0);
 
     this._kOpts = Array.from({ length: outputChannels }, () =>
-      Array.from({ length: kernelSize }, () =>
-        Array.from({ length: inputChannels }, () => optimizerFactory())
-      )
+      vecFromFactory(optimizerFactory, kernelSize * inputChannels)
     );
-    this._bOpts = Array.from({ length: outputChannels }, () => optimizerFactory());
+    this._bOpt = vecFromFactory(optimizerFactory, outputChannels);
   }
 
   // ── Forward pass ──────────────────────────────────────────────────────────
@@ -217,17 +218,27 @@ export class CausalConv1D {
       }
     }
 
-    // Apply optimizer updates
+    // Apply optimizer updates. Each output channel's kernel goes through a flat
+    // buffer (index k * inputChannels + c) and is copied back afterwards.
+    const K = this.kernelSize;
+    const C = this.inputChannels;
     for (let f = 0; f < this.outputChannels; f++) {
-      for (let k = 0; k < this.kernelSize; k++) {
-        for (let c = 0; c < this.inputChannels; c++) {
-          this.kernels[f][k][c] = this._kOpts[f][k][c].step(
-            this.kernels[f][k][c], dKernels[f][k][c], lr
-          );
+      const w = new Float64Array(K * C);
+      const g = new Float64Array(K * C);
+      for (let k = 0; k < K; k++) {
+        for (let c = 0; c < C; c++) {
+          w[k * C + c] = this.kernels[f][k][c];
+          g[k * C + c] = dKernels[f][k][c];
         }
       }
-      this.biases[f] = this._bOpts[f].step(this.biases[f], dBiases[f], lr);
+      this._kOpts[f].step(w, g, lr);
+      for (let k = 0; k < K; k++) {
+        for (let c = 0; c < C; c++) {
+          this.kernels[f][k][c] = w[k * C + c];
+        }
+      }
     }
+    this._bOpt.step(this.biases, dBiases, lr);
 
     // Strip the causal padding to recover dInput of shape [T][inputChannels]
     return dPadded.slice(pad);
@@ -258,8 +269,8 @@ export class TCN {
   readonly layers: CausalConv1D[];
   private _outputW: number[][];  // [outputSize][channels]  — linear projection
   private _outputB: number[];    // [outputSize]
-  private _outOpts: Optimizer[][];
-  private _bOutOpts: Optimizer[];
+  private _outOpts: VecOptimizer[];  // [outputSize], each over one row of _outputW (size channels)
+  private _bOutOpt: VecOptimizer;    // size outputSize, over _outputB
 
   readonly inputChannels: number;
   readonly channels:      number;
@@ -302,14 +313,14 @@ export class TCN {
     // Linear output projection: channels → outputSize
     const outLimit = Math.sqrt(2 / channels);
     this._outputW = Array.from({ length: outputSize }, () =>
-      Array.from({ length: channels }, () => (Math.random() * 2 - 1) * outLimit)
+      Array.from({ length: channels }, () => (random() * 2 - 1) * outLimit)
     );
     this._outputB = new Array(outputSize).fill(0);
 
     this._outOpts = Array.from({ length: outputSize }, () =>
-      Array.from({ length: channels }, () => optimizerFactory())
+      vecFromFactory(optimizerFactory, channels)
     );
-    this._bOutOpts = Array.from({ length: outputSize }, () => optimizerFactory());
+    this._bOutOpt = vecFromFactory(optimizerFactory, outputSize);
   }
 
   // ── Receptive field (informational) ──────────────────────────────────────
@@ -412,11 +423,9 @@ export class TCN {
     // dOut already carries 1/T: projection and conv layers both use plain lr.
     const scale = lr;
     for (let i = 0; i < this.outputSize; i++) {
-      for (let j = 0; j < this.channels; j++) {
-        this._outputW[i][j] = this._outOpts[i][j].step(this._outputW[i][j], dWout[i][j], scale);
-      }
-      this._outputB[i] = this._bOutOpts[i].step(this._outputB[i], dBout[i], scale);
+      this._outOpts[i].step(this._outputW[i], dWout[i], scale);
     }
+    this._bOutOpt.step(this._outputB, dBout, scale);
 
     // ── Backward through dilated conv stack (LIFO) ────────────────────────
     let dCurrent = dHidden;

@@ -186,7 +186,7 @@ export class Autoencoder {
     // 0.9949 with residual). Same pattern as VAE. If the decoder's LAST layer has a
     // residual skip it throws (Q2, same as VAE/GAN) before touching any weight.
     // reuseMasks = true (Q9): with dropout, loss, gradient and update share the masks drawn by
-    // the two predict(…, true) above (one mask per step); it draws no Math.random.
+    // the two predict(…, true) above (one mask per step); it draws no random() (Math.random por defecto).
     const gz = this.decoder.inputGradient(z, outputDeltas, true);
 
     // gz is the gradient at the encoder's OUTPUT (post-activation z). trainWithDeltas

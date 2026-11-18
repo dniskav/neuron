@@ -40,6 +40,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { validateDataset } from './Validation'
+import { random } from './random'
 
 export interface SOMOptions {
   initialLr?: number;
@@ -88,7 +89,7 @@ export class SOM {
     // Initialize weights uniformly in [0, 1)
     this.weights = Array.from({ length: rows }, () =>
       Array.from({ length: cols }, () =>
-        Array.from({ length: inputSize }, () => Math.random())
+        Array.from({ length: inputSize }, () => random())
       )
     );
   }
@@ -216,7 +217,7 @@ export class SOM {
   private _shuffle(n: number): number[] {
     const arr = Array.from({ length: n }, (_, i) => i);
     for (let i = n - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Trainer } from '../src/Trainer';
 import { NetworkN } from '../src/NetworkN';
+import { NetworkFast } from '../src/NetworkFast';
 import type { TrainableNetwork } from '../src/Trainer';
 import { f1Score, precision, recall } from '../src/Metrics';
 
@@ -602,5 +603,102 @@ describe('Trainer f1 (T019)', () => {
     const m = trainerMetricsFor(yTrue, yPred, 3);
     expect(m.f1).toBeCloseTo(2 / 3, 12);
     expect(f1Score(yTrue, yPred)).toBeCloseTo(1, 12);
+  });
+});
+
+describe('Trainer batchSize (T013, FR-5)', () => {
+  // Fake model that records every call. train() returns the target; trainBatch()
+  // returns the MEAN of its targets, so the epoch loss must equal the mean over
+  // the whole dataset, whatever the chunk sizes are.
+  class RecordingBatchNet implements TrainableNetwork {
+    trainCalls = 0;
+    batchSizes: number[] = [];
+    train(_i: number[], t: number[], _lr: number): number {
+      this.trainCalls++;
+      return t[0];
+    }
+    trainBatch(X: number[][], T: number[][], _lr: number): number {
+      this.batchSizes.push(X.length);
+      let s = 0;
+      for (const t of T) s += t[0];
+      return s / T.length;
+    }
+  }
+
+  const dataset70 = () => ({
+    inputs: Array.from({ length: 70 }, (_, i) => [i]),
+    targets: Array.from({ length: 70 }, (_, i) => [i]),
+  });
+
+  it('chunks an epoch into batchSize pieces; last chunk may be smaller (32, 32, 6)', () => {
+    const net = new RecordingBatchNet();
+    const trainer = new Trainer(net, { epochs: 1, lr: 0.1, batchSize: 32 });
+    trainer.train(dataset70());
+    expect(net.batchSizes).toEqual([32, 32, 6]);
+    expect(net.trainCalls).toBe(0);
+  });
+
+  it('epoch loss is the per-example mean, weighting the last chunk by its size', () => {
+    // Mean of targets 0..69 is 34.5. An unweighted mean of the three chunk means
+    // would differ for any shuffle, because the chunk means are not all equal.
+    const net = new RecordingBatchNet();
+    const trainer = new Trainer(net, { epochs: 1, lr: 0.1, batchSize: 32 });
+    const history = trainer.train(dataset70());
+    expect(history[0]).toBeCloseTo(34.5, 10);
+  });
+
+  it('batchSize = 1 keeps calling train() even if the model has trainBatch()', () => {
+    const net = new RecordingBatchNet();
+    const trainer = new Trainer(net, { epochs: 1, lr: 0.1 });
+    trainer.train(dataset70());
+    expect(net.trainCalls).toBe(70);
+    expect(net.batchSizes).toEqual([]);
+  });
+
+  it('batchSize > 1 without trainBatch() throws a clear error', () => {
+    class NoBatchNet implements TrainableNetwork {
+      train(_i: number[], _t: number[], _lr: number): number {
+        return 0;
+      }
+    }
+    expect(() => new Trainer(new NoBatchNet(), { batchSize: 4 })).toThrow(
+      'Trainer: batchSize > 1 needs a model with trainBatch()'
+    );
+  });
+
+  it('rejects batchSize that is not an integer >= 1 (0, 1.5, NaN, Infinity, -1)', () => {
+    const net = new RecordingBatchNet();
+    for (const bad of [0, 1.5, NaN, Infinity, -1]) {
+      expect(() => new Trainer(net, { batchSize: bad })).toThrow(/batchSize must be an integer >= 1/);
+    }
+  });
+
+  it('accepts batchSize 1 and an undefined batchSize (default 1)', () => {
+    const net = new RecordingBatchNet();
+    expect(() => new Trainer(net, { batchSize: 1 })).not.toThrow();
+    expect(() => new Trainer(net, {})).not.toThrow();
+  });
+
+  it('batchSize larger than the dataset gives one chunk of the whole dataset', () => {
+    const net = new RecordingBatchNet();
+    const trainer = new Trainer(net, { epochs: 2, lr: 0.1, batchSize: 500 });
+    trainer.train(dataset70());
+    expect(net.batchSizes).toEqual([70, 70]);
+  });
+
+  it('NetworkFast learns with Trainer and batchSize 16', () => {
+    // XOR-like task: y = x0 AND x1 (values in {0, 1}), fixed seed from setup.ts.
+    const inputs: number[][] = [];
+    const targets: number[][] = [];
+    for (let k = 0; k < 64; k++) {
+      const a = k & 1, b = (k >> 1) & 1;
+      inputs.push([a, b]);
+      targets.push([a & b]);
+    }
+    const net = new NetworkFast([2, 8, 1]);
+    const trainer = new Trainer(net, { epochs: 300, lr: 0.5, batchSize: 16 });
+    const history = trainer.train({ inputs, targets });
+    expect(history[history.length - 1]).toBeLessThan(history[0] * 0.5);
+    expect(history[history.length - 1]).toBeLessThan(0.05);
   });
 });

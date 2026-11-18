@@ -3,6 +3,11 @@ import { Layer }                             from "./Layer";
 import { Activation, sigmoid }               from "./activations";
 import { OptimizerFactory, defaultOptimizer } from "./optimizers";
 import { validateArray, validateNumber }     from "./Validation";
+import {
+  activationFromSpec, activationToSpec, validateActivationSpec, validateOptimizerSpec,
+  type ActivationSpec, type OptimizerSpec,
+} from "./core/format2";
+import { describeOptimizer, optimizerFromSpec } from "./NetworkN";
 
 export interface NetworkLSTMOptions {
   // Activation for the dense layers that follow the LSTM.
@@ -37,6 +42,44 @@ export interface NetworkLSTMOptions {
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Format 2 config (ModelSaver.save / load). One activation for all dense layers,
+// as the constructor takes one. The LSTM gates use plain SGD and are not saved.
+export interface NetworkLSTMConfig {
+  inputSize:      number;
+  hiddenSize:     number;
+  denseStructure: number[];
+  denseActivation: ActivationSpec;
+  optimizer:      OptimizerSpec;
+}
+
+const showValue = (v: unknown): string => JSON.stringify(v) ?? String(v);
+
+// Checks a format-2 config BEFORE anything is built. `where` prefixes the messages.
+function validateNetworkLSTMConfig(config: unknown, where: string): NetworkLSTMConfig {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) {
+    throw new Error(`${where}: config must be an object`);
+  }
+  const c = config as Record<string, unknown>;
+  const isSize = (n: unknown) => Number.isInteger(n) && (n as number) >= 1;
+  if (!isSize(c.inputSize)) {
+    throw new Error(`${where}: inputSize must be an integer >= 1, got ${showValue(c.inputSize)}`);
+  }
+  if (!isSize(c.hiddenSize)) {
+    throw new Error(`${where}: hiddenSize must be an integer >= 1, got ${showValue(c.hiddenSize)}`);
+  }
+  const ds = c.denseStructure;
+  if (!Array.isArray(ds) || ds.length === 0 || !ds.every(isSize)) {
+    throw new Error(`${where}: denseStructure must be a non-empty array of integers >= 1, got ${showValue(ds)}`);
+  }
+  return {
+    inputSize: c.inputSize as number,
+    hiddenSize: c.hiddenSize as number,
+    denseStructure: [...(ds as number[])],
+    denseActivation: validateActivationSpec(c.denseActivation, `${where}: denseActivation`),
+    optimizer: validateOptimizerSpec(c.optimizer, `${where}: optimizer`),
+  };
+}
+
 export class NetworkLSTM {
   readonly inputSize:  number;
   readonly hiddenSize: number;
@@ -44,8 +87,15 @@ export class NetworkLSTM {
   lstm:        LSTMLayer;
   denseLayers: Layer[];
 
+  // Factory of the dense layers' optimizer, kept for format 2 (toConfig).
+  private _denseOptimizer: OptimizerFactory;
+
   // Dense layer activations stored per step for backprop
   private _acts: number[][][];  // [T][layer+1][neuron]
+
+  /** Class name for ModelSaver format 2 (not read from constructor.name: bundlers rename it). */
+  static readonly kind = "NetworkLSTM";
+  get kind(): string { return NetworkLSTM.kind; }
 
   constructor(
     inputSize: number,
@@ -68,6 +118,7 @@ export class NetworkLSTM {
 
     const activation = options.denseActivation ?? sigmoid;
     const optimizer  = options.optimizer       ?? defaultOptimizer;
+    this._denseOptimizer = optimizer;
 
     this.denseLayers = [];
     const sizes = [hiddenSize, ...denseStructure];
@@ -245,6 +296,29 @@ export class NetworkLSTM {
         for (let j = 0; j < n.weights.length; j++) n.weights[j] = nd.weights[j];
         n.bias = nd.bias;
       });
+    });
+  }
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Everything needed to rebuild an equal network, except weights and optimizer state.
+  // Throws if the dense activation has no name, like NetworkN.toConfig.
+  toConfig(): NetworkLSTMConfig {
+    return {
+      inputSize: this.inputSize,
+      hiddenSize: this.hiddenSize,
+      denseStructure: this.denseLayers.map(layer => layer.neurons.length),
+      denseActivation: activationToSpec(
+        this.denseLayers[0].neurons[0].activation, "NetworkLSTM.toConfig: denseActivation"),
+      optimizer: describeOptimizer(this._denseOptimizer),
+    };
+  }
+
+  /** New network from a config made by `toConfig`. Validates before building anything. */
+  static fromConfig(config: unknown): NetworkLSTM {
+    const c = validateNetworkLSTMConfig(config, "NetworkLSTM.fromConfig");
+    return new NetworkLSTM(c.inputSize, c.hiddenSize, c.denseStructure, {
+      denseActivation: activationFromSpec(c.denseActivation),
+      optimizer: optimizerFromSpec(c.optimizer),
     });
   }
 

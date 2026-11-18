@@ -37,6 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { validateArray, validateDataset, validateNumber } from "./Validation";
+import { random } from "./random";
 
 // ─── Internal sigmoid ─────────────────────────────────────────────────────────
 function sigmoid(z: number): number {
@@ -112,7 +113,7 @@ export class LogisticRegression {
       const limit = Math.sqrt(2 / this._nFeatures);
       this.weights = Array.from(
         { length: this._nFeatures },
-        () => (Math.random() * 2 - 1) * limit
+        () => (random() * 2 - 1) * limit
       );
       this.bias = 0;
     }
@@ -265,7 +266,7 @@ export class SoftmaxRegression {
       // Initialise weights to small random values
       const limit = Math.sqrt(2 / this._nFeatures);
       this.weights = Array.from({ length: this._nClasses }, () =>
-        Array.from({ length: this._nFeatures }, () => (Math.random() * 2 - 1) * limit)
+        Array.from({ length: this._nFeatures }, () => (random() * 2 - 1) * limit)
       );
       this.biases = new Array(this._nClasses).fill(0);
     }

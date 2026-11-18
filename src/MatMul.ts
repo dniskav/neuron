@@ -5,8 +5,9 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Adam } from './optimizers'
+import { VecAdam } from './core/optim'
 import { validateArray } from './Validation'
+import { random } from './random'
 
 // ── Matrix multiply ───────────────────────────────────────────────────────────
 // C = A @ B   |  A: rows × inner,  B: inner × cols  →  C: rows × cols
@@ -82,16 +83,18 @@ export function softmaxBackward(dS: number[], s: number[]): number[] {
 
 export class WeightMatrix {
   W:    number[][]
-  private opts: Adam[][]
+  // One VecAdam per row. Its step count is shared by the row's elements, which is
+  // exact because update() steps every element on every call.
+  private opts: VecAdam[]
+  private clipped: Float64Array
 
   constructor(rows: number, cols: number) {
     const limit = Math.sqrt(2 / (rows + cols))
     this.W    = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: cols }, () => (random() * 2 - 1) * limit)
     )
-    this.opts = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => new Adam())
-    )
+    this.opts = Array.from({ length: rows }, () => new VecAdam(cols))
+    this.clipped = new Float64Array(cols)
   }
 
   // Apply pre-computed gradient (same shape as W).
@@ -99,13 +102,15 @@ export class WeightMatrix {
   // Prevents gradient explosion in deep networks (e.g. Transformers without
   // global norm clipping). Pass e.g. 1.0 to clip to [-1, 1].
   update(dW: number[][], lr: number, clipValue = Infinity): void {
-    for (let i = 0; i < this.W.length; i++)
-      for (let j = 0; j < this.W[0].length; j++) {
-        const g = isFinite(clipValue)
+    const clip = isFinite(clipValue)
+    const g = this.clipped
+    for (let i = 0; i < this.W.length; i++) {
+      for (let j = 0; j < g.length; j++)
+        g[j] = clip
           ? Math.max(-clipValue, Math.min(clipValue, dW[i][j]))
           : dW[i][j]
-        this.W[i][j] = this.opts[i][j].step(this.W[i][j], g, lr)
-      }
+      this.opts[i].step(this.W[i], g, lr)
+    }
   }
 
   // ── Flat weight serialization ─────────────────────────────────────────────
@@ -131,16 +136,15 @@ export class WeightMatrix {
 
 export class BiasVector {
   values: number[]
-  private opts: Adam[]
+  private opt: VecAdam
 
   constructor(size: number) {
     this.values = new Array(size).fill(0)
-    this.opts = Array.from({ length: size }, () => new Adam())
+    this.opt = new VecAdam(size)
   }
 
   update(grad: number[], lr: number): void {
-    for (let i = 0; i < this.values.length; i++)
-      this.values[i] = this.opts[i].step(this.values[i], grad[i], lr)
+    this.opt.step(this.values, grad, lr)
   }
 
   getWeights(): number[] { return [...this.values] }
@@ -167,7 +171,7 @@ export class EmbeddingMatrix {
   constructor(vocabSize: number, d_model: number) {
     const limit = Math.sqrt(1 / d_model)
     this.W = Array.from({ length: vocabSize }, () =>
-      Array.from({ length: d_model }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: d_model }, () => (random() * 2 - 1) * limit)
     )
   }
 

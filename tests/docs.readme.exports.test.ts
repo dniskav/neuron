@@ -23,7 +23,8 @@ const PARTES = [
   "03-uso-modelos",
   "04-uso-secuencias",
   "05-uso-herramientas",
-  "06-cierre",
+  "06-nucleo-rapido",
+  "07-cierre",
 ];
 const MINIMO_EXPORTS = 100;
 const MSG_ENSAMBLADO =
