@@ -75,7 +75,7 @@
 - [x] T016 [P] [H] [api-dev] [files: src/NetworkLSTM.ts, src/ModelSaver.ts, tests/NetworkLSTM.format2.test.ts] `NetworkLSTM` con formato 2 (`config`: `inputSize`, `hiddenSize`, `denseStructure`, activaciones y optimizador como en T014). Ida y vuelta: el mismo episodio (`resetState`, 5 `predict`) da las mismas salidas con `Object.is`. Mutante: olvidar `hiddenSize` en `toConfig`.
       Gate: `npx vitest run tests/NetworkLSTM.format2.test.ts tests/NetworkLSTM.test.ts` + gate común
 
-- [ ] T017 [P] [H] [api-dev] [files: src/NetworkTransformer.ts, src/NetworkTransformerRL.ts, tests/NetworkTransformer.format2.test.ts] Formato 2 para las dos clases (`config` = `seqLen` (+ `inputDim`) y todas sus opciones, incluida `pooling` en RL). Ida y vuelta con salidas idénticas (`Object.is`). Si alguna opción no se puede reconstruir, `blocked` con la lista. Mutante: perder `nHeads`.
+- [x] T017 [P] [H] [api-dev] [files: src/NetworkTransformer.ts, src/NetworkTransformerRL.ts, tests/NetworkTransformer.format2.test.ts] Formato 2 para las dos clases (`config` = `seqLen` (+ `inputDim`) y todas sus opciones, incluida `pooling` en RL). Ida y vuelta con salidas idénticas (`Object.is`). Si alguna opción no se puede reconstruir, `blocked` con la lista. Mutante: perder `nHeads`.
       Gate: `npx vitest run tests/NetworkTransformer.format2.test.ts tests/NetworkTransformer.test.ts tests/NetworkTransformerRL.test.ts` + gate común
 
 ## Lote 6
