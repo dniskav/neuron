@@ -98,7 +98,7 @@ Sobre `[256,256,256,10]`, `relu, relu, sigmoid`, en la misma máquina que la lí
 | NFR-2 | `NetworkFast.trainBatch(32)`, Adam, ms por ejemplo | ≤ 1/8 de `NetworkN.train` |
 | NFR-3 | `NetworkFast`, Adam, bytes por parámetro (heapUsed + arrayBuffers) | ≤ 36 (2026-11-18: el usuario delega y el orquestador sube de 32 a 36, porque el lote necesita el buffer de gradiente: peso, gradiente, m y v son 32 bytes) |
 | NFR-4 | `NetworkN`, Adam, bytes por parámetro (FR-3; heapUsed + arrayBuffers) | ≤ 50 (0.4: 136,7, medido en T001b) |
-| NFR-5 | `NetworkFast.predict`, ms por ejemplo | ≤ 1/3 de `NetworkN.predict` |
+| NFR-5 | `NetworkFast.predict`, ms por ejemplo | ≤ 0,8 de `NetworkN.predict` de 0.4 (2026-11-18: el objetivo inicial ≤ 1/3 no era realista en JS puro; T026 midió 1,22; el usuario aprueba T031 y el nuevo objetivo) |
 | NFR-6 | La suite completa | Sin regresión de tiempo > 20 % |
 
 Si la línea base de T001 sale muy distinta de la tabla de arriba, el orquestador propone nuevos objetivos al usuario antes de lanzar el Lote 3.
