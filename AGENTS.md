@@ -244,7 +244,7 @@ Convolutions, data loaders, loss functions, optimizers (`SGD`, `Momentum`, `Adam
 
 ## Working on this codebase
 
-- Scripts (`package.json`): `npm run build` (tsup with its config file at the repository root: CJS + ESM + types + sourcemaps into `dist/` for `src/index.ts` and `src/infer.ts`, then esbuild for the minified `dist/infer.min.mjs`; the package also ships `src/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0, the last release. 0.5.0 is unreleased: its changes are in the `## 0.5.0 — unreleased` section of `CHANGELOG.md`, and `package.json` changes at release time.
+- Scripts (`package.json`): `npm run build` (tsup with its config file at the repository root: CJS + ESM + types + sourcemaps into `dist/` for `src/index.ts` and `src/infer.ts`, then esbuild for the minified `dist/infer.min.mjs`; the package also ships `src/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.5.0 (changes in the `## 0.5.0` section of `CHANGELOG.md`).
 - Tests live in `tests/` (vitest). `tests/setup.ts` seeds `Math.random` before every test (`tests/helpers/seed.ts`).
 - Gradient oracles: `tests/oracle/` compares each model's real update with finite differences (helpers in `tests/helpers/gradientOracle.ts`). `tests/helpers/learns.ts` is the helper for "the loss goes down" tests.
 - `tests/coverage.modules.test.ts` requires a test file per `src/` module (case-sensitive name, searched in `tests/`, `tests/oracle/` and `tests/api/`, with documented exceptions).
