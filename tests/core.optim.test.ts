@@ -180,3 +180,66 @@ describe('vecFromFactory', () => {
     expect(n).toBe(5)
   })
 })
+
+// ─── T028: subclasses of the built-ins take the scalar path ───────────────────
+// A subclass may override `step`. The vector classes do not call `step`, so a
+// subclass must not be mapped to the vector class of its parent.
+class Dbl extends SGD {
+  step(w: number, g: number, lr: number): number {
+    return w + 2 * lr * g
+  }
+}
+
+class DblAdam extends Adam {
+  step(w: number, g: number, lr: number): number {
+    const moved = super.step(w, g, lr)
+    return w + 2 * (moved - w)
+  }
+}
+
+class DblClip extends ClipOptimizer {}
+
+describe('vecFromFactory: subclasses of built-ins use the scalar path (T028)', () => {
+  it('a subclass of SGD gives ScalarArrayOptimizer and keeps its own step', () => {
+    const vec = vecFromFactory(() => new Dbl(), 4)
+    expect(vec).toBeInstanceOf(ScalarArrayOptimizer)
+    expect(vec).not.toBeInstanceOf(VecSGD)
+    // the overridden step doubles the move: 2 * 0.1 * 1 = 0.2
+    const p = [0, 0, 0, 0]
+    vec.step(p, [1, 1, 1, 1], 0.1)
+    expect(p).toEqual([0.2, 0.2, 0.2, 0.2])
+  })
+
+  it('a subclass of Adam gives ScalarArrayOptimizer and moves the weight double', () => {
+    const vec = vecFromFactory(() => new DblAdam(), 3)
+    expect(vec).toBeInstanceOf(ScalarArrayOptimizer)
+    expect(vec).not.toBeInstanceOf(VecAdam)
+    const p = [0, 0, 0]
+    vec.step(p, [0.5, -0.5, 2], 0.01)
+    // first Adam step moves each weight by about lr; doubled, about 2 * lr
+    for (const v of p) expect(Math.abs(Math.abs(v) - 0.02)).toBeLessThan(1e-4)
+  })
+
+  it('subclasses match the scalar instances exactly (Object.is)', () => {
+    compare((n) => vecFromFactory(() => new Dbl(), n), () => new Dbl(), 7, 61)
+    compare((n) => vecFromFactory(() => new DblAdam(), n), () => new DblAdam(), 7, 62)
+  })
+
+  it('ClipOptimizer around a subclass takes the scalar path', () => {
+    const f = ClippedOptimizerFactory(() => new Dbl(), 0.5)
+    expect(vecFromFactory(f, 3)).toBeInstanceOf(ScalarArrayOptimizer)
+    compare((n) => vecFromFactory(f, n), () => f(), 3, 63)
+  })
+
+  it('a subclass of ClipOptimizer takes the scalar path', () => {
+    const f = () => new DblClip(new Adam(), 0.5)
+    expect(vecFromFactory(f, 3)).toBeInstanceOf(ScalarArrayOptimizer)
+    compare((n) => vecFromFactory(f, n), () => f(), 3, 64)
+  })
+
+  it('the built-in classes still get their vector classes', () => {
+    expect(vecFromFactory(() => new SGD(), 2)).toBeInstanceOf(VecSGD)
+    expect(vecFromFactory(() => new Adam(), 2)).toBeInstanceOf(VecAdam)
+    expect(vecFromFactory(ClippedOptimizerFactory(() => new Adam(), 0.5), 2)).toBeInstanceOf(VecClip)
+  })
+})
