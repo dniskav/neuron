@@ -1,5 +1,6 @@
 import { Activation, sigmoid }          from "./activations";
-import { Optimizer, OptimizerFactory, defaultOptimizer } from "./optimizers";
+import { OptimizerFactory, defaultOptimizer } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validateArray }                from "./Validation";
 import { random }                       from "./random";
 
@@ -15,9 +16,13 @@ export class NeuronN {
   bias: number;
   readonly activation: Activation;
 
-  // One optimizer instance per weight plus one for the bias.
-  // Each instance maintains its own state (velocity, moments, etc.).
-  private _opts: Optimizer[];
+  // One vector optimizer for the weights and one of size 1 for the bias; they
+  // keep the state (velocity, moments, etc.) in typed arrays, not one object
+  // per weight. The weights are updated IN PLACE: `weights` keeps its identity.
+  private _wOpt: VecOptimizer;
+  private _bOpt: VecOptimizer;
+  private _bBuf = new Float64Array(1);
+  private _bGrad = new Float64Array(1);
 
   constructor(
     nInputs: number,
@@ -28,7 +33,8 @@ export class NeuronN {
     this.weights = Array.from({ length: nInputs }, () => (random() * 2 - 1) * limit);
     this.bias = 0;
     this.activation = activation;
-    this._opts = Array.from({ length: nInputs + 1 }, optimizerFactory);
+    this._wOpt = vecFromFactory(optimizerFactory, nInputs);
+    this._bOpt = vecFromFactory(optimizerFactory, 1);
   }
 
   predict(inputs: number[]): number {
@@ -40,8 +46,11 @@ export class NeuronN {
   // Apply pre-computed gradients via the optimizer.
   // Called internally by Layer / NetworkN / NetworkLSTM during backprop.
   _update(weightGrads: number[], biasGrad: number, lr: number): void {
-    this.weights = this.weights.map((w, i) => this._opts[i].step(w, weightGrads[i], lr));
-    this.bias = this._opts[this.weights.length].step(this.bias, biasGrad, lr);
+    this._wOpt.step(this.weights, weightGrads, lr);
+    this._bBuf[0] = this.bias;
+    this._bGrad[0] = biasGrad;
+    this._bOpt.step(this._bBuf, this._bGrad, lr);
+    this.bias = this._bBuf[0];
   }
 
   train(inputs: number[], target: number, lr: number): void {
