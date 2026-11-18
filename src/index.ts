@@ -127,8 +127,9 @@ export type { VecOptimizer } from "./core/optim";
 
 // Numeric core (0.5): Float64Array operations behind a swappable backend
 export { defaultBackend } from "./core/tensor";
-export { setBackend, getBackend, checkBackend } from "./core/backend";
-export type { BackendReport } from "./core/backend";
+export { setBackend, getBackend } from "./core/backend";
+export { checkBackend } from "./core/checkBackend";
+export type { BackendReport } from "./core/checkBackend";
 export type { Backend } from "./core/tensor";
 
 // Fast dense network (0.5): same API and weight order as NetworkN, Float64Array buffers

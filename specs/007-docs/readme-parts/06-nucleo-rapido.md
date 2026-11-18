@@ -1,6 +1,6 @@
 ## Seeds, vectorized optimizers and the numeric core (0.5, in progress)
 
-These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; batch training and the inference-only entry are still in progress.
+These pieces are part of the 0.5 work (`specs/010-fast-core/`). They are exported and tested; batch training is in progress.
 
 ### setRandom — a global, injectable random generator
 
@@ -119,4 +119,20 @@ const a = net.predict([0.2, 0.1, 0.4]), b = copy.predict([0.2, 0.1, 0.4]);
 console.log(copy instanceof NetworkN, a[0] === b[0] && a[1] === b[1]); // true true
 if (!(copy instanceof NetworkN) || a[0] !== b[0] || a[1] !== b[1]) throw new Error("load did not restore the model");
 console.log(JSON.parse(json).kind); // NetworkN
+```
+
+### @dniskav/neuron/infer — predict only, without the training code
+
+For a server or a page that only predicts, import the `infer` entry: it reads a format 2 file of a dense model (`NetworkN`, `NetworkFast` or `Network`) and gives `predict` and `predictBatch`, without optimizers, backprop, `Trainer` or the random generator. Other kinds throw and point to `ModelSaver.load`.
+
+```ts
+import { NetworkN, ModelSaver } from "@dniskav/neuron";
+import { loadForInference } from "@dniskav/neuron/infer";
+
+const net = new NetworkN([2, 4, 1]);
+const model = loadForInference(ModelSaver.save(net));
+const x = [0.3, 0.7];
+console.log(model.kind, model.predict(x)[0] === net.predict(x)[0]); // NetworkN true
+if (model.predict(x)[0] !== net.predict(x)[0]) throw new Error("infer and the model disagree");
+console.log(model.predictBatch([x, [1, 0]]).length); // 2
 ```

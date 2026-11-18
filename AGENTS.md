@@ -20,6 +20,7 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 | `Network` | `Network.ts` | Fixed two-layer network (hidden + output), sigmoid, backprop. |
 | `NetworkN` | `NetworkN.ts` | Any depth `[inputs, ...hidden, outputs]`; per-layer activations, optimizer factory, `residual`, `dropoutRate`; `trainWithDeltas`, `inputGradient`. |
 | `NetworkFast` | `NetworkFast.ts` | Same API, options, validation and weight order as `NetworkN`, on `Float64Array` buffers with vectorized optimizers and the swappable backend (`options.backend`); same seed gives the same weights as `NetworkN`. About 10x faster to train. |
+| `loadForInference` (entry `@dniskav/neuron/infer`) | `src/infer.ts` | Predict-only reader of format 2 for dense models (`NetworkN`, `NetworkFast`, `Network`): `predict`, `predictBatch`; imports no optimizer, backprop, `Trainer` or `random`. Not exported from `src/index.ts`. |
 
 ### Recurrent
 
@@ -121,14 +122,14 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 | `Tokenizer` | `Tokenizer.ts` | `char`, `word` or `whitespace` vocabulary; `encode`, `decode`, `oneHot`, snapshots. |
 | `validateArray` `validateArrayMinLength` `validate2DArray` `validateNumber` | `Validation.ts` | Throw `Error('<method>: ...')` on bad arrays or numbers. |
 | `random` `setRandom` `getRandom` `seededRandom` `withRandom` | `random.ts` | Injectable RNG: `random()` calls `Math.random` at call time unless `setRandom(fn)` installed a generator; `seededRandom(seed)` is mulberry32. |
-| `defaultBackend` `setBackend` `getBackend` `checkBackend` | `src/core/tensor.ts`, `src/core/backend.ts` | Row-major `Float64Array` kernels (`matVec`, `matTVec`, `addOuter` and their batch versions) behind a swappable backend; `setBackend(partial)` merges with the default, `setBackend(null)` restores it; `checkBackend(b)` runs the conformance cases against the default and returns a `BackendReport`. |
+| `defaultBackend` `setBackend` `getBackend` `checkBackend` | `src/core/tensor.ts`, `src/core/backend.ts`, `src/core/checkBackend.ts` | Row-major `Float64Array` kernels (`matVec`, `matTVec`, `addOuter` and their batch versions) behind a swappable backend; `setBackend(partial)` merges with the default, `setBackend(null)` restores it; `checkBackend(b)` runs the conformance cases against the default and returns a `BackendReport`. |
 
 ### Types (all in `src/index.ts` via `export type`)
 
 - Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`, `VecOptimizer` (`src/core/optim.ts`).
 - Model options: `NetworkNOptions`, `NetworkFastOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
 - Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`, `Saveable`, `Registrable`, `SaveOptions`, and from `src/core/format2.ts` `NetworkNConfig`, `ActivationSpec`, `OptimizerSpec`, `SavedModel`.
-- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`), `BackendReport` (`src/core/backend.ts`).
+- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`, `Backend` (`src/core/tensor.ts`), `BackendReport` (`src/core/checkBackend.ts`).
 
 ## When to use each class
 
