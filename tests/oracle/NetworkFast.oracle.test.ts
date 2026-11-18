@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { NetworkFast } from '../../src/NetworkFast'
 import { SGD } from '../../src/optimizers'
-import { relu, sigmoid } from '../../src/activations'
+import { relu, sigmoid, tanh } from '../../src/activations'
 import { expectGradientMatches, gradientOracle } from '../helpers/gradientOracle'
 import { expectLearns } from '../helpers/learns'
 import { seedRandom } from '../helpers/seed'
@@ -135,4 +135,56 @@ describe('NetworkFast.inputGradient frente a diferencias finitas', () => {
       }
     })
   }
+})
+
+// ─── trainBatch frente a diferencias finitas de la MSE media del lote ─────────
+// tanh (not relu) here: with bias 0 and dead units a pre-activation is exactly 0 and finite
+// differences cross the ReLU kink, which says nothing about the batch gradient.
+describe('NetworkFast.trainBatch oraculo (media del lote)', () => {
+  const XS = [[0.5, -0.3, 0.8], [-0.6, 0.2, 0.1], [0.9, 0.9, -0.4], [0.0, -0.7, 0.3], [0.3, 0.5, -0.9]]
+  const TS = [[0.7, 0.1], [0.2, 0.9], [0.5, 0.5], [0.1, 0.3], [0.8, 0.6]]
+  const CASES: [string, number[], boolean | ((i: number) => boolean), boolean][] = [
+    ['[3,4,3,2] sigmoide', [3, 4, 3, 2], false, false],
+    ['[3,4,3,2] tanh', [3, 4, 3, 2], false, true],
+    ['[3,3,3,2] tanh residual en capas ocultas', [3, 3, 3, 2], (i: number) => i === 1, true],
+  ]
+  for (const [name, st, residual, useAct] of CASES) {
+    it(`el paso del lote sigue -dL/dw con escala 1 (${name}), semillas 1..5`, () => {
+      for (const seed of [1, 2, 3, 4, 5]) {
+        seedRandom(seed)
+        const n = st.length - 1
+        const net = new NetworkFast(st, {
+          optimizer: () => new SGD(), residual,
+          activations: Array.from({ length: n }, (_, i) => (useAct && i < n - 1 ? tanh : sigmoid)),
+        })
+        const loss = () => XS.reduce((s, x, i) => {
+          const p = net.predict(x)
+          return s + p.reduce((q, v, k) => q + (TS[i][k] - v) ** 2, 0) / p.length
+        }, 0) / XS.length
+        const r = gradientOracle({
+          getParams: () => net.getWeights(), setParams: p => net.setWeights(p), loss,
+          step: lr => void net.trainBatch(XS, TS, lr), lr: 1e-3,
+        })
+        expect(r.cosine, `${name} seed ${seed}`).toBeGreaterThan(0.999)
+        expect(r.ratio, `${name} seed ${seed}`).toBeGreaterThan(0.99)
+        expect(r.ratio, `${name} seed ${seed}`).toBeLessThan(1.01)
+      }
+    })
+  }
+
+  it('dropout con mascaras fijas: el paso del lote sigue el gradiente', () => {
+    seedRandom(3)
+    const net = new NetworkFast([3, 4, 3, 2], { optimizer: () => new SGD(), dropoutRate: 0.3, activations: [tanh, tanh, sigmoid] })
+    // Fixed masks: the loss draws a mask per example in order, as trainBatch does.
+    const loss = () => XS.reduce((s, x, i) => {
+      const p = net.predict(x, true)
+      return s + p.reduce((q, v, k) => q + (TS[i][k] - v) ** 2, 0) / p.length
+    }, 0) / XS.length
+    const r = expectGradientMatches({
+      getParams: () => net.getWeights(), setParams: p => net.setWeights(p), loss,
+      step: lr => void net.trainBatch(XS, TS, lr), lr: 1e-4, resetRng: () => seedRandom(7),
+    })
+    expect(r.ratio).toBeGreaterThan(0.99)
+    expect(r.ratio).toBeLessThan(1.01)
+  })
 })
