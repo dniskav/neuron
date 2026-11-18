@@ -28,7 +28,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validateArray } from "./Validation";
 import { random } from "./random";
 
@@ -45,9 +46,11 @@ export class Conv2D {
   kernels: number[][][][];  // [filters][kH][kW][channels]
   biases: number[];         // [filters]
 
-  // Per-scalar optimizers
-  private _kOpts: Optimizer[][][][];  // [filters][kH][kW][channels]
-  private _bOpts: Optimizer[];        // [filters]
+  // Vector optimizers. _kOpts[f] updates the whole kernel of filter f, flattened
+  // as index (kh * kW + kw) * channels + c (size kH * kW * channels); _bOpt updates
+  // all the biases at once.
+  private _kOpts: VecOptimizer[];  // [filters]
+  private _bOpt: VecOptimizer;     // size filters
 
   private _input: number[][][] | null = null;
   private _padded: number[][][] | null = null;
@@ -106,15 +109,10 @@ export class Conv2D {
     );
     this.biases = new Array(filters).fill(0);
 
-    // Initialize per-scalar optimizers
     this._kOpts = Array.from({ length: filters }, () =>
-      Array.from({ length: kH }, () =>
-        Array.from({ length: kW }, () =>
-          Array.from({ length: channels }, () => optimizerFactory())
-        )
-      )
+      vecFromFactory(optimizerFactory, kH * kW * channels)
     );
-    this._bOpts = Array.from({ length: filters }, () => optimizerFactory());
+    this._bOpt = vecFromFactory(optimizerFactory, filters);
   }
 
   // ── Padding amounts (per axis, asymmetric for even kernels) ──────────────
@@ -259,19 +257,32 @@ export class Conv2D {
       }
     }
 
-    // Apply optimizer updates
+    // Apply optimizer updates. Each filter's kernel goes through a flat buffer
+    // (index (kh * kW + kw) * channels + c) and is copied back afterwards.
+    const KH = this.kH;
+    const KW = this.kW;
+    const C = this.channels;
     for (let f = 0; f < this.filters; f++) {
-      for (let kh = 0; kh < this.kH; kh++) {
-        for (let kw = 0; kw < this.kW; kw++) {
-          for (let c = 0; c < this.channels; c++) {
-            this.kernels[f][kh][kw][c] = this._kOpts[f][kh][kw][c].step(
-              this.kernels[f][kh][kw][c], dKernels[f][kh][kw][c], lr
-            );
+      const w = new Float64Array(KH * KW * C);
+      const g = new Float64Array(KH * KW * C);
+      for (let kh = 0; kh < KH; kh++) {
+        for (let kw = 0; kw < KW; kw++) {
+          for (let c = 0; c < C; c++) {
+            w[(kh * KW + kw) * C + c] = this.kernels[f][kh][kw][c];
+            g[(kh * KW + kw) * C + c] = dKernels[f][kh][kw][c];
           }
         }
       }
-      this.biases[f] = this._bOpts[f].step(this.biases[f], dBiases[f], lr);
+      this._kOpts[f].step(w, g, lr);
+      for (let kh = 0; kh < KH; kh++) {
+        for (let kw = 0; kw < KW; kw++) {
+          for (let c = 0; c < C; c++) {
+            this.kernels[f][kh][kw][c] = w[(kh * KW + kw) * C + c];
+          }
+        }
+      }
     }
+    this._bOpt.step(this.biases, dBiases, lr);
 
     // Strip padding to recover dInput
     const { top, left } = this._pads();
