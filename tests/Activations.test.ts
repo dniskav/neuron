@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { sigmoid, relu, tanh, linear, leakyRelu, elu, makeLeakyRelu, makeElu } from '../src/activations'
+import { describe, it, expect, expectTypeOf } from 'vitest'
+import { sigmoid, relu, tanh, linear, leakyRelu, elu, makeLeakyRelu, makeElu, type Activation } from '../src/activations'
+import { expectSameWeights, runPair, type Weighted } from './helpers/equivalence'
 
 describe('sigmoid', () => {
   it('returns 0.5 for input 0', () => {
@@ -159,5 +160,117 @@ describe('tanh stable for large |x| (T059)', () => {
 
   it('dfn at saturation is 0', () => {
     expect(tanh.dfn(tanh.fn(1000))).toBe(0)
+  })
+})
+
+describe('activation name and alpha (T008)', () => {
+  it('built-ins carry their literal name', () => {
+    expect(sigmoid.name).toBe('sigmoid')
+    expect(relu.name).toBe('relu')
+    expect(tanh.name).toBe('tanh')
+    expect(linear.name).toBe('linear')
+    expect(leakyRelu.name).toBe('leakyRelu')
+    expect(elu.name).toBe('elu')
+  })
+
+  it('built-in name is a readonly union of the built-in names, not string', () => {
+    expectTypeOf(sigmoid.name).toEqualTypeOf<'sigmoid' | 'relu' | 'tanh' | 'linear' | 'leakyRelu' | 'elu'>()
+    expectTypeOf(elu.name).toEqualTypeOf<'sigmoid' | 'relu' | 'tanh' | 'linear' | 'leakyRelu' | 'elu'>()
+    expectTypeOf(makeElu(2).alpha).toEqualTypeOf<number>()
+  })
+
+  it('parametric built-ins expose alpha; the others do not', () => {
+    expect(leakyRelu.alpha).toBe(0.01)
+    expect(elu.alpha).toBe(1)
+    expect(sigmoid.alpha).toBeUndefined()
+    expect(relu.alpha).toBeUndefined()
+  })
+
+  it('factories expose the alpha they were built with', () => {
+    expect(makeLeakyRelu(0.2).alpha).toBe(0.2)
+    expect(makeElu(2).alpha).toBe(2)
+    expect(makeLeakyRelu(0.2).name).toBe('leakyRelu')
+    expect(makeElu(2).name).toBe('elu')
+  })
+
+  it('custom activations without name or alpha still satisfy Activation', () => {
+    const own: Activation = { fn: (x) => x * 2, dfn: () => 2 }
+    expect(own.name).toBeUndefined()
+    expect(own.alpha).toBeUndefined()
+    expect(own.fn(3)).toBe(6)
+  })
+
+  it('fn and dfn of the built-ins are unchanged by the new fields', () => {
+    expect(leakyRelu.fn(-5)).toBeCloseTo(-0.05, 12)
+    expect(leakyRelu.dfn(-0.05)).toBe(0.01)
+    expect(elu.dfn(elu.fn(-1))).toBeCloseTo(elu.fn(-1) + 1, 12)
+  })
+})
+
+describe('expectSameWeights helper (T008)', () => {
+  it('accepts identical arrays with relTol 0 and with a tolerance', () => {
+    expect(() => expectSameWeights([1, -2.5, 0], [1, -2.5, 0], 0)).not.toThrow()
+    expect(() => expectSameWeights([1, 2], [1 + 1e-13, 2], 1e-12)).not.toThrow()
+  })
+
+  it('rejects arrays of equal length with different values (not a length-only check)', () => {
+    expect(() => expectSameWeights([1, 2], [3, 4], 0)).toThrow()
+    expect(() => expectSameWeights([1, 2], [1, 3], 1e-12)).toThrow()
+  })
+
+  it('rejects arrays of different length', () => {
+    expect(() => expectSameWeights([1, 2], [1], 1e-12)).toThrow()
+  })
+
+  it('with relTol 0 uses Object.is: -0 and 0 differ, NaN equals NaN', () => {
+    expect(() => expectSameWeights([0], [-0], 0)).toThrow()
+    expect(() => expectSameWeights([Number.NaN], [Number.NaN], 0)).not.toThrow()
+  })
+
+  it('relTol is relative to max(1, |a|, |b|)', () => {
+    expect(() => expectSameWeights([1e6], [1e6 + 1e-7], 1e-12)).not.toThrow()
+    expect(() => expectSameWeights([1e6], [1e6 + 1], 1e-12)).toThrow()
+  })
+})
+
+class Fake implements Weighted {
+  w: number[]
+  constructor() {
+    this.w = [Math.random(), Math.random()]
+  }
+  getWeights(): number[] {
+    return [...this.w]
+  }
+  bump(): void {
+    this.w = this.w.map((v) => v + 1)
+  }
+}
+
+describe('runPair helper (T008)', () => {
+  it('builds and steps both nets with the same seed, so the weights match', () => {
+    const { a, b } = runPair(() => new Fake(), () => new Fake(), (n) => (n as Fake).bump(), 7)
+    expectSameWeights(a, b, 0)
+    expect(a).toHaveLength(2)
+  })
+
+  it('is deterministic for a given seed and depends on the seed', () => {
+    const r1 = runPair(() => new Fake(), () => new Fake(), () => {}, 7)
+    const r2 = runPair(() => new Fake(), () => new Fake(), () => {}, 7)
+    const r3 = runPair(() => new Fake(), () => new Fake(), () => {}, 8)
+    expectSameWeights(r1.a, r2.a, 0)
+    expect(() => expectSameWeights(r1.a, r3.a, 0)).toThrow()
+  })
+
+  it('detects a pair that is not equivalent', () => {
+    const { a, b } = runPair(() => new Fake(), () => new Fake(), (n) => (n as Fake).bump(), 7)
+    const other = runPair(() => new Fake(), () => new Fake(), () => {}, 7)
+    expect(() => expectSameWeights(a, other.b, 0)).toThrow()
+    expect(b).toHaveLength(2)
+  })
+
+  it('restores Math.random afterwards', () => {
+    const before = Math.random
+    runPair(() => new Fake(), () => new Fake(), () => {}, 7)
+    expect(Math.random).toBe(before)
   })
 })

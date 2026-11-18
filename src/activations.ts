@@ -19,25 +19,42 @@
 export interface Activation {
   fn(x: number): number;
   dfn(out: number): number;
+  /** Name of a built-in activation. Absent on custom objects. */
+  name?: string;
+  /** Parameter of a parametric activation (leakyRelu, elu and their factories). */
+  alpha?: number;
 }
 
-export const sigmoid: Activation = {
+/** Names of the built-in activations. */
+type BuiltinName = 'sigmoid' | 'relu' | 'tanh' | 'linear' | 'leakyRelu' | 'elu';
+
+/** A built-in activation: `name` is readonly and one of the built-in names. */
+type Builtin = Activation & { readonly name: BuiltinName };
+
+/** A parametric built-in: also exposes the alpha it was built with. */
+type Parametric = Builtin & { readonly alpha: number };
+
+export const sigmoid: Builtin = {
+  name: 'sigmoid',
   fn:  (x) => 1 / (1 + Math.exp(-x)),
   dfn: (out) => out * (1 - out),
 };
 
-export const tanh: Activation = {
+export const tanh: Builtin = {
+  name: 'tanh',
   // Math.tanh is stable for large |x|; (e^{2x}-1)/(e^{2x}+1) gives NaN for x >~ 355.
   fn: (x) => Math.tanh(x),
   dfn: (out) => 1 - out * out,
 };
 
-export const relu: Activation = {
+export const relu: Builtin = {
+  name: 'relu',
   fn:  (x) => Math.max(0, x),
   dfn: (out) => out > 0 ? 1 : 0,
 };
 
-export const linear: Activation = {
+export const linear: Builtin = {
+  name: 'linear',
   fn:  (x) => x,
   dfn: () => 1,
 };
@@ -58,15 +75,17 @@ export const linear: Activation = {
 //
 // Typical α: 0.01 (default). Larger values (0.1–0.3) = "very leaky relu".
 //
-export function makeLeakyRelu(alpha = 0.01): Activation {
+export function makeLeakyRelu(alpha = 0.01): Parametric {
   return {
+    name: 'leakyRelu',
+    alpha,
     fn:  (x)   => x > 0 ? x : alpha * x,
     dfn: (out) => out > 0 ? 1 : alpha,
   };
 }
 
 /** Leaky ReLU with the standard α = 0.01. */
-export const leakyRelu: Activation = makeLeakyRelu(0.01);
+export const leakyRelu: Parametric = makeLeakyRelu(0.01);
 
 // ─── ELU (Exponential Linear Unit) ───────────────────────────────────────────
 //
@@ -85,12 +104,14 @@ export const leakyRelu: Activation = makeLeakyRelu(0.01);
 //
 // Typical α: 1.0 (default). Controls the saturation floor (−α).
 //
-export function makeElu(alpha = 1.0): Activation {
+export function makeElu(alpha = 1.0): Parametric {
   return {
+    name: 'elu',
+    alpha,
     fn:  (x)   => x > 0 ? x : alpha * (Math.exp(x) - 1),
     dfn: (out) => out > 0 ? 1 : out + alpha,
   };
 }
 
 /** ELU with the standard α = 1.0. */
-export const elu: Activation = makeElu(1.0);
+export const elu: Parametric = makeElu(1.0);
