@@ -19,12 +19,11 @@ const DEFAULT_PARTS = path.join(REPO, 'specs/007-docs/readme-parts');
 const DEFAULT_OUT = path.join(REPO, 'README.md');
 const EXPECTED = [
   '01-intro-tablas',
-  '02-uso-basico',
-  '03-uso-modelos',
-  '04-uso-secuencias',
-  '05-uso-herramientas',
-  '06-nucleo-rapido',
-  '07-cierre',
+  '02-quick-start',
+  '03-novedades-0.5',
+  '04-extender',
+  '05-guias',
+  '06-cierre',
 ];
 const USAGE = 'Uso: node specs/007-docs/tools/assemble-readme.mjs [--check] [--parts <dir>] [--out <archivo>]';
 

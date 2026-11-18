@@ -73,6 +73,7 @@ graph TD
 | `Layer` | A group of `NeuronN` neurons that share the same inputs. |
 | `Network` | Two-layer network (one hidden layer + output) with backpropagation. |
 | `NetworkN` | Deep network of arbitrary depth. Define your architecture as `[inputs, ...hidden, outputs]`. |
+| `NetworkFast` | The same network as `NetworkN` (same options, methods and weight order) on `Float64Array` buffers, with vectorized optimizers and batch training (`trainBatch`). About 10 times faster to train (0.5). |
 | `LSTMLayer` | Recurrent layer with persistent hidden and cell state. Learns sequences via BPTT. |
 | `NetworkLSTM` | An `LSTMLayer` followed by dense layers. Keeps memory across steps within an episode. |
 | `GRULayer` | Gated recurrent unit with reset and update gates and no separate cell state. |
@@ -97,8 +98,8 @@ graph TD
 | `LayerNorm` | Layer normalization with learnable γ and β per feature. |
 | `BatchNorm` | Batch normalization with running mean and variance, used for inference. |
 | `Dropout` | Inverted dropout for regularization. Active only during training. |
-| `WeightMatrix` | 2D weight matrix with per-element Adam state and optional gradient clipping (`update(dW, lr, clipValue?)`). |
-| `BiasVector` | 1D bias vector with per-element Adam state. |
+| `WeightMatrix` | 2D weight matrix with one Adam optimizer per row (a buffer) and optional gradient clipping (`update(dW, lr, clipValue?)`). |
+| `BiasVector` | 1D bias vector with one Adam optimizer over the whole vector. |
 | `EmbeddingMatrix` | Lookup-table embedding with SGD updates on the rows that were used. |
 
 ### Classical ML
@@ -164,6 +165,14 @@ graph TD
 | `ClipOptimizer` | Wraps any optimizer and clips each gradient to `[-clipValue, +clipValue]` before the step. |
 | `ClippedOptimizerFactory` | `(innerFactory, clipValue)`: builds clipped optimizers from any optimizer factory. |
 | `defaultOptimizer` | Default factory (`() => new SGD()`), used when no optimizer is given. |
+
+### Random numbers and numeric core (0.5)
+
+| Export | Description |
+|--------|-------------|
+| `random` `setRandom` `getRandom` `seededRandom` `withRandom` | Injectable random generator. `random()` uses `Math.random` unless `setRandom(fn)` installs one; `seededRandom(seed)` is mulberry32; `withRandom` restores the previous generator. |
+| `VecSGD` `VecMomentum` `VecAdam` `VecClip` `ScalarArrayOptimizer` `vecFromFactory` | Vectorized optimizers: one `step(params, grads, lr)` over a whole buffer, with the same numbers as one scalar optimizer per element. `vecFromFactory` falls back to `ScalarArrayOptimizer` for custom optimizers. |
+| `defaultBackend` `setBackend` `getBackend` `checkBackend` | Row-major `Float64Array` kernels (`matVec`, `matTVec`, `addOuter` and their batch versions) behind a swappable backend. `checkBackend` runs the conformance cases before you plug in your own. |
 
 ### Loss functions
 
@@ -235,6 +244,10 @@ graph TD
 | `DatasetLoaderResult` | Result of `DatasetLoader`: the data plus the feature and target names and the category maps. |
 | `CategoricalMap` | Maps each one-hot encoded column to its `{ category → index }` dictionary. |
 | `Serializable` | Interface for `ModelSaver`: `getWeights()` and `setWeights(weights)`. |
+| `Saveable` `Registrable` `SaveOptions` | Format 2 types: a model with `kind` and `toConfig()`, a class with a static `fromConfig`, and the options of `ModelSaver.save`. |
+| `NetworkNConfig` `ActivationSpec` `OptimizerSpec` `SavedModel` | Format 2 types: the configuration of `NetworkN`, how activations and optimizers are named in the file, and the parsed file. |
+| `NetworkFastOptions` | Options for `NetworkFast`: those of `NetworkN` plus `backend`. |
+| `VecOptimizer` `RandomFn` `Backend` `BackendReport` | The vectorized optimizer interface, a random generator, the kernels of a backend, and the result of `checkBackend`. |
 | `KMeansOptions` | Options for `KMeans`: `maxIter` and `seed`. |
 | `SOMOptions` | Options for `SOM`: `initialLr`, `finalLr`, `initialSigma`, `finalSigma`. |
 | `Word2VecOptions` | Options for `Word2Vec`: `windowSize`, `model`, `minCount`. |

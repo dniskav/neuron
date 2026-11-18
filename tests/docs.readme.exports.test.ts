@@ -19,12 +19,11 @@ const PARTS_DIR = new URL("../specs/007-docs/readme-parts/", import.meta.url);
 // Mismas partes y mismo orden que EXPECTED en specs/007-docs/tools/assemble-readme.mjs.
 const PARTES = [
   "01-intro-tablas",
-  "02-uso-basico",
-  "03-uso-modelos",
-  "04-uso-secuencias",
-  "05-uso-herramientas",
-  "06-nucleo-rapido",
-  "07-cierre",
+  "02-quick-start",
+  "03-novedades-0.5",
+  "04-extender",
+  "05-guias",
+  "06-cierre",
 ];
 const MINIMO_EXPORTS = 100;
 const MSG_ENSAMBLADO =

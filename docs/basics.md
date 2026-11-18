@@ -1,4 +1,4 @@
-## Usage
+# Basic usage
 
 Each example is self-contained: it imports from `@dniskav/neuron`, defines its own data and runs in a few seconds, with no network and no files. Examples that use randomness fix it, so the printed values are reproducible: most replace `Math.random` with a small seeded generator, and `KMeans` takes a `seed` option. Each example ends with a check that throws if the result is not the expected one.
 

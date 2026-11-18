@@ -1,6 +1,6 @@
-## Autograd, convolutions and sequences
+# Autograd, convolutions and sequences
 
-The examples in this part cover the autograd class `Value`, a convolutional pipeline with a pooling and a flattening step, and the sequence models `RNN`, `TCN` and `NetworkLSTM`. They follow the same rules as the examples in Usage: each one is self-contained, fixes its own randomness when it uses any, and ends with a check that throws if the result is not the expected one.
+The examples in this guide cover the autograd class `Value`, a convolutional pipeline with a pooling and a flattening step, and the sequence models `RNN`, `TCN` and `NetworkLSTM`. They follow the same rules as the examples in [basic usage](basics.md): each one is self-contained, fixes its own randomness when it uses any, and ends with a check that throws if the result is not the expected one.
 
 ### Value / Tape — automatic differentiation
 
