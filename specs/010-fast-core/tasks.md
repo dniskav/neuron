@@ -96,7 +96,7 @@ Mismo patrón que T009 y T010: clase de 0.4 pegada en el test como referencia y 
 
 - [x] T020 [P] [H] [api-dev] [files: src/LSTMLayer.ts, src/GRU.ts, tests/LSTMLayer.memory.test.ts, tests/GRU.memory.test.ts] Gate: esos tests + `npx vitest run tests/oracle/LSTMLayer.oracle.test.ts tests/oracle/GRU.oracle.test.ts` + gate común
 - [x] T021 [P] [H] [api-dev] [files: src/Conv1D.ts, src/Conv2D.ts, src/TCN.ts, tests/Conv.memory.test.ts] Gate: ese test + `npx vitest run tests/oracle` + gate común
-- [ ] T022 [P] [H] [api-dev] [files: src/RNN.ts, src/Seq2Seq.ts, tests/RNN.memory.test.ts] Gate: ese test + `npx vitest run tests/oracle` + gate común
+- [x] T022 [P] [H] [api-dev] [files: src/RNN.ts, src/Seq2Seq.ts, tests/RNN.memory.test.ts] Gate: ese test + `npx vitest run tests/oracle` + gate común
 
 ## Lote 8 (cierre, en serie)
 
