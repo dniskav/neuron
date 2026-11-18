@@ -20,7 +20,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
+import { OptimizerFactory, SGD } from "./optimizers";
+import { VecOptimizer, vecFromFactory } from "./core/optim";
 import { validateArray } from "./Validation";
 import { random } from "./random";
 
@@ -35,9 +36,12 @@ export class Conv1D {
   kernels: number[][][]  // [filters][kernelSize][inputChannels]
   biases: number[]       // [filters]
 
-  // Per-scalar optimizers
-  private _kOpts: Optimizer[][][]  // [filters][kernelSize][inputChannels]
-  private _bOpts: Optimizer[]       // [filters]
+  // Vector optimizers. _kOpts[f] updates the whole kernel of filter f, flattened
+  // as index k * inputChannels + c (size kernelSize * inputChannels); _bOpt updates
+  // all the biases at once. Every backward updates every element, so the state
+  // matches one scalar optimizer per weight.
+  private _kOpts: VecOptimizer[]  // [filters]
+  private _bOpt: VecOptimizer     // size filters
 
   private _input: number[][] | null = null
   private _paddedInput: number[][] | null = null
@@ -80,13 +84,10 @@ export class Conv1D {
     )
     this.biases = new Array(filters).fill(0)
 
-    // Initialize per-scalar optimizers
     this._kOpts = Array.from({ length: filters }, () =>
-      Array.from({ length: kernelSize }, () =>
-        Array.from({ length: inputChannels }, () => optimizerFactory())
-      )
+      vecFromFactory(optimizerFactory, kernelSize * inputChannels)
     )
-    this._bOpts = Array.from({ length: filters }, () => optimizerFactory())
+    this._bOpt = vecFromFactory(optimizerFactory, filters)
   }
 
   // ── Forward ───────────────────────────────────────────────────────────────
@@ -176,15 +177,27 @@ export class Conv1D {
       }
     }
 
-    // Update kernels and biases via per-scalar optimizers
+    // Update kernels and biases. Each filter's kernel is copied into a flat buffer,
+    // stepped by its vector optimizer, and copied back into the public nested array.
+    const K = this.kernelSize
+    const C = this.inputChannels
     for (let f = 0; f < this.filters; f++) {
-      for (let k = 0; k < this.kernelSize; k++) {
-        for (let c = 0; c < this.inputChannels; c++) {
-          this.kernels[f][k][c] = this._kOpts[f][k][c].step(this.kernels[f][k][c], dKernels[f][k][c], lr)
+      const w = new Float64Array(K * C)
+      const g = new Float64Array(K * C)
+      for (let k = 0; k < K; k++) {
+        for (let c = 0; c < C; c++) {
+          w[k * C + c] = this.kernels[f][k][c]
+          g[k * C + c] = dKernels[f][k][c]
         }
       }
-      this.biases[f] = this._bOpts[f].step(this.biases[f], dBiases[f], lr)
+      this._kOpts[f].step(w, g, lr)
+      for (let k = 0; k < K; k++) {
+        for (let c = 0; c < C; c++) {
+          this.kernels[f][k][c] = w[k * C + c]
+        }
+      }
     }
+    this._bOpt.step(this.biases, dBiases, lr)
 
     // Remove padding from gradient
     if (this.padding === 'same') {
