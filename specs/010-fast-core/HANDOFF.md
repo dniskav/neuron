@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** Lotes 1 y 2 integrados en `feat/0.5-core` (T001–T008, todas verificadas por un verifier distinto salvo T001, sin src/). Ningún archivo de src/ salvo random.ts llama a Math.random. Suite: 140 archivos, 2741 tests. Siguiente: Lote 3 (T009, T010, T011).
+**Estado (2026-11-18):** Lotes 1–3 integrados (T001–T011 y T001b, todas verificadas). NetworkFast ×10,7 más rápido que NetworkN y 32,4 bytes/param (heap+arrayBuffers); NetworkN con Adam 30,6 (antes 136,7). Suite: 142 archivos, 2982 tests. En marcha: T012 (lotes) y T014 (formato 2). Pendiente del usuario: NFR-3 (≤ 32 frente a 32,4 medido; propuesta ≤ 36).
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 
