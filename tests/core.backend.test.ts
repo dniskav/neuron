@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { defaultBackend, type Backend } from '../src/core/tensor'
-import { checkBackend, getBackend, setBackend } from '../src/core/backend'
+import { getBackend, setBackend } from '../src/core/backend'
+import { checkBackend } from '../src/core/checkBackend'
 
 afterEach(() => {
   setBackend(null)
