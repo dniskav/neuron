@@ -1,0 +1,63 @@
+{
+  "node": "v26.12.1",
+  "cpu": "Apple M3",
+  "date": "2026-11-18T10:52:46.397Z",
+  "rows": [
+    {
+      "model": "NetworkN",
+      "structure": [
+        256,
+        256,
+        256,
+        10
+      ],
+      "optimizer": "sgd",
+      "params": 134154,
+      "bytesPerParam": 40.74594868583866,
+      "trainMs": 2.8590458000000014,
+      "predictMs": 0.16935835000000452
+    },
+    {
+      "model": "NetworkN",
+      "structure": [
+        256,
+        256,
+        256,
+        10
+      ],
+      "optimizer": "adam",
+      "params": 134154,
+      "bytesPerParam": 136.67993500007455,
+      "trainMs": 5.185114599999997,
+      "predictMs": 0.16405209999999215
+    },
+    {
+      "model": "NetworkN",
+      "structure": [
+        512,
+        512,
+        512,
+        10
+      ],
+      "optimizer": "sgd",
+      "params": 530442,
+      "bytesPerParam": 40.31685273790537,
+      "trainMs": 7.759006250000016,
+      "predictMs": 0.702322950000007
+    },
+    {
+      "model": "NetworkN",
+      "structure": [
+        512,
+        512,
+        512,
+        10
+      ],
+      "optimizer": "adam",
+      "params": 530442,
+      "bytesPerParam": 136.31514849879912,
+      "trainMs": 20.747616649999962,
+      "predictMs": 0.6569041499999912
+    }
+  ]
+}
