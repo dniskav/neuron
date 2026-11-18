@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** Lote 0 (T000) hecho: decisiones registradas, rama `feat/0.5-core` creada desde `origin/master` (worktree del orquestador en `.claude/worktrees/feat-0.5-core`), Constitución 1.1.0. Siguiente: Lote 1.
+**Estado (2026-11-18):** Lote 1 integrado en `feat/0.5-core` (T001–T004, verificadas T002–T004; T001 sin src/, comprobada por el orquestador). Línea base real: Adam 136,7 bytes/param, `[256,256,256,10]` 5,2 ms/ejemplo. Lote 2 en marcha.
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 
