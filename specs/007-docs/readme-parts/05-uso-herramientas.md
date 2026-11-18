@@ -202,7 +202,7 @@ if (!finite || !(history[history.length - 1] < history[0]))
 
 ### ModelSaver — save and load weights
 
-`toJSON` writes `{ format, length, structure?, weights, timestamp }`. `fromJSON` checks the whole text before it writes anything: a `format` other than 1 throws, and so does a number of weights that does not match the model. Files without `format` (the layout of 0.3.2) still load when the length matches.
+`toJSON` writes `{ format, length, structure?, weights, timestamp }`. `fromJSON` checks the whole text before it writes anything: a `format` other than 1 throws, except that a format 2 text is accepted when its `kind` and structure match the model; and so does a number of weights that does not match the model. Files without `format` (the layout of 0.3.2) still load when the length matches.
 
 ```ts
 import { NetworkN, ModelSaver, sigmoid } from "@dniskav/neuron";

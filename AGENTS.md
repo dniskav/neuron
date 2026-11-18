@@ -1,12 +1,12 @@
 # AGENTS.md — @dniskav/neuron
 
-This file is for AI agents and LLMs working with this codebase. Every claim below was checked against `src/` (file names are given; line numbers drift). The `specs/` directory holds the history of the 0.4 repair (spec, tasks, handoff); you do not need it to work on the library. `CHANGELOG.md` lists what changed since 0.3.2 and how to migrate.
+This file is for AI agents and LLMs working with this codebase. Every claim below was checked against `src/` (file names are given; line numbers drift). The `specs/` directory holds the history of the 0.4 repair and the 0.5 work (spec, tasks, handoff); you do not need it to work on the library. `CHANGELOG.md` lists what changed since 0.3.2 and how to migrate.
 
 ## What this library is
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). The map below lists all of them.
+Everything except the `infer` entry is exported from `src/index.ts` (154 names: 113 values, 41 types). The map below lists all of them.
 
 ## Module map
 
@@ -42,8 +42,8 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 | `MultiHeadAttention` | `MultiHeadAttention.ts` | N heads in parallel + output projection `Wo`. |
 | `AttentionHead` | `AttentionHead.ts` | One scaled dot-product head (Q/K/V, backprop). |
 | `LayerNorm` | `LayerNorm.ts` | Layer norm with learnable gamma and beta; per-position cache. |
-| `WeightMatrix` | `MatMul.ts` | 2D weights, one `Adam` per element; `update(dW, lr, clipValue?)`. |
-| `BiasVector` | `MatMul.ts` | 1D bias, one `Adam` per element. |
+| `WeightMatrix` | `MatMul.ts` | 2D weights, one `VecAdam` per row (a buffer); `update(dW, lr, clipValue?)`. |
+| `BiasVector` | `MatMul.ts` | 1D bias, one `VecAdam` over the whole vector. |
 | `EmbeddingMatrix` | `MatMul.ts` | Lookup table; SGD on the rows used. |
 | `matMul` `transpose` `softmax` `softmaxBackward` | `MatMul.ts` | Matrix and softmax helpers. |
 
@@ -64,11 +64,11 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 
 | Export | File | Purpose |
 |--------|------|---------|
-| `sigmoid` `relu` `tanh` `linear` `leakyRelu` `elu` | `activations.ts` | Objects with `fn(x)` and `dfn(out)`; the derivative takes the OUTPUT. |
+| `sigmoid` `relu` `tanh` `linear` `leakyRelu` `elu` | `activations.ts` | Objects with `fn(x)` and `dfn(out)`; the derivative takes the OUTPUT. The built-ins also carry `name` (and `alpha` for `leakyRelu` and `elu`); custom objects need neither. |
 | `makeLeakyRelu` `makeElu` | `activations.ts` | Factories with a custom alpha. |
-| `SGD` `Momentum` `Adam` | `optimizers.ts` | One instance per scalar weight; `step(weight, gradient, lr)` returns `w + lr*g`. |
+| `SGD` `Momentum` `Adam` | `optimizers.ts` | Scalar optimizers; `step(weight, gradient, lr)` returns `w + lr*g`. Used on their own, one instance per weight. The library does not do that for its built-ins: `vecFromFactory` turns them into the vector versions below. |
 | `ClipOptimizer` `ClippedOptimizerFactory` | `optimizers.ts` | Clip each gradient to `[-clipValue, clipValue]` before delegating. |
-| `defaultOptimizer` | `optimizers.ts` | Factory `() => new SGD()`; the default of `NeuronN`, `Layer`, `NetworkN`, `NetworkLSTM`. |
+| `defaultOptimizer` | `optimizers.ts` | Factory `() => new SGD()`; the default of `NeuronN`, `Layer`, `NetworkN`, `NetworkFast`, `NetworkLSTM`. |
 | `VecSGD` `VecMomentum` `VecAdam` `VecClip` `ScalarArrayOptimizer` `vecFromFactory` | `src/core/optim.ts` | Vectorized optimizers over a whole buffer (`step(params, grads, lr)`), exactly equal to N scalar ones; `vecFromFactory` recognizes the built-ins and falls back to `ScalarArrayOptimizer` for custom ones. |
 | `mse` `crossEntropy` | `losses.ts` | Scalar losses for evaluation (`crossEntropy` is binary and averaged). |
 | `mseDelta` `crossEntropyDelta` `crossEntropyDeltaRaw` | `losses.ts` | Output deltas for `trainWithDeltas`; NOT rescaled (`mseDelta` is `actual - predicted`). |
@@ -77,7 +77,7 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 
 | Export | File | Purpose |
 |--------|------|---------|
-| `Trainer` | `Trainer.ts` | Epoch loop: `lrDecay`, `weightDecay`, `earlyStopping`, `restoreBestWeights`, `computeMetrics` (`f1` is the mean of the per-class F1, as `Metrics.f1Score`). |
+| `Trainer` | `Trainer.ts` | Epoch loop: `lrDecay`, `weightDecay`, `earlyStopping`, `restoreBestWeights`, `batchSize` (above 1 it calls `trainBatch`), `computeMetrics` (`f1` is the mean of the per-class F1, as `Metrics.f1Score`). |
 | `EarlyStopping` | `EarlyStopping.ts` | Patience-based stop on a monitored value. |
 | `LRScheduler` | `LRScheduler.ts` | `stepDecay`, `exponentialDecay`, `plateauDecay`, `cosineAnnealing`. |
 | `DataLoader` | `DataLoader.ts` | Batching, shuffling, validation split; `DataLoader.sequences`. |
@@ -154,9 +154,10 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 ## Key design constraints
 
 - **Default activation is sigmoid** in `Neuron`, `NeuronN`, `Layer`, `Network` and `NetworkN`. Available: `sigmoid`, `relu`, `tanh`, `linear`, `leakyRelu`, `elu`, plus `makeLeakyRelu(alpha)` and `makeElu(alpha)`. `NeuronN` and `Layer` take one activation; `NetworkN` takes one per layer (`NetworkNOptions.activations`, length = number of non-input layers, otherwise it throws); `Neuron` and `Network` do not take an activation. Any object with `fn` and `dfn(out)` works (`dfn` receives the output, not the pre-activation). The Transformer classes use ReLU in the FFN (`Math.max(0, v)` in `TransformerBlock.ts`) and softmax in attention.
-- **No batching in the models.** Training is online: one sample (or one sequence or episode) per call. `NetworkLSTM` accumulates gradients across an episode; `NetworkTransformer.train` processes one sequence per call. `DataLoader` only slices data into batches and `Autoencoder.trainBatch` trains on the rows of a batch one after another (it returns the mean MSE); neither vectorizes.
+- **Batches only in `NetworkFast`.** `NetworkFast.trainBatch(X, T, lr)` takes one optimizer step with the mean gradient of the batch and returns the mean MSE; `predictBatch(X)` predicts a list. `Trainer` with `batchSize > 1` uses `trainBatch` and throws for a model without it. Every other model is online: one sample (or one sequence or episode) per call. `NetworkLSTM` accumulates gradients across an episode; `NetworkTransformer.train` processes one sequence per call. `DataLoader` only slices data into batches and `Autoencoder.trainBatch` trains on the rows of a batch one after another (it returns the mean MSE); neither vectorizes.
 - **Gradients are hand-coded**, one backward pass per class. `Value` is the only autograd and it is standalone.
 - **No GPU, no native code, no dependencies.**
+- **Numeric core.** `NetworkFast` keeps its weights in row-major `Float64Array` buffers (`src/core/tensor.ts`) and calls the swappable backend through `getBackend()` (`src/core/backend.ts`); `options.backend` on one instance has priority over `setBackend`. The vector optimizers (`src/core/optim.ts`) give the same numbers as the scalar ones. `NetworkN` keeps `number[]` weights, and its optimizers are vector buffers too.
 - **Random numbers go through `random()` (`src/random.ts`).** It calls `Math.random` at call time unless `setRandom(fn)` installed a generator; `setRandom(seededRandom(seed))` makes construction and training reproducible, and `setRandom(null)` restores `Math.random`. `TSNE` and `KMeans` also accept their own `options.seed`. No file of `src/` other than `random.ts` calls `Math.random` (the tests still seed `Math.random`, which `random()` picks up).
 - **Optimizers use the ascent convention.** `Optimizer.step` returns `w + lr * g`, so models pass `g = -dL/dw`. Keep this when adding a model or a custom delta.
 - **Transformer outputs are unbounded.** `NetworkTransformer.predict` returns raw logits (`seqLen * nClasses`, flattened); apply `softmax` externally for probabilities.
@@ -169,19 +170,24 @@ Everything is exported from `src/index.ts` (154 names: 113 values, 41 types). Th
 - `setWeights` and `setWeightsFlat` validate length and finiteness before writing anything. A model that diverged to NaN cannot be restored with `setWeights(getWeights())`.
 - `getWeights` returns copies. In the recurrent classes `setWeights` copies its input too, so neither side aliases the model.
 - **`lr` is validated per class, not globally.**
-  - `lr = 0` is accepted (a no-op for the default SGD) in `NetworkN` (`train` and `trainWithDeltas`), `Network`, `Neuron`, `NeuronN`, `NetworkLSTM`, `LSTMLayer.backprop`, `GRULayer.backprop`, `NetworkTransformer`, `NetworkTransformerRL`, `RNN`, `TCN`, `CausalConv1D`, `Seq2Seq`, `Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` and `Word2Vec`.
+  - `lr = 0` is accepted (a no-op for the default SGD) in `NetworkN` and `NetworkFast` (`train`, `trainBatch` and `trainWithDeltas`), `Network`, `Neuron`, `NeuronN`, `NetworkLSTM`, `LSTMLayer.backprop`, `GRULayer.backprop`, `NetworkTransformer`, `NetworkTransformerRL`, `RNN`, `TCN`, `CausalConv1D`, `Seq2Seq`, `Autoencoder`, `VAE`, `GAN`, `ContrastiveLearning` and `Word2Vec`.
   - `lr = 0` THROWS in `Trainer` (needs finite `lr > 0`), in `Perceptron.train` and in `LinearRegression.fitGD`, `LogisticRegression.train` and `SoftmaxRegression.train` (need `lr > 0`).
   - NaN, Infinity or negative `lr` throws in every class of the two lists above, before any weight or state is touched (`Class.method: lr must be a finite number >= 0, got X` in the networks). NOT validated: the low-level building blocks, which trust their caller: `Conv1D.backward`, `Conv2D.backward`, `BatchNorm.trainParams`, `LayerNorm.backwardOne`, `AttentionHead`/`MultiHeadAttention`/`TransformerBlock` `backward`, `WeightMatrix`/`BiasVector`/`EmbeddingMatrix`/`LearnedPositionalEncoding` `update`, the optimizers' `step`, and the `lr` options of `SOM` and `TSNE`. Do not pass NaN or a negative value to those.
 - `NetworkLSTM.train` and `LSTMLayer.backprop` check the whole input (length against the trajectory, row widths, finiteness) before changing weights, and a rejected call does NOT clear the stored trajectory, so you can retry with the right input.
-- `Trainer` rejects options that cannot take effect instead of ignoring them (`epochs` integer > 0, `lrDecay` in (0, 1], `weightDecay >= 0`, `patience` integer >= 1, empty dataset, `earlyStopping` without validation data, `restoreBestWeights` without `earlyStopping`). `clipValue` is not a `Trainer` option; use `ClippedOptimizerFactory`.
+- `Trainer` rejects options that cannot take effect instead of ignoring them (`epochs` integer > 0, `lrDecay` in (0, 1], `weightDecay >= 0`, `patience` integer >= 1, `batchSize` integer >= 1 (above 1 the model needs `trainBatch`), empty dataset, `earlyStopping` without validation data, `restoreBestWeights` without `earlyStopping`). `clipValue` is not a `Trainer` option; use `ClippedOptimizerFactory`.
 - `GAN` throws unless the discriminator output is a sigmoid (checked by value). `NetworkN.trainWithDeltas` and `inputGradient` throw when the last layer has `residual`.
 - `Metrics` validates empty inputs and length mismatches everywhere, but label values only in `confusionMatrix`, `precision`, `recall`, `f1Score` and `classificationReport`; `accuracy([-1], [0])` does not throw, and `mae`, `rmse`, `r2Score` return NaN for NaN input.
 
 ## Serialization (`ModelSaver`)
 
-- `ModelSaver.toJSON(model)` writes `{ format: 1, length, structure?, weights, timestamp }`. `structure` is present only if the model exposes a numeric `structure` array (`NetworkN` does, `Network` does not). The class name is not saved.
-- `ModelSaver.fromJSON(model, json)` validates everything before writing: valid JSON, an object, `format` absent or equal to 1 (older `{ weights, timestamp }` files still load), `weights` an array of finite numbers (NaN and Infinity are saved as `null` and fail on load), `length` equal to `weights.length`, the weight count the model expects, and `structure` equal to the model's when both exist. Messages start with `ModelSaver.fromJSON:`.
-- `saveToFile` / `loadFromFile` take the write/read function as an argument (no `fs` import).
+- Two formats. Both store the flat weight vector, the order of `getWeights()` (for `NetworkN` and `NetworkFast`: layer by layer, each neuron's weights and then its bias).
+- `ModelSaver.toJSON(model)` writes format 1: `{ format: 1, length, structure?, weights, timestamp }`. `structure` is present only if the model exposes a numeric `structure` array (`NetworkN` and `NetworkFast` do, `Network` does not). The class name is not saved.
+- `ModelSaver.fromJSON(model, json)` validates everything before writing: valid JSON, an object, `format` absent or equal to 1 (older `{ weights, timestamp }` files still load; a format 2 text is accepted when its `kind` and structure match the model), `weights` an array of finite numbers (NaN and Infinity are saved as `null` and fail on load), `length` equal to `weights.length`, the weight count the model expects, and `structure` equal to the model's when both exist. Messages start with `ModelSaver.fromJSON:`.
+- `ModelSaver.save(model, opts?)` writes format 2: `{ format: 2, kind, config, length, weights, timestamp }`. The model needs a `kind` and a `toConfig()` that returns plain JSON data. `weights` is `getWeightsFlat()` when the class has it, `getWeights()` otherwise. The optimizer state is not saved.
+- `ModelSaver.load(json)` validates the whole text (messages start with `ModelSaver.load:`), then calls the static `fromConfig(config)` of the class registered for `kind`, writes the weights, and returns a new instance. Nothing is created if a check fails.
+- Built-in kinds, registered in `src/index.ts` (the entry registers them, because the package is `sideEffects: false`): `NetworkN`, `Network`, `NetworkLSTM`, `NetworkTransformer`, `NetworkTransformerRL`, `NetworkFast`. `ModelSaver.register(kind, Class)` adds your own class (it needs a static `fromConfig`). `@dniskav/neuron/infer` does not use `ModelSaver`.
+- Activations are saved by name: the built-ins, with `alpha` for `leakyRelu` and `elu`. A custom activation makes `save` throw, because the file must name it. Optimizers are saved by name with their settings; a custom one makes `save` throw unless `{ allowCustomOptimizer: true }` is passed, and then `load` uses SGD and warns. `residual` functions are saved evaluated, as one boolean per layer.
+- `saveToFile` / `loadFromFile` take the write/read function as an argument (no `fs` import) and use format 1.
 - Weights saved with 0.3.2 for models whose training was fixed in 0.4 load if the shape matches, but are not a good starting point; see `CHANGELOG.md`.
 
 ## Transformer design decisions
@@ -221,14 +227,14 @@ These are documented behaviors, not bugs to fix silently (also listed in `CHANGE
 - **`PCA`** on rank-deficient data: components for axes of variance 0 can have norm close to 0 (about 1e-111 in the minimal case), so they are not an orthonormal basis. `transform` and the reconstruction are correct.
 - **`TSNE` and `TCN` need a suitable `lr`.** `TSNE` default `lr = 200` diverges with few points (n = 30, perplexity 5: `lr` 5-20 converges); from n = 100 the default works (comment on `TSNEOptions.lr`). `TCN(1,4,2,2,1)` on one measured task: `lr` 0.1-0.39 converges, 1.0 ends higher than it started, 1.5 or more diverges (header of `TCN.ts`). One case each, not a law.
 - **`Trainer.setValidationData`** is used only with `earlyStopping` (and `restoreBestWeights`); without `earlyStopping` the data is stored and ignored.
-- **`NetworkN.getWeights()` and `setWeights()` clear the saved dropout masks.** A call between `predict(x, true)` and `trainWithDeltas` / `inputGradient` with `reuseMasks = true` makes that call throw ("needs the dropout masks").
+- **`NetworkN` and `NetworkFast`: `getWeights()` and `setWeights()` clear the saved dropout masks.** A call between `predict(x, true)` and `trainWithDeltas` / `inputGradient` with `reuseMasks = true` makes that call throw ("needs the dropout masks").
 - **`Autoencoder`** accepts `latentSize >= inputSize` without error or warning (an over-complete autoencoder is valid, e.g. for denoising).
 - **`Autoencoder.train` step scale**: `lr * inputSize / 2` only approximates the 0.3.2 step (the encoder gradient also changed); retrain.
 
 ## What this library does NOT do
 
-- No GPU acceleration and no native or WASM code.
-- No vectorized batch training: models train one sample, sequence or episode per call (`DataLoader`, `DataAugmentation` and `Trainer` loop over data).
+- No GPU acceleration and no native or WASM code in the package (`setBackend` lets you plug in your own kernels).
+- Batch training only in `NetworkFast` (`trainBatch`). The other models train one sample, sequence or episode per call (`DataLoader`, `DataAugmentation` and `Trainer` loop over data).
 - No per-instance RNG option: the generator is global (`setRandom`), plus `options.seed` in `TSNE` and `KMeans`.
 - No automatic differentiation inside the models: `Value` is a separate scalar tool; every other class has its own hand-coded backward pass.
 - No file I/O: `ModelSaver` and `DatasetLoader` work on strings (`saveToFile` / `loadFromFile` receive the read/write function).
@@ -238,7 +244,7 @@ Convolutions, data loaders, loss functions, optimizers (`SGD`, `Momentum`, `Adam
 
 ## Working on this codebase
 
-- Scripts (`package.json`): `npm run build` (tsup, CJS + ESM + types into `dist/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0; the changes since 0.3.2 are listed in `CHANGELOG.md`.
+- Scripts (`package.json`): `npm run build` (tsup, CJS + ESM + types into `dist/`), `npm run dev` (watch), `npm test` (`vitest run`), `npm run coverage`, `npm run typecheck` (`tsc --noEmit -p tsconfig.test.json`). Current version in `package.json`: 0.4.0, the last release. 0.5.0 is unreleased: its changes are in the `## 0.5.0 — unreleased` section of `CHANGELOG.md`, and `package.json` changes at release time.
 - Tests live in `tests/` (vitest). `tests/setup.ts` seeds `Math.random` before every test (`tests/helpers/seed.ts`).
 - Gradient oracles: `tests/oracle/` compares each model's real update with finite differences (helpers in `tests/helpers/gradientOracle.ts`). `tests/helpers/learns.ts` is the helper for "the loss goes down" tests.
 - `tests/coverage.modules.test.ts` requires a test file per `src/` module (case-sensitive name, searched in `tests/`, `tests/oracle/` and `tests/api/`, with documented exceptions).
