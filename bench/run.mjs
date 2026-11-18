@@ -1,15 +1,19 @@
 // Benchmark de la librería compilada (dist/index.mjs). Node puro, sin dependencias.
 //
 // Uso (desde la raíz del repo, tras `npm run build`):
-//   node --expose-gc bench/run.mjs            # línea base completa
-//   node --expose-gc bench/run.mjs --quick    # solo [256,256,256,10]
+//   node --expose-gc bench/run.mjs                       # línea base completa
+//   node --expose-gc bench/run.mjs --quick               # solo [256,256,256,10]
+//   node --expose-gc bench/run.mjs --dist <ruta-dist>    # otro build (p. ej. un worktree de 0.4)
+//
+// `--dist` apunta al directorio que contiene index.mjs. Por defecto, ../dist de este script.
 //
 // Solo el JSON va a stdout (así se puede encadenar con otro proceso);
 // el progreso va a stderr.
 
 import { cpus } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import * as lib from '../dist/index.mjs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 if (typeof globalThis.gc !== 'function') {
   process.stderr.write('Falta --expose-gc: node --expose-gc bench/run.mjs\n');
@@ -17,7 +21,25 @@ if (typeof globalThis.gc !== 'function') {
 }
 const gc = globalThis.gc;
 
-const quick = process.argv.includes('--quick');
+const argv = process.argv.slice(2);
+const distFlag = argv.indexOf('--dist');
+if (distFlag !== -1 && (distFlag + 1 >= argv.length || argv[distFlag + 1].startsWith('--'))) {
+  process.stderr.write('--dist necesita una ruta al directorio dist\n');
+  process.exit(1);
+}
+const distDir = distFlag === -1
+  ? join(dirname(fileURLToPath(import.meta.url)), '..', 'dist')
+  : resolve(argv[distFlag + 1]);
+const distEntry = join(distDir, 'index.mjs');
+let lib;
+try {
+  lib = await import(pathToFileURL(distEntry).href);
+} catch (err) {
+  process.stderr.write(`No se puede cargar ${distEntry}: ${err.message}\nCompila antes (npm run build) o revisa --dist.\n`);
+  process.exit(1);
+}
+
+const quick = argv.includes('--quick');
 const STRUCTURES = quick
   ? [[256, 256, 256, 10]]
   : [[256, 256, 256, 10], [512, 512, 512, 10]];
@@ -67,11 +89,14 @@ function countParams(structure) {
   return total;
 }
 
-// Heap usado tras forzar GC dos veces (la segunda limpia lo que la primera deja pendiente).
-function heapAfterGc() {
+// Memoria tras forzar GC dos veces (la segunda limpia lo que la primera deja pendiente).
+// heapUsed: objetos JS en el heap de V8. arrayBuffers: memoria de ArrayBuffer/TypedArray
+// (los Float64Array viven fuera del heap, así que con solo heapUsed se subestiman).
+function memAfterGc() {
   gc();
   gc();
-  return process.memoryUsage().heapUsed;
+  const m = process.memoryUsage();
+  return { heapUsed: m.heapUsed, arrayBuffers: m.arrayBuffers };
 }
 
 function median(values) {
@@ -93,12 +118,20 @@ function medianMsPerCall(callFn) {
   return median(times);
 }
 
-// Heap por parámetro: diferencia de heap antes y después de construir la red.
+// Memoria por parámetro: diferencia antes y después de construir la red.
+// bytesPerParam = (Δ heapUsed + Δ arrayBuffers) / params  (memoria real de la red).
+// heapOnlyBytesPerParam = Δ heapUsed / params            (solo objetos JS, dato de referencia).
 function measureBytesPerParam(build, params) {
-  const before = heapAfterGc();
+  const before = memAfterGc();
   const net = build();
-  const after = heapAfterGc();
-  return { bytesPerParam: (after - before) / params, net };
+  const after = memAfterGc();
+  const heapDelta = after.heapUsed - before.heapUsed;
+  const abDelta = after.arrayBuffers - before.arrayBuffers;
+  return {
+    bytesPerParam: (heapDelta + abDelta) / params,
+    heapOnlyBytesPerParam: heapDelta / params,
+    net,
+  };
 }
 
 function measureModel(model, structure, opt, data, rnd) {
@@ -109,7 +142,7 @@ function measureModel(model, structure, opt, data, rnd) {
     }
     return new lib.NetworkFast(structure, { activations: ACTIVATIONS, optimizer: opt.factory });
   };
-  const { bytesPerParam, net } = measureBytesPerParam(build, params);
+  const { bytesPerParam, heapOnlyBytesPerParam, net } = measureBytesPerParam(build, params);
 
   const { X, T } = data;
   let idx = 0;
@@ -127,7 +160,10 @@ function measureModel(model, structure, opt, data, rnd) {
     net.predict(X[next()]);
   });
 
-  const row = { model, structure, optimizer: opt.name, params, bytesPerParam, trainMs, predictMs };
+  const row = {
+    model, structure, optimizer: opt.name, params,
+    bytesPerParam, heapOnlyBytesPerParam, trainMs, predictMs,
+  };
 
   // Solo NetworkFast tiene trainBatch. Se mide por ejemplo: tiempo de la llamada / tamaño del lote.
   if (model === 'NetworkFast' && typeof net.trainBatch === 'function') {
