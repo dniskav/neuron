@@ -8,7 +8,7 @@ import { setBackend, getBackend } from '../src/core/backend'
 import { defaultBackend, Backend } from '../src/core/tensor'
 import { expectSameWeights, runPair } from './helpers/equivalence'
 import { expectLearns } from './helpers/learns'
-import { mulberry32 } from './helpers/seed'
+import { mulberry32, withSeed } from './helpers/seed'
 
 afterEach(() => {
   setBackend(null)
@@ -433,5 +433,223 @@ describe('NetworkFast backend', () => {
     const a = new NetworkFast([3, 4, 2], { backend: bad })
     const b = new NetworkFast([3, 4, 2])
     expect(a.predict([1, 2, 3])).not.toEqual(b.predict([1, 2, 3]))
+  })
+})
+
+// ─── trainBatch / predictBatch (T012) ──────────────────────────────────────────
+describe('NetworkFast.trainBatch / predictBatch', () => {
+  const S = [4, 8, 8, 3]
+  const rows = (n: number, w: number, seed: number) => {
+    const r = mulberry32(seed)
+    return Array.from({ length: n }, () => Array.from({ length: w }, () => r() * 2 - 1))
+  }
+  const delta = (a: number[], b: number[]) => a.map((v, i) => v - b[i])
+
+  // (1) A batch of 1 is train() bit for bit: the sum order does not change with n = 1.
+  describe('batch of 1 equals train (Object.is)', () => {
+    const cases: [string, NetworkNOptions][] = [
+      ['SGD', { activations: [relu, relu, sigmoid], optimizer: OPTS[0][1] }],
+      ['Adam', opts(S, tanh, OPTS[2][1])],
+      ['Clip(Adam) residual', opts([5, 5, 5, 5], relu, OPTS[3][1], { residual: true })],
+      ['dropout 0.3', { activations: [relu, relu, sigmoid], optimizer: OPTS[1][1], dropoutRate: 0.3 }],
+    ]
+    for (const [name, o] of cases) {
+      it(name, () => {
+        const s = o.activations!.length === 3 && name !== 'Clip(Adam) residual' ? S : [5, 5, 5, 5]
+        const X = rows(30, s[0], 1), T = rows(30, s[s.length - 1], 2).map(r => r.map(v => (v + 1) / 2))
+        const log: number[][] = []
+        const { a, b } = runPair(
+          () => new NetworkFast(s, o), () => new NetworkFast(s, o),
+          net => {
+            const l: number[] = []
+            const isB = log.length === 1
+            for (let i = 0; i < 30; i++) {
+              l.push(isB ? (net as NetworkFast).trainBatch([X[i]], [T[i]], 0.05) : net.train(X[i], T[i], 0.05))
+            }
+            l.push(Math.random())
+            log.push(l)
+          }, 11)
+        expectSameWeights(a, b, 0)
+        expect(log[1]).toEqual(log[0])
+      })
+    }
+  })
+
+  // (2) The step of a batch is the mean of the per-example steps (SGD, small lr).
+  it('SGD step of a batch = mean of the per-example steps', () => {
+    for (const o of [opts(S, relu, OPTS[0][1]), opts([5, 5, 5, 5], tanh, OPTS[0][1], { residual: true })]) {
+      const s = o.activations!.length === 3 ? S : [5, 5, 5, 5]
+      const X = rows(7, s[0], 3), T = rows(7, s[s.length - 1], 4)
+      const net = withSeed(5, () => new NetworkFast(s, o))
+      const w0 = net.getWeights()
+      const lr = 1e-3
+      const mean = new Array(w0.length).fill(0)
+      for (let i = 0; i < 7; i++) {
+        net.setWeights(w0)
+        net.train(X[i], T[i], lr)
+        delta(net.getWeights(), w0).forEach((v, j) => { mean[j] += v / 7 })
+      }
+      net.setWeights(w0)
+      net.trainBatch(X, T, lr)
+      const d = delta(net.getWeights(), w0)
+      let dot = 0, nd = 0, nm = 0
+      d.forEach((v, j) => { dot += v * mean[j]; nd += v * v; nm += mean[j] * mean[j] })
+      expect(dot / Math.sqrt(nd * nm)).toBeGreaterThan(0.999)
+      expect(Math.sqrt(nd / nm)).toBeGreaterThan(0.99)
+      expect(Math.sqrt(nd / nm)).toBeLessThan(1.01)
+    }
+  })
+
+  it('returns the mean MSE of the batch', () => {
+    const net = withSeed(6, () => new NetworkFast(S, opts(S, relu, OPTS[0][1])))
+    const X = rows(5, 4, 7), T = rows(5, 3, 8)
+    const want = X.reduce((s, x, i) => {
+      const p = net.predict(x)
+      return s + p.reduce((q, v, k) => q + (T[i][k] - v) ** 2, 0) / 3
+    }, 0) / 5
+    expect(Math.abs(net.trainBatch(X, T, 0.01) - want)).toBeLessThan(1e-14)
+  })
+
+  // (3) With Adam a batch is ONE optimizer step.
+  it('Adam: one batch is one step, not one per example', () => {
+    const o = opts(S, relu, OPTS[2][1])
+    const X = rows(2, 4, 9), T = rows(2, 3, 10)
+    const batch = withSeed(12, () => new NetworkFast(S, o))
+    const seq = withSeed(12, () => new NetworkFast(S, o))
+    const w0 = batch.getWeights()
+    batch.trainBatch(X, T, 0.01)
+    seq.train(X[0], T[0], 0.01); seq.train(X[1], T[1], 0.01)
+    const a = batch.getWeights(), b = seq.getWeights()
+    expect(a.some((v, i) => Math.abs(v - b[i]) > 1e-4)).toBe(true)
+    // first Adam step: every moved weight moves by ~lr (bias-corrected m/sqrt(v) = +-1)
+    const moved = delta(a, w0).filter(v => v !== 0)
+    expect(moved.length).toBeGreaterThan(10)
+    for (const v of moved) expect(Math.abs(Math.abs(v) - 0.01)).toBeLessThan(1e-4)
+    // the second batch is step 2: it differs from a fresh net doing a first step
+    const before = batch.getWeights()
+    batch.trainBatch(X, T, 0.01)
+    const fresh = withSeed(12, () => new NetworkFast(S, o))
+    fresh.setWeights(before)
+    fresh.trainBatch(X, T, 0.01)
+    expect(batch.getWeights()).not.toEqual(fresh.getWeights())
+  })
+
+  // (4)
+  it('predictBatch = predict row by row (<= 1e-15), with residual', () => {
+    for (const [s, o] of [[S, opts(S, relu, OPTS[0][1])], [[5, 5, 5, 5], opts([5, 5, 5, 5], tanh, OPTS[0][1], { residual: true, dropoutRate: 0.3 })]] as [number[], NetworkNOptions][]) {
+      const net = withSeed(13, () => new NetworkFast(s, o))
+      const X = rows(9, s[0], 14)
+      const got = net.predictBatch(X)
+      expect(got.length).toBe(9)
+      X.forEach((x, i) => {
+        const p = net.predict(x)
+        p.forEach((v, k) => expect(Math.abs(v - got[i][k])).toBeLessThanOrEqual(1e-15))
+      })
+    }
+  })
+
+  // (5) Masks: example by example, layer by layer, drawn through Dropout.forward.
+  it('dropout: the masks of the batch come out in example order', () => {
+    const o = opts(S, relu, OPTS[0][1], { dropoutRate: 0.3 })
+    const X = rows(4, 4, 15), T = rows(4, 3, 16)
+    const next = withSeed(17, () => {
+      const net = new NetworkFast(S, o)
+      net.trainBatch(X, T, 0.01)
+      return Math.random()
+    })
+    const want = withSeed(17, () => {
+      new NetworkFast(S, o)
+      const ds = [new Dropout(0.3), new Dropout(0.3)]
+      for (let i = 0; i < 4; i++) { ds[0].forward(new Array(8).fill(1)); ds[1].forward(new Array(8).fill(1)) }
+      return Math.random()
+    })
+    expect(next).toBe(want)
+  })
+
+  it('dropout: a batch step = mean of n train() steps drawing the same masks', () => {
+    const o: NetworkNOptions = { activations: [relu, relu, sigmoid], optimizer: OPTS[0][1], dropoutRate: 0.5 }
+    const X = rows(3, 4, 18), T = rows(3, 3, 19)
+    const run = (batch: boolean) => withSeed(20, () => {
+      const net = new NetworkFast(S, o)
+      const w0 = net.getWeights()
+      if (batch) net.trainBatch(X, T, 1e-3)
+      else {
+        const acc = new Array(w0.length).fill(0)
+        for (let i = 0; i < 3; i++) {
+          net.setWeights(w0); net.train(X[i], T[i], 1e-3)
+          delta(net.getWeights(), w0).forEach((v, j) => { acc[j] += v / 3 })
+        }
+        net.setWeights(w0.map((v, j) => v + acc[j]))
+      }
+      return [delta(net.getWeights(), w0), Math.random()] as const
+    })
+    const [db, rb] = run(true), [dm, rm] = run(false)
+    expect(rb).toBe(rm)
+    expect(Math.max(...db.map(Math.abs))).toBeGreaterThan(1e-7) // the step is not vacuous
+    db.forEach((v, j) => expect(Math.abs(v - dm[j])).toBeLessThan(1e-12))
+  })
+
+  // (6)
+  it('validation: throws before touching weights or drawing random()', () => {
+    const net = withSeed(21, () => new NetworkFast(S, { dropoutRate: 0.3 }))
+    const w = net.getWeights()
+    const X = rows(10, 4, 22), T = rows(10, 3, 23)
+    const spy = vi.spyOn(Math, 'random')
+    const bad = (X2: unknown, T2: unknown, lr: unknown, msg: RegExp) =>
+      expect(() => net.trainBatch(X2 as number[][], T2 as number[][], lr as number)).toThrow(msg)
+    bad([], [], 0.1, /NetworkFast\.trainBatch: X must have at least one row/)
+    bad(X, T.slice(0, 9), 0.1, /same number of rows/)
+    bad('x', T, 0.1, /NetworkFast\.trainBatch/)
+    const X7 = X.map(r => [...r]); X7[7][2] = NaN
+    bad(X7, T, 0.1, /NetworkFast\.trainBatch \(X\[7\]\): invalid value at index 2/)
+    const X8 = X.map(r => [...r]); X8[7] = [1, 2, 3]
+    bad(X8, T, 0.1, /X\[7\]\): expected array of length 4, got 3/)
+    const T7 = T.map(r => [...r]); T7[7] = [1]
+    bad(X, T7, 0.1, /T\[7\]\): expected array of length 3/)
+    for (const lr of [-1, NaN, Infinity]) bad(X, T, lr, /lr must be a finite number >= 0/)
+    expect(() => net.predictBatch([])).toThrow(/NetworkFast\.predictBatch/)
+    expect(() => net.predictBatch([[1, 2, 3, 4], [1, 2]])).toThrow(/X\[1\]/)
+    expect(spy).not.toHaveBeenCalled()
+    expect(net.getWeights()).toEqual(w)
+  })
+
+  // (7)
+  it('learns a small regression with batches (Adam)', () => {
+    const X = rows(64, 3, 24)
+    const T = X.map(x => [0.5 + 0.3 * x[0] - 0.2 * x[1] * x[2]])
+    const net = withSeed(25, () => new NetworkFast([3, 8, 1], { activations: [tanh, linear], optimizer: () => new Adam() }))
+    expectLearns({
+      loss: () => net.predictBatch(X).reduce((s, p, i) => s + (p[0] - T[i][0]) ** 2, 0) / 64,
+      step: () => { for (let i = 0; i < 64; i += 16) net.trainBatch(X.slice(i, i + 16), T.slice(i, i + 16), 0.02) },
+      steps: 150,
+    })
+  })
+
+  it('batch buffers are reserved once and regrown for a larger batch', () => {
+    const net = withSeed(26, () => new NetworkFast([3, 4, 2], { optimizer: () => new SGD() }))
+    const p = (n: number) => rows(n, 3, 27 + n)
+    const a = net.predictBatch(p(2))
+    net.predictBatch(p(9))           // grows
+    expect(net.predictBatch(p(2))).toEqual(a) // a smaller batch after a larger one
+    const big = net.predictBatch(p(9))
+    expect(big.length).toBe(9)
+  })
+
+  it('uses the backend batch operations (option and global)', () => {
+    const calls: string[] = []
+    const spy: Partial<Backend> = {
+      matMulBatch: (...a) => { calls.push('mm'); return defaultBackend.matMulBatch(...a) },
+      matMulBatchT: (...a) => { calls.push('mmT'); return defaultBackend.matMulBatchT(...a) },
+      addOuterBatch: (...a) => { calls.push('ao'); return defaultBackend.addOuterBatch(...a) },
+    }
+    const net = new NetworkFast([3, 4, 2], { backend: spy })
+    net.trainBatch([[1, 2, 3], [3, 2, 1]], [[0, 1], [1, 0]], 0.1)
+    expect(calls.filter(c => c === 'mm').length).toBe(2)
+    expect(calls.filter(c => c === 'mmT').length).toBe(1)
+    expect(calls.filter(c => c === 'ao').length).toBe(2)
+    calls.length = 0
+    setBackend(spy)
+    new NetworkFast([3, 4, 2]).predictBatch([[1, 2, 3]])
+    expect(calls).toEqual(['mm', 'mm'])
   })
 })

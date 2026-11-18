@@ -58,6 +58,18 @@ export class NetworkFast {
   private readonly _gW: Vec[] = [];    // gradient of W of each layer
   private readonly _res: Uint8Array;   // residual flag per layer, evaluated once per public call
 
+  // Batch buffers (FR-5). Reserved on the first batch call and regrown only when a
+  // larger batch arrives; a batch of n rows uses the first n rows (row-major, so a
+  // prefix is a valid smaller batch). _cap = 0 until then.
+  private _cap = 0;
+  private _bA: Vec[] = [];      // _bA[l] = n x structure[l]; _bA[L] = outputs
+  private _bPre: Vec[] = [];    // outputs of f per layer, BEFORE residual and dropout
+  private _bDelta: Vec[] = [];  // -dL/d(pre-activation) per layer
+  private _bG: Vec[] = [];      // _bG[l] = -dL/d(_bA[l]), l >= 1 (the input gradient is not needed)
+  private _bMask: Vec[] = [];   // dropout mask per hidden layer (scale or 0)
+  private _gB: Vec[] = [];      // mean bias gradient per layer
+  private _ones: number[][] = []; // all-ones vectors fed to Dropout.forward to draw a mask
+
   private readonly _override: Partial<Backend> | null;
   private _mixOf: Backend | null = null;
   private _mixed: Backend | null = null;
@@ -152,6 +164,58 @@ export class NetworkFast {
     let s = 0;
     for (let i = 0; i < n; i++) s += (targets[i] - pred[i]) ** 2;
     return s / n;
+  }
+
+  // Inference on a batch (no dropout). Row i equals predict(X[i]); like predict(x, false)
+  // it clears the saved dropout masks.
+  predictBatch(X: number[][]): number[][] {
+    const n = this._checkRows(X, this.structure[0], 'NetworkFast.predictBatch', 'X');
+    const be = this._backend();
+    this._computeResidual();
+    this._ensureBatch(n);
+    this._forwardBatch(be, X, n, false);
+    const out = this._bA[this._L], m = this.structure[this._L];
+    const res: number[][] = new Array(n);
+    for (let i = 0; i < n; i++) res[i] = Array.from(out.subarray(i * m, (i + 1) * m));
+    return res;
+  }
+
+  // ONE optimizer step with the MEAN of the per-example gradients; returns the mean over
+  // the batch of the per-example MSE. Per example the gradient is the one of train():
+  // (2/m)(t - p) at the output (m outputs). With a batch of 1 it is train() exactly.
+  // With dropout every example draws its own masks, in example order (as n train() calls).
+  trainBatch(X: number[][], T: number[][], lr: number): number {
+    const n = this._checkRows(X, this.structure[0], 'NetworkFast.trainBatch', 'X');
+    if (!Array.isArray(T) || T.length !== n) {
+      throw new Error(
+        `NetworkFast.trainBatch: X and T need the same number of rows, got ${n} and ${Array.isArray(T) ? T.length : typeof T}`
+      );
+    }
+    this._checkRows(T, this.structure[this._L], 'NetworkFast.trainBatch', 'T');
+    if (!(Number.isFinite(lr) && lr >= 0)) {
+      throw new Error(`NetworkFast.trainBatch: lr must be a finite number >= 0, got ${lr}`);
+    }
+
+    const be = this._backend();
+    this._computeResidual();
+    this._ensureBatch(n);
+    this._forwardBatch(be, X, n, true);
+
+    const L = this._L, m = this.structure[L];
+    const pred = this._bA[L], g = this._bG[L];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      const base = i * m, t = T[i];
+      let s = 0;
+      for (let k = 0; k < m; k++) {
+        const e = t[k] - pred[base + k];
+        g[base + k] = (2 / m) * e;
+        s += e * e;
+      }
+      total += s / m;
+    }
+    this._backwardBatch(be, n, lr);
+    return total / n;
   }
 
   // Deltas are -dL/d(pre-activation of the output layer); not rescaled. See NetworkN.
@@ -271,6 +335,115 @@ export class NetworkFast {
         `predict(x, true), but none are saved (an inference predict or setWeights/getWeights ` +
         `clears them). Call predict(x, true) first, or use reuseMasks = false.`
       );
+    }
+  }
+
+  // Validates a non-empty array of rows of `width` finite numbers; touches nothing.
+  private _checkRows(rows: unknown, width: number, method: string, name: string): number {
+    if (!Array.isArray(rows)) throw new Error(`${method}: ${name} must be an array of rows, got ${typeof rows}`);
+    if (rows.length === 0) throw new Error(`${method}: ${name} must have at least one row`);
+    for (let i = 0; i < rows.length; i++) validateArray(rows[i], width, `${method} (${name}[${i}])`);
+    return rows.length;
+  }
+
+  // Reserves the batch buffers for at least n rows (once; grows only for a larger batch).
+  private _ensureBatch(n: number): void {
+    if (n <= this._cap) return;
+    const sz = this.structure, L = this._L;
+    this._cap = n;
+    this._bA = [new Float64Array(n * sz[0])];
+    this._bG = [new Float64Array(0)];
+    this._bPre = []; this._bDelta = []; this._bMask = []; this._gB = [];
+    for (let l = 0; l < L; l++) {
+      const w = sz[l + 1];
+      this._bA.push(new Float64Array(n * w));
+      this._bG.push(new Float64Array(n * w));
+      this._bPre.push(new Float64Array(n * w));
+      this._bDelta.push(new Float64Array(n * w));
+      this._gB.push(new Float64Array(w));
+      if (l < this._dropouts.length) this._bMask.push(new Float64Array(n * w));
+    }
+    if (this._ones.length === 0) {
+      for (let l = 0; l < this._dropouts.length; l++) this._ones.push(new Array(sz[l + 1]).fill(1));
+    }
+  }
+
+  // Batch forward: same maths as _forward, one matMulBatch per layer. With training and
+  // dropout, the masks are drawn FIRST, example by example and layer by layer (the order
+  // of n successive train() calls; a mask does not depend on the data), through
+  // Dropout.forward on a vector of ones, whose output is the mask itself.
+  private _forwardBatch(be: Backend, X: number[][], n: number, training: boolean): void {
+    const L = this._L, sz = this.structure;
+    const a0 = this._bA[0], w0 = sz[0];
+    for (let i = 0; i < n; i++) {
+      const row = X[i], base = i * w0;
+      for (let j = 0; j < w0; j++) a0[base + j] = row[j];
+    }
+    const nd = this._dropouts.length;
+    if (training) {
+      for (let i = 0; i < n; i++) {
+        for (let l = 0; l < nd; l++) {
+          const w = sz[l + 1];
+          const mk = this._dropouts[l].forward(this._ones[l], true);
+          const dst = this._bMask[l], base = i * w;
+          for (let k = 0; k < w; k++) dst[base + k] = mk[k];
+        }
+      }
+    } else {
+      for (const d of this._dropouts) d.resetMask();
+    }
+
+    for (let l = 0; l < L; l++) {
+      const nIn = sz[l], nOut = sz[l + 1], size = n * nOut;
+      const x = this._bA[l], p = this._bPre[l], out = this._bA[l + 1];
+      be.matMulBatch(this._W[l], nOut, nIn, x, n, this._b[l], p);
+      const f = this._acts[l];
+      for (let q = 0; q < size; q++) p[q] = f.fn(p[q]);
+      if (this._res[l] === 1) {
+        for (let q = 0; q < size; q++) out[q] = p[q] + x[q];
+      } else {
+        for (let q = 0; q < size; q++) out[q] = p[q];
+      }
+      if (training && l < nd) {
+        const mask = this._bMask[l];
+        for (let q = 0; q < size; q++) out[q] = out[q] * mask[q];
+      }
+    }
+  }
+
+  // Batch backward + ONE optimizer step. _bG[L] must hold -dL/d(output) per example
+  // (unscaled); the mean over the batch is applied with s = 1/n in the gradients of W
+  // (addOuterBatch) and b. W^T delta uses the weights BEFORE the update of that layer.
+  private _backwardBatch(be: Backend, n: number, lr: number): void {
+    const L = this._L, sz = this.structure, s = 1 / n;
+    for (let l = L - 1; l >= 0; l--) {
+      const nIn = sz[l], nOut = sz[l + 1], size = n * nOut;
+      const gOut = this._bG[l + 1], d = this._bDelta[l];
+      if (l < this._dropouts.length) {
+        const mask = this._bMask[l];
+        for (let q = 0; q < size; q++) gOut[q] = gOut[q] * mask[q];
+      }
+      const p = this._bPre[l], f = this._acts[l];
+      for (let q = 0; q < size; q++) d[q] = gOut[q] * f.dfn(p[q]);
+      if (l > 0) {
+        const gIn = this._bG[l];
+        be.matMulBatchT(this._W[l], nOut, nIn, d, n, gIn);
+        if (this._res[l] === 1) {
+          const sizeIn = n * nIn;
+          for (let q = 0; q < sizeIn; q++) gIn[q] = gIn[q] + gOut[q];
+        }
+      }
+      const G = this._gW[l];
+      G.fill(0);
+      be.addOuterBatch(G, nOut, nIn, d, this._bA[l], n, s);
+      const gb = this._gB[l];
+      for (let k = 0; k < nOut; k++) {
+        let acc = d[k];
+        for (let i = 1; i < n; i++) acc += d[i * nOut + k];
+        gb[k] = s * acc;
+      }
+      this._wOpt[l].step(this._W[l], G, lr);
+      this._bOpt[l].step(this._b[l], gb, lr);
     }
   }
 
