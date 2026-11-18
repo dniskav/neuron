@@ -14,7 +14,7 @@ This is the rule in `Neuron.train` (`src/Neuron.ts`) and `NeuronN.train` (`src/N
 
 `NeuronN` uses a **simplified Xavier initialization**: each weight is drawn uniformly from `[-√(1/n), +√(1/n)]`, where `n` is the number of inputs, and the bias starts at 0 (`src/NeuronN.ts`). `NetworkN` builds its layers from `NeuronN` (`src/Layer.ts`), so it starts the same way.
 
-When an **optimizer** is used (e.g., Adam), the raw gradient is passed to the optimizer instead of being applied directly. `SGD` applies `w ← w + lr·g` (`src/optimizers.ts`); other optimizers take different steps. Each weight keeps its own optimizer state (`src/NeuronN.ts`).
+When an **optimizer** is used (e.g., Adam), the raw gradient is passed to the optimizer instead of being applied directly. `SGD` applies `w ← w + lr·g` (`src/optimizers.ts`); other optimizers take different steps. The built-in optimizers keep their state in buffers, one per neuron or matrix (`src/core/optim.ts`); a custom optimizer still gets one instance per weight.
 
 The `Value` class implements **reverse-mode automatic differentiation**: every operation records its inputs and a `_backward` closure. Calling `.backward()` on the output node builds a topological order and propagates `∂L/∂w` through the graph (`src/Tape.ts`).
 
@@ -26,7 +26,7 @@ The `Value` class implements **reverse-mode automatic differentiation**: every o
 - **`TSNE`:** with a small number of points, the default `lr` of 200 diverges. The stable range depends on the number of points (`src/TSNE.ts`).
 - **`TCN`:** sensitive to `lr`. The header of `src/TCN.ts` lists the measured range.
 - **Randomness:** every random draw goes through `random()`, which uses `Math.random` unless you install a generator: `setRandom(seededRandom(seed))` makes the whole library reproducible (`KMeans` and `TSNE` also take their own `seed`). The examples in this README fix `Math.random` in their own block.
-- **Training:** most training is online (one sample per update) and runs on the CPU in plain JavaScript. There is no GPU backend.
+- **Training:** most models train online (one sample, sequence or episode per update). `NetworkFast` also trains on batches (`trainBatch`). Everything runs on the CPU in plain JavaScript; there is no GPU backend.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
@@ -40,6 +40,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list.
 - `Trainer` rejects `lr = 0`, and the `clipValue` option is gone: use `ClippedOptimizerFactory`.
 
 The full guide, with the breaking changes and their migration steps, is in [CHANGELOG.md](CHANGELOG.md).
+
+## Upgrading to 0.5
+
+0.5 is additive: your code and your saved weights keep working. Two observable changes:
+
+- `NeuronN.weights` is updated in place. If you kept a reference to that array, it now sees the new values.
+- The built-in activations have a `name` (and an `alpha` for `leakyRelu` and `elu`). A test that compares an activation with `toEqual` against a literal `{ fn, dfn }` no longer passes.
+
+The full list, with the new features and the performance figures, is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Build
 
@@ -76,7 +85,7 @@ Export trained models to the [ONNX](https://onnx.ai/) interchange format so they
 
 ### WebGL / WASM backend
 
-Replace the current pure-JS number arrays with a GPU-accelerated or WASM-compiled backend so larger models (e.g. ViT, GPT-2 scale) become feasible in the browser.
+Replace the current pure-JS number arrays with a GPU-accelerated or WASM-compiled backend so larger models (e.g. ViT, GPT-2 scale) become feasible in the browser. Since 0.5 the numeric kernels sit behind `setBackend` (see "Extending the library"), so such a backend has a place to plug in; the package does not ship one.
 
 **What it would require:**
 - Abstract `Tensor` type that backends implement (JS arrays, WebGL textures, WASM memory).

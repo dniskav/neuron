@@ -4,6 +4,68 @@ All notable changes to `@dniskav/neuron` are documented here. The format is loos
 
 Most numeric claims in the 0.4.0 section were checked by running the same case against 0.3.2 and the current code.
 
+## 0.5.0 — unreleased
+
+### Read this first
+
+0.5.0 is additive. Your code, your learning rates and your saved weights keep working. Two things can change what you observe:
+
+1. `NeuronN.weights` is updated in place. If you kept a reference to that array, it now shows the new values.
+2. The built-in activations have a `name` (and `alpha` for `leakyRelu` and `elu`). A test that compares an activation with `toEqual` against a literal `{ fn, dfn }` no longer passes.
+
+Nothing else changes for existing code. The new features are below, and the migration steps are at the end (none is required).
+
+### New (additive)
+
+- **Injectable random generator** (`src/random.ts`). `random`, `setRandom(fn | null)`, `getRandom()`, `seededRandom(seed)` (mulberry32), `withRandom(fn, body)` and the type `RandomFn`. With no generator installed, `random()` calls `Math.random` at call time, so the numbers are the same as in 0.4. `setRandom(seededRandom(seed))` makes construction and training reproducible.
+- **Numeric core on `Float64Array`** (`src/core/tensor.ts`). `matVec`, `matTVec`, `addOuter`, `matMulBatch`, `matMulBatchT` and `addOuterBatch`, on row-major buffers. `defaultBackend` is the plain JavaScript implementation.
+- **Swappable backend** (`src/core/backend.ts`, `src/core/checkBackend.ts`). `setBackend(partial)` replaces only the operations you pass, `setBackend(null)` restores the default and `getBackend()` returns the active one. `NetworkFastOptions.backend` replaces operations for one instance only, and takes priority over the global backend. `checkBackend(backend)` runs the conformance cases against the default and returns a `BackendReport` (`{ ok, failures }`). Types: `Backend`, `BackendReport`.
+- **Vectorized optimizers** (`src/core/optim.ts`). `VecSGD`, `VecMomentum`, `VecAdam`, `VecClip`, the interface `VecOptimizer`, and `vecFromFactory(factory, size)`. They give exactly the same numbers as one scalar optimizer per element. For a custom optimizer, `vecFromFactory` falls back to `ScalarArrayOptimizer`, which keeps one instance per element.
+- **`NetworkFast`** (`src/NetworkFast.ts`). Same constructor, options (`NetworkFastOptions`, which adds `backend`), methods, validation and weight order as `NetworkN`. With the same seed it starts from the same weights, and after the same calls its weights match `NetworkN` to a relative error of at most 1e-12. Methods: `predict`, `train`, `trainBatch`, `predictBatch`, `trainWithDeltas`, `inputGradient`, `getWeights`, `setWeights`, `toConfig`, `fromConfig`, and the fields `structure` and `kind`.
+- **Batch training.** `NetworkFast.trainBatch(X, T, lr)` makes one optimizer step with the mean gradient of the batch and returns the mean squared error. `NetworkFast.predictBatch(X)` predicts a list of inputs. A batch of one example is the same as `train`. With dropout, each example draws its own mask, in order.
+- **`Trainer` option `batchSize`** (integer >= 1, default 1). Above 1 it needs a model with `trainBatch(X, T, lr)`, and the constructor throws otherwise. With 1 nothing changes.
+- **Format 2 in `ModelSaver`.** `ModelSaver.save(model, opts?)` writes `{ format: 2, kind, config, length, weights, timestamp }`. `ModelSaver.load(json)` returns a new instance, ready to predict and to keep training; the optimizer state starts at zero and is not saved. `ModelSaver.register(kind, { fromConfig })` adds your own class. Built-in kinds: `NetworkN`, `Network`, `NetworkLSTM`, `NetworkTransformer`, `NetworkTransformerRL` and `NetworkFast`. Types: `Saveable`, `Registrable`, `SaveOptions`, `NetworkNConfig`, `ActivationSpec`, `OptimizerSpec` and `SavedModel`. In format 2 `weights` is the flat vector of the model: `getWeightsFlat()` when the class has it, `getWeights()` otherwise.
+- **Format 1 is unchanged.** `toJSON` and `fromJSON` still write and read `{ format: 1, ... }`. `fromJSON` also accepts a format 2 text when its `kind` and structure match the model.
+- **Inference entry `@dniskav/neuron/infer`** (`src/infer.ts`). `loadForInference(json, opts?)` reads format 2 of `NetworkN`, `NetworkFast` and `Network`, and returns `{ kind, structure, predict, predictBatch }`. It imports no optimizer, backpropagation, `Trainer` or random generator. The bundle `dist/infer.mjs` is 3.8 KB unminified. It is not exported from `src/index.ts`. Transformers and LSTM models are not supported for inference in 0.5. Other kinds throw and point to `ModelSaver.load`.
+- **Your own embeddings in `NetworkTransformer`.** `NetworkTransformerOptions.freezeEmbeddings` (`true`, or `{ token?, position? }`, default `false`) keeps `train` from changing the frozen tables. `NetworkTransformer.setTokenEmbeddings(rows, { freeze? })` checks that there is one row per token, that each row has `d_model` values and that all values are finite, before it writes anything. Format 2 saves the option.
+- **Benchmark** (`bench/run.mjs`, `bench/README.md`). Node only, runs on `dist/`. It reports memory per parameter, time per example for `train` and `predict`, and time per example for `trainBatch(32)` in `NetworkFast`.
+
+### Observable changes
+
+- `NeuronN.weights` is written in place by `_update`. In 0.4 it was replaced by a new array, so a reference kept from before the update saw the old weights.
+- The built-in activations (`sigmoid`, `relu`, `tanh`, `linear`, and the results of `leakyRelu`, `elu`, `makeLeakyRelu` and `makeElu`) have a `name`; the parametric ones also have `alpha`. Custom activation objects do not need either field.
+- No file in `src/` calls `Math.random` except `src/random.ts`. Every random draw goes through `random()`, which reads `Math.random` at call time, so the tests that seed `Math.random` still work.
+- `vecFromFactory` calls the factory one extra time per call, to check whether it returns a built-in optimizer. `NeuronN` calls it twice per neuron (weights and bias), so a factory that counts its instances sees extra calls. The results do not change.
+- `BiasVector.update` throws when the gradient does not have the length of the vector: `VecAdam.step: params and grads must have length N, got N and M`. `NeuronN._update` throws in the same way when the gradient length is wrong (`VecSGD.step`, or `ScalarArrayOptimizer.step` for a custom optimizer).
+- `checkBackend` lives in `src/core/checkBackend.ts`, apart from `backend.ts`, so that the inference entry does not import the random generator.
+
+### Performance
+
+Measured on an Apple M3 with Node 26 (v26.12.1). These are the figures from the development log. The official table comes from `bench/run.mjs`, run with no other agent running (T026), and will replace them.
+
+- **Memory with Adam**, `[256,256,256,10]`, activations `relu, relu, sigmoid`, measured as heap plus typed arrays, per parameter: `NetworkN` 136.7 bytes in 0.4; `NetworkN` about 30.6 to 30.8 bytes in 0.5 (30.6 and 30.8 in two development checks); `NetworkFast` about 32.4 bytes.
+- **Training speed**: `NetworkFast` trains about 10.7 times faster than `NetworkN` on the 0.5 branch.
+- The per-example time of `trainBatch(32)`, the `predict` times and the pass or fail of each target (NFR-1 to NFR-5, in `specs/010-fast-core/spec.md` section 4) come with the table of T026.
+- The raw 0.4 baseline is in `specs/010-fast-core/bench-baseline.json`.
+
+### Migration
+
+Nothing is required. To move a model from `NetworkN` to `NetworkFast`:
+
+1. Use the same constructor and options: `new NetworkFast(structure, options)`. With the same seed the initial weights are the same, so you can compare the two. `NetworkFast` has no `layers` or `neurons`. `WeightInspector` needs a `NetworkN`, and so do the classes that build on it (`VAE`, `GAN` and `Autoencoder` keep using `NetworkN` internally).
+2. To train on batches, call `net.trainBatch(X, T, lr)`. One batch is one optimizer step, so tune `lr` again. Or pass `batchSize` to `Trainer`.
+3. To save a whole model, use `ModelSaver.save(model)` and `ModelSaver.load(json)`. `load` returns `unknown`, so cast it. Files written with `toJSON` still load with `fromJSON`. The optimizer state is not saved.
+4. `ModelSaver.load` knows the built-in classes because the entry `@dniskav/neuron` registers them. `@dniskav/neuron/infer` does not need them.
+5. A custom optimizer can be saved only with `{ allowCustomOptimizer: true }`, and then loads as SGD with a warning. A model with a custom activation cannot be saved with `ModelSaver.save`, because the file must name the activation. Give the model a class with its own `toConfig` and register it with `ModelSaver.register`.
+
+### Known limitations
+
+- `NetworkFast` covers the dense models. There are no fast versions of the LSTM or Transformer models in 0.5, and `loadForInference` does not read them.
+- The optimizer state is not saved in format 2.
+- Batch training exists only in `NetworkFast`.
+- Only the embedding tables of `NetworkTransformer` can be frozen or set from outside (`setTokenEmbeddings` sets the token table). There is no standalone embedding layer for `NetworkFast`.
+- The figures in "Performance" come from a single machine.
+
 ## 0.4.0 — 2026-11-13
 
 ### Read this first

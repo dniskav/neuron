@@ -195,7 +195,7 @@ graph TD
 | `DataAugmentation` | Noise, jitter, horizontal flip, normalization, z-score, batch augmentation, shuffle, and a 70/15/15 train/validation/test split. |
 | `WeightInspector` | Per-layer weight statistics (mean, std, dead weights) and dead-ReLU counts. |
 | `LossPlotter` | Renders a loss curve as ASCII art in the terminal. |
-| `ModelSaver` | Serialization through the flat `getWeights()` / `setWeights()` interface. JSON with `format: 1`, plus `saveToFile` / `loadFromFile` helpers that take a file function. |
+| `ModelSaver` | `toJSON` / `fromJSON` write and read format 1 (weights only, through `getWeights()` / `setWeights()`). `save` / `load` write and read format 2 (class, configuration and weights) and return a new instance; `register` adds your own classes. `saveToFile` / `loadFromFile` take a file function. |
 
 ### Tokenizer & datasets
 
@@ -219,7 +219,7 @@ graph TD
 |--------|-------------|
 | `Activation` | Interface of an activation function: `fn(x)` and `dfn(out)`. |
 | `Optimizer` | Interface implemented by `SGD`, `Momentum`, `Adam` and `ClipOptimizer`. |
-| `OptimizerFactory` | `() => Optimizer`. A network creates one optimizer per weight. |
+| `OptimizerFactory` | `() => Optimizer`. The library calls it to build the optimizers of a model. The built-in optimizers become vectorized buffers; a custom factory gets one instance per weight. |
 | `NetworkNOptions` | Options for `NetworkN` (activations per layer, optimizer factory, residual connections). |
 | `NetworkLSTMOptions` | Options for `NetworkLSTM`. |
 | `NetworkTransformerOptions` | Options for `NetworkTransformer`. |

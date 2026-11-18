@@ -1,6 +1,6 @@
 # Benchmark de `@dniskav/neuron`
 
-Mide memoria y tiempo de `NetworkN` (y de `NetworkFast` cuando exista) sobre el build de `dist/index.mjs`. Es Node puro: sin dependencias, sin `tsx`.
+Mide memoria y tiempo de `NetworkN` y de `NetworkFast` sobre el build de `dist/index.mjs`. Es Node puro: sin dependencias, sin `tsx`.
 
 ## Cómo se ejecuta
 
@@ -28,7 +28,7 @@ node --expose-gc bench/run.mjs > salida.json
 Para cada estructura y cada optimizador (`sgd` con lr 0.01, `adam` con lr 0.001), activaciones `relu, relu, sigmoid`:
 
 - `params`: número de pesos, `nOut·(nIn+1)` por capa, con sesgo.
-- `bytesPerParam`: memoria por parámetro. Con GC previo (dos veces), se toma la diferencia antes y después de construir la red, en `heapUsed` más `arrayBuffers`, y se divide entre `params`. `arrayBuffers` cuenta la memoria de los `Float64Array`, que vive fuera del heap de V8.
+- `bytesPerParam`: memoria por parámetro, medida como **`heapUsed` más `arrayBuffers`**. Con GC previo (dos veces), se toma `process.memoryUsage()` antes y después de construir la red, se suma la diferencia de `heapUsed` y la de `arrayBuffers`, y se divide entre `params`. `arrayBuffers` cuenta la memoria de los `Float64Array`, que vive fuera del heap de V8; por eso `heapUsed` solo subestima las redes que usan buffers.
 - `heapOnlyBytesPerParam`: la misma diferencia, pero solo de `heapUsed`, dividida entre `params`. Es el dato que daba el script antes de T001b. Como `arrayBuffers` no baja, siempre es menor o igual que `bytesPerParam`; la diferencia es la memoria que el heap no ve.
 - `trainMs`: milisegundos por ejemplo en `train`.
 - `predictMs`: milisegundos por ejemplo en `predict`.
@@ -38,7 +38,7 @@ Por qué hay dos columnas de memoria: en 0.4 cada peso de Adam era un objeto JS,
 
 Los tiempos son la mediana de 5 tandas de 20 llamadas, tras 2 tandas de calentamiento que se descartan. Los datos son fijos (mulberry32, semilla 42) y se generan antes de medir.
 
-Si el módulo exporta `NetworkFast`, el script añade sus filas (`train`, `predict` y `trainBatch`). Si no, las omite. Hoy `NetworkFast` no existe, así que solo hay filas de `NetworkN`.
+Si el módulo exporta `NetworkFast` (desde 0.5), el script añade sus filas (`train`, `predict` y `trainBatch`). Si no, las omite.
 
 ## Formato de salida
 
@@ -63,6 +63,8 @@ git worktree remove --force <tmp>
 `bench/run.mjs` se toma del checkout actual, no del commit medido.
 
 ## Cómo comparar
+
+La tabla oficial de cada versión la mide el verifier (T026) **sin ningún otro agente ni proceso pesado en marcha**: con agentes corriendo tests en paralelo, los tiempos varían hasta ×2 (T001b). Hasta que T026 la publique, las cifras de `CHANGELOG.md` son mediciones de desarrollo, no la tabla oficial.
 
 - Compara solo mediciones de la **misma máquina y la misma versión de Node**.
 - La memoria se repite entre pasadas (dos pasadas completas de la línea base dieron los mismos bytes/parámetro con dos decimales). Los tiempos no: en la línea base, `trainMs` de `[256,256,256,10]` con SGD fue 3,5 ms en una pasada y 8,2 ms en otra, y el de `[512,512,512,10]` con Adam fue 44 ms y 22 ms. Repite la medición antes de sacar conclusiones de diferencias pequeñas, sobre todo en tiempos.
