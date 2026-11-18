@@ -90,7 +90,7 @@ Hoy ya se puede: como entrada de `NetworkN`, como secuencia de `NetworkTransform
 
 ## 4. Requisitos no funcionales (objetivos medibles, Q6)
 
-Sobre `[256,256,256,10]`, `relu, relu, sigmoid`, en la misma máquina que la línea base:
+Sobre `[256,256,256,10]`, `relu, relu, sigmoid`, en la misma máquina que la línea base. "`NetworkN`" en los cocientes es el de **0.4** (`bench-baseline.json`, `master`): FR-3 también acelera el `NetworkN` de la rama (con Adam pasó de ~6 ms a ~1,9 ms por ejemplo), así que compararse con él mediría otra cosa. Aclaración del orquestador del 2026-11-18, al verificar T012; no cambia ningún umbral.
 
 | Id | Medida | Objetivo |
 |---|---|---|
