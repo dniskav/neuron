@@ -108,6 +108,7 @@ Mismo patrón que T009 y T010: clase de 0.4 pegada en el test como referencia y 
 
 - [ ] T026 [H] [verifier] [files: ninguno] Ejecutar SIN ningún otro agente en marcha: con agentes corriendo tests en paralelo, los tiempos varían hasta ×2 (T001b). (1) Benchmark: compilar `master` (0.4.0) en un worktree aparte y la rama en este, y correr `bench/run.mjs` los dos en la misma sesión; informar la tabla y PASS/FAIL de NFR-1 a NFR-5. (2) Estabilidad: 20 ejecuciones de `npx vitest run`, 5 con `--sequence.shuffle`, 3 con Node 20.19 (`~/.nvm/versions/node/v20.19.0`). (3) `npm run coverage` con los umbrales actuales. (4) `dependencies` vacío. (5) La prueba de consumo del paquete (008) importando `@dniskav/neuron` y `@dniskav/neuron/infer`.
       Gate: todo PASS; si falla un NFR, el orquestador lo lleva al usuario (no se rebajan objetivos sin su aprobación)
+      Resultado (2026-11-18, sin agentes en paralelo, Node 26, Apple M3, [256,256,256,10] Adam, frente a NetworkN 0.4): NFR-1 0,163 PASS; NFR-2 0,081 PASS; NFR-3 32,3 B/param PASS; NFR-4 30,6 B/param PASS; NFR-5 1,22 FAIL (NetworkFast.predict 0,179 ms frente a 0,147 ms; en [512] 0,67); NFR-6 rama 21,2 s frente a 23,2 s PASS. Estabilidad 20 + 5 shuffle + 3 con Node 20.19 sin fallos; coverage 98,95 / 95,93 / 99,59 / 99,15; consumo ESM y CJS con `npm pack` OK. Pendiente: decisión del usuario sobre NFR-5.
 
 ## Opcional (Q7)
 

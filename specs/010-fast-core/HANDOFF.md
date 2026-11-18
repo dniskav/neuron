@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** todas las tareas de código y documentación integradas en `feat/0.5-core` (T001–T023, T025, T027–T029; T024 aplazada a 011 por Q7). T025 (revisión matemática) halló un fallo real (subclases de optimizadores ignoradas por vecFromFactory), corregido en T028. Suite: 152 archivos, 3231 tests. Pendiente: T026 (benchmark oficial y estabilidad, sin agentes en paralelo) y decisión del usuario sobre el límite de 12 KB de infer (ver T019).
+**Estado (2026-11-18):** todo integrado y verificado en `feat/0.5-core` (152 archivos, 3231 tests; estabilidad y Node 20.19 OK). T026: NFR-1 a NFR-4 y NFR-6 pasan; NFR-5 (predict) falla: NetworkFast.predict es 1,22 veces el de NetworkN 0.4. Pendientes del usuario: NFR-5, el límite de 12 KB de infer y la propuesta T030 (src y sourcemaps en el paquete, build minificado).
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 
