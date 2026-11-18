@@ -115,3 +115,7 @@ export type { TokenizerMode, TokenizerOptions, EncodeOptions, EncodeBatchOptions
 export { EarlyStopping }    from "./EarlyStopping";
 export { LossPlotter }      from "./LossPlotter";
 export { DataAugmentation } from "./DataAugmentation";
+
+// Random number generator (0.5): injectable, Math.random by default
+export { random, setRandom, getRandom, seededRandom, withRandom } from "./random";
+export type { RandomFn } from "./random";

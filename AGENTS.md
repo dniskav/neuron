@@ -6,7 +6,7 @@ This file is for AI agents and LLMs working with this codebase. Every claim belo
 
 `@dniskav/neuron` is a **minimal, dependency-free neural network library** built from scratch in TypeScript. It is educational by design: every class is self-contained, the math is readable, gradients are written by hand, and each abstraction builds on the previous one. `dependencies` in `package.json` is empty. Besides the hand-coded backprop of every model, `Value` (`src/Tape.ts`) is a separate scalar autograd module (reverse-mode, micrograd style); no network class uses it.
 
-Everything is exported from `src/index.ts` (126 names: 97 values, 29 types). The map below lists all of them.
+Everything is exported from `src/index.ts` (132 names: 102 values, 30 types). The map below lists all of them.
 
 ## Module map
 
@@ -118,13 +118,14 @@ Everything is exported from `src/index.ts` (126 names: 97 values, 29 types). The
 | `confusionMatrix` `precision` `recall` `f1Score` `accuracy` `rocCurve` `auc` `mae` `rmse` `r2Score` `perplexity` `printConfusionMatrix` `classificationReport` | `Metrics.ts` | Evaluation functions. Multiclass `precision`/`recall`/`f1Score` are macro averages. |
 | `Tokenizer` | `Tokenizer.ts` | `char`, `word` or `whitespace` vocabulary; `encode`, `decode`, `oneHot`, snapshots. |
 | `validateArray` `validateArrayMinLength` `validate2DArray` `validateNumber` | `Validation.ts` | Throw `Error('<method>: ...')` on bad arrays or numbers. |
+| `random` `setRandom` `getRandom` `seededRandom` `withRandom` | `random.ts` | Injectable RNG: `random()` calls `Math.random` at call time unless `setRandom(fn)` installed a generator; `seededRandom(seed)` is mulberry32. |
 
 ### Types (all in `src/index.ts` via `export type`)
 
 - Activations and optimizers (`activations.ts`, `optimizers.ts`): `Activation`, `Optimizer`, `OptimizerFactory`.
 - Model options: `NetworkNOptions`, `NetworkLSTMOptions`, `NetworkTransformerOptions`, `NetworkTransformerRLOptions`, `TransformerBlockOptions`, `KMeansOptions`, `SOMOptions`, `Word2VecOptions`, `Word2VecModel`, `TSNEOptions`.
 - Training (`Trainer.ts`, `DataLoader.ts`, `DatasetLoader.ts`, `ModelSaver.ts`): `TrainerOptions`, `TrainDataset`, `TrainableNetwork`, `TrainableNetworkWithWeights`, `TrainMetrics`, `DataPair`, `DatasetLoaderOptions`, `DatasetLoaderResult`, `CategoricalMap`, `Serializable`.
-- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`.
+- Diagnostics and tokenizer: `WeightStats`, `TokenizerMode`, `TokenizerOptions`, `EncodeOptions`, `EncodeBatchOptions`, `TokenizerSnapshot`, `RandomFn`.
 
 ## When to use each class
 
