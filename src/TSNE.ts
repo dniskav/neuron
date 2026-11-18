@@ -62,6 +62,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { random } from "./random";
+
 export interface TSNEOptions {
   /** Dimensionality of the output embedding. Default 2. */
   nComponents?: number;
@@ -91,7 +93,7 @@ export interface TSNEOptions {
   nIter?: number;
   /**
    * Seed for the pseudo-random number generator.
-   * Set to any integer for reproducible results. Default uses Math.random.
+   * Set to any integer for reproducible results. Default draws from random() (src/random.ts).
    */
   seed?: number;
 }
@@ -132,7 +134,7 @@ export class TSNE {
       );
     }
 
-    const rng = this._seed !== undefined ? _mulberry32(this._seed) : Math.random;
+    const rng = this._seed !== undefined ? _mulberry32(this._seed) : random;
 
     // ── Step 1: pairwise squared distances in high-D ────────────────────────
     const distSq = _pairwiseDistSq(X, n);
@@ -366,7 +368,7 @@ function _computeQ(
 
 // ─── MULBERRY32 PRNG ──────────────────────────────────────────────────────────
 // A fast, seedable 32-bit pseudo-random number generator.
-// Returns a function that produces values in [0, 1), matching Math.random()'s API.
+// Returns a function that produces values in [0, 1), matching the API of random() (Math.random por defecto).
 // Reference: https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
 function _mulberry32(seed: number): () => number {
   let s = seed >>> 0;

@@ -45,6 +45,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { random } from './random';
+
 export type Word2VecModel = 'skipgram' | 'cbow';
 
 export interface Word2VecOptions {
@@ -127,12 +129,12 @@ export class Word2Vec {
     const scale2 = Math.sqrt(1 / this.vocabSize);
 
     this.embeddings = Array.from({ length: this.vocabSize }, () =>
-      Array.from({ length: this.embeddingDim }, () => (Math.random() * 2 - 1) * scale1)
+      Array.from({ length: this.embeddingDim }, () => (random() * 2 - 1) * scale1)
     );
 
     // W2 is transposed relative to embeddings: rows are embedding dims, cols are words.
     this._W2 = Array.from({ length: this.embeddingDim }, () =>
-      Array.from({ length: this.vocabSize }, () => (Math.random() * 2 - 1) * scale2)
+      Array.from({ length: this.vocabSize }, () => (random() * 2 - 1) * scale2)
     );
 
     this._trained = false;

@@ -129,7 +129,7 @@ export class NetworkN {
   // Deltas are already multiplied by the output activation derivative, so a
   // residual skip on the LAST layer (which needs dL/d(output)) cannot be
   // propagated: that case throws instead of training with a wrong gradient.
-  // Lengths and values are validated before any Math.random draw (dropout) or weight write.
+  // Lengths and values are validated before any random() draw (dropout) or weight write.
   //
   // reuseMasks (default false): with dropoutRate > 0 the internal forward normally draws a
   // FRESH dropout mask. With reuseMasks = true it re-applies the masks saved by the last
@@ -163,8 +163,8 @@ export class NetworkN {
   //
   // Throws if the last layer has a residual skip (it would need dL/d(output),
   // not deltas; Q2). With dropoutRate > 0 and reuseMasks = false (default) a
-  // fresh mask is drawn (training mode, consuming Math.random exactly like
-  // trainWithDeltas) and applied in the backward pass; reseed Math.random for
+  // fresh mask is drawn (training mode, consuming random() exactly like
+  // trainWithDeltas) and applied in the backward pass; reseed random() (setRandom) for
   // a fixed mask. With reuseMasks = true it re-applies the masks of the last
   // predict(x, true), draws nothing, and the result is the exact gradient of
   // THAT forward pass (Q9); it throws if dropoutRate > 0 and no masks are saved.

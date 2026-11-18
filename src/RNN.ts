@@ -32,6 +32,7 @@
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 function tanh(x: number): number {
   // Math.tanh is stable: (e^{2x} − 1)/(e^{2x} + 1) gave NaN (Infinity/Infinity) for x ≳ 355.
@@ -121,13 +122,13 @@ export class RNN {
     const limHY = Math.sqrt(2 / hiddenSize);
 
     this.Wxh = Array.from({ length: hiddenSize }, () =>
-      Array.from({ length: inputSize  }, () => (Math.random() * 2 - 1) * limXH)
+      Array.from({ length: inputSize  }, () => (random() * 2 - 1) * limXH)
     );
     this.Whh = Array.from({ length: hiddenSize }, () =>
-      Array.from({ length: hiddenSize }, () => (Math.random() * 2 - 1) * limHH)
+      Array.from({ length: hiddenSize }, () => (random() * 2 - 1) * limHH)
     );
     this.Why = Array.from({ length: outputSize }, () =>
-      Array.from({ length: hiddenSize }, () => (Math.random() * 2 - 1) * limHY)
+      Array.from({ length: hiddenSize }, () => (random() * 2 - 1) * limHY)
     );
     this.bh = new Array(hiddenSize).fill(0);
     this.by = new Array(outputSize).fill(0);

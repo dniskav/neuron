@@ -62,6 +62,8 @@
 //
 // dModel must be an integer >= 1. Each (sin, cos) pair fills two dimensions; if
 // dModel is odd, the last dimension has no partner and gets only the sine term.
+import { random } from "./random";
+
 function assertDModel(method: string, dModel: number): void {
   if (!Number.isInteger(dModel) || dModel < 1) {
     throw new Error(`${method}: dModel must be an integer >= 1, got ${dModel}`);
@@ -156,7 +158,7 @@ export class LearnedPositionalEncoding {
   constructor(readonly maxSeqLen: number, readonly dModel: number) {
     const limit = Math.sqrt(1 / dModel);
     this.weights = Array.from({ length: maxSeqLen }, () =>
-      Array.from({ length: dModel }, () => (Math.random() * 2 - 1) * limit),
+      Array.from({ length: dModel }, () => (random() * 2 - 1) * limit),
     );
   }
 
