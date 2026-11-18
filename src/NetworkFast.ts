@@ -7,6 +7,10 @@ import { getBackend }                         from "./core/backend";
 import { Backend, Vec }                       from "./core/tensor";
 import { VecOptimizer, vecFromFactory }       from "./core/optim";
 import type { NetworkNOptions }               from "./NetworkN";
+import { describeOptimizer, optimizerFromSpec } from "./NetworkN";
+import {
+  activationFromSpec, activationToSpec, validateNetworkNConfig, type NetworkNConfig,
+} from "./core/format2";
 
 // ─── NetworkFast ──────────────────────────────────────────────────────────────
 // Same model as NetworkN (see NetworkN.ts for the maths: g, dropout, dfn on the
@@ -43,6 +47,8 @@ export class NetworkFast {
   private readonly _acts: Activation[];
   private readonly _residual: boolean | ((layerIndex: number) => boolean);
   private readonly _dropouts: Dropout[];
+  private readonly _dropoutRate: number;
+  private readonly _optimizerFactory: OptimizerFactory;
 
   // Parameters.
   private readonly _W: Vec[] = [];
@@ -73,6 +79,10 @@ export class NetworkFast {
   private readonly _override: Partial<Backend> | null;
   private _mixOf: Backend | null = null;
   private _mixed: Backend | null = null;
+
+  /** Class name for ModelSaver format 2 (not read from constructor.name: bundlers rename it). */
+  static readonly kind = "NetworkFast";
+  get kind(): string { return NetworkFast.kind; }
 
   constructor(readonly structure: number[], options: NetworkFastOptions = {}) {
     if (!Array.isArray(structure) || structure.length < 2 ||
@@ -108,6 +118,8 @@ export class NetworkFast {
     this._acts     = [...activations];
     this._residual = options.residual ?? false;
     this._res      = new Uint8Array(nLayers);
+    this._dropoutRate     = dropoutRate;
+    this._optimizerFactory = optimizer;
 
     this._a.push(new Float64Array(structure[0]));
     this._g.push(new Float64Array(structure[0]));
@@ -281,6 +293,35 @@ export class NetworkFast {
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────
+
+  // ── Format 2 (ModelSaver.save / load) ─────────────────────────────────────
+  // Same config as NetworkN (NetworkNConfig). The `backend` option is NOT saved: it is a
+  // property of the process (which implementation runs the maths), not of the model, so
+  // a loaded network uses the global backend. Throws if an activation has no name.
+  toConfig(): NetworkNConfig {
+    return {
+      structure: [...this.structure],
+      activations: this._acts.map((a, i) => activationToSpec(a, `NetworkFast.toConfig: activations[${i}]`)),
+      optimizer: describeOptimizer(this._optimizerFactory),
+      residual: Array.from({ length: this._L }, (_, l) => {
+        const r = this._residual;
+        return typeof r === "function" ? r(l) : r;
+      }),
+      dropoutRate: this._dropoutRate,
+    };
+  }
+
+  /** New network from a config made by `toConfig` (or by NetworkN). Validates before building. */
+  static fromConfig(config: unknown): NetworkFast {
+    const c = validateNetworkNConfig(config, "NetworkFast.fromConfig");
+    const residual = c.residual;
+    return new NetworkFast(c.structure, {
+      activations: c.activations.map(activationFromSpec),
+      optimizer: optimizerFromSpec(c.optimizer),
+      residual: (i: number) => residual[i],
+      dropoutRate: c.dropoutRate,
+    });
+  }
 
   private _weightCount(): number {
     let total = 0;
