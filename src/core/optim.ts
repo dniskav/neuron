@@ -153,7 +153,10 @@ export class ScalarArrayOptimizer implements VecOptimizer {
 // `instanceof`). A subclass may override `step`, and the vector classes never
 // call `step`, so mapping a subclass to its parent would silently ignore it.
 // A ClipOptimizer is recognized only when its `inner` is an exact built-in too.
+// An own `step` on the instance (e.g. Object.assign(new SGD(), { step })) is
+// also a reason to take the scalar path: the vector classes would ignore it.
 function fromInstance(inst: Optimizer, size: number): VecOptimizer | null {
+  if (Object.prototype.hasOwnProperty.call(inst, 'step')) return null
   const proto = Object.getPrototypeOf(inst)
   if (proto === SGD.prototype) return new VecSGD(size)
   if (proto === Momentum.prototype) return new VecMomentum(size, (inst as Momentum).beta)

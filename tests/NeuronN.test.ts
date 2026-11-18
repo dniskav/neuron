@@ -269,3 +269,33 @@ describe('NeuronN 0.5: subclasses of built-ins are not replaced by the parent ve
     }
   })
 })
+
+// ─── T028 (follow-up): own step on the instance ───────────────────────────────
+describe('NeuronN 0.5: an own step on the optimizer instance is used', () => {
+  const ownStep: OptimizerFactory = () =>
+    Object.assign(new SGD(), { step: (w: number, g: number, lr: number) => w + 2 * lr * g })
+
+  it('moves each weight twice as far as plain SGD', () => {
+    const plain = new NeuronN(3, sigmoid, () => new SGD())
+    const own = new NeuronN(3, sigmoid, ownStep)
+    own.weights = [...plain.weights]
+    const w0 = [...plain.weights]
+    plain._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    own._update([0.1, -0.2, 0.3], 0.4, 0.05)
+    for (let i = 0; i < 3; i++) {
+      expect(own.weights[i] - w0[i]).toBeCloseTo(2 * (plain.weights[i] - w0[i]), 12)
+    }
+  })
+
+  it('300 train steps give identical weights and bias (0.4 reference)', () => {
+    const { fresh, ref } = pair(ownStep, 5)
+    const rnd = seededRandom(41)
+    for (let k = 0; k < 300; k++) {
+      const x = Array.from({ length: 5 }, () => rnd() * 2 - 1)
+      const t = rnd() * 2 - 1
+      fresh.train(x, t, 0.05)
+      ref.train(x, t, 0.05)
+    }
+    same(fresh, ref)
+  })
+})

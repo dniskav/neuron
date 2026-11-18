@@ -243,3 +243,23 @@ describe('vecFromFactory: subclasses of built-ins use the scalar path (T028)', (
     expect(vecFromFactory(ClippedOptimizerFactory(() => new Adam(), 0.5), 2)).toBeInstanceOf(VecClip)
   })
 })
+
+// ─── T028 (follow-up): an own `step` on the instance is also not ignored ──────
+describe('vecFromFactory: an own step on the instance takes the scalar path (T028)', () => {
+  const ownStep = () =>
+    Object.assign(new SGD(), { step: (w: number, g: number, lr: number) => w + 2 * lr * g })
+
+  it('an instance with own step gives ScalarArrayOptimizer and moves the weight double', () => {
+    const vec = vecFromFactory(ownStep, 3)
+    expect(vec).toBeInstanceOf(ScalarArrayOptimizer)
+    const p = [0, 0, 0]
+    vec.step(p, [1, 1, 1], 0.1)
+    expect(p).toEqual([0.2, 0.2, 0.2])
+  })
+
+  it('ClipOptimizer whose inner has an own step takes the scalar path', () => {
+    const f = () => new ClipOptimizer(ownStep(), 0.5)
+    expect(vecFromFactory(f, 3)).toBeInstanceOf(ScalarArrayOptimizer)
+    compare((n) => vecFromFactory(f, n), () => f(), 3, 65)
+  })
+})
