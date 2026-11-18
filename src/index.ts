@@ -142,3 +142,5 @@ import { NetworkN as _NetworkN } from "./NetworkN";
 import { Network as _Network } from "./Network";
 _ModelSaver.register("NetworkN", _NetworkN);
 _ModelSaver.register("Network", _Network);
+import { NetworkLSTM as _NetworkLSTM } from "./NetworkLSTM";
+_ModelSaver.register("NetworkLSTM", _NetworkLSTM);
