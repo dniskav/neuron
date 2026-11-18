@@ -38,7 +38,7 @@
 // The constructor checks it by value: the output activation of D is accepted if it is the
 // `sigmoid` object of ./activations, or any Activation whose fn(x) = 1/(1+e^(-x)) and
 // dfn(out) = out·(1-out) agree with those formulas on a fixed probe set (tolerance 1e-9).
-// Otherwise it throws. The check only calls fn/dfn: it consumes no Math.random and does not
+// Otherwise it throws. The check only calls fn/dfn: it consumes no random() (Math.random por defecto) and does not
 // touch the network. The generator step is exact w.r.t. D at
 // its post-update weights; an oracle that freezes D at the pre-step weights
 // differs by O(lr).
@@ -47,6 +47,7 @@
 import { NetworkN, NetworkNOptions } from "./NetworkN";
 import { Activation, sigmoid } from "./activations";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 // Probe set for the by-value sigmoid check (see the GAN constructor).
 const SIGMOID_PROBE_X = [-6, -2, -0.5, 0, 0.5, 2, 6];
@@ -189,10 +190,10 @@ export class GAN {
       //   dxHat             = D.inputGradient(xFake2, [deltaD])   = -dL/dx̂
       //   gDelta[i]         = dxHat[i] · dfn_G(x̂_i)   (delta of G's output layer)
       // inputGradient does not modify any weight of D, so only G learns here.
-      // Math.random order is unchanged: z, then z2.
+      // random() (Math.random por defecto) order is unchanged: z, then z2.
       const z2 = this.sampleLatent();
       // G also runs in training mode and D scores in training mode; D.inputGradient and
-      // G.trainWithDeltas reuse those masks (Q9). Math.random order: z, z2 (plus the dropout
+      // G.trainWithDeltas reuse those masks (Q9). random() (Math.random por defecto) order: z, z2 (plus the dropout
       // masks, which exist only with dropoutRate > 0).
       const xFake2 = this.generator.predict(z2, true);
       const dScore = Math.max(eps, Math.min(1 - eps, this.discriminator.predict(xFake2, true)[0]));
@@ -216,8 +217,8 @@ export class GAN {
     const z: number[] = [];
     for (let i = 0; i < this.latentDim; i += 2) {
       // Box-Muller: converts two uniform samples into two standard normals
-      const u1 = Math.random();
-      const u2 = Math.random();
+      const u1 = random();
+      const u2 = random();
       const r  = Math.sqrt(-2 * Math.log(u1 + 1e-15));
       const theta = 2 * Math.PI * u2;
       z.push(r * Math.cos(theta));

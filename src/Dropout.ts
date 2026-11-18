@@ -11,6 +11,8 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { random } from "./random";
+
 export class Dropout {
   readonly rate: number
   private _mask: number[] | null = null
@@ -33,12 +35,12 @@ export class Dropout {
     }
 
     const scale = 1 / (1 - this.rate)
-    this._mask = x.map(() => Math.random() > this.rate ? scale : 0)
+    this._mask = x.map(() => random() > this.rate ? scale : 0)
     return x.map((v, i) => v * this._mask![i])
   }
 
   // ── Reuse the saved mask ──────────────────────────────────────────────────
-  // Re-applies the mask of the last forward(x, true) WITHOUT drawing from Math.random,
+  // Re-applies the mask of the last forward(x, true) WITHOUT drawing from random() (Math.random por defecto),
   // so a second pass sees the same units dropped (loss, gradient and update share one
   // mask; Q9). The mask is kept: it can be reused any number of times and backward()
   // still uses it. Throws if there is no saved mask or its length differs from x.

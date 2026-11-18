@@ -7,6 +7,7 @@
 
 import { Adam } from './optimizers'
 import { validateArray } from './Validation'
+import { random } from './random'
 
 // ── Matrix multiply ───────────────────────────────────────────────────────────
 // C = A @ B   |  A: rows × inner,  B: inner × cols  →  C: rows × cols
@@ -87,7 +88,7 @@ export class WeightMatrix {
   constructor(rows: number, cols: number) {
     const limit = Math.sqrt(2 / (rows + cols))
     this.W    = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: cols }, () => (random() * 2 - 1) * limit)
     )
     this.opts = Array.from({ length: rows }, () =>
       Array.from({ length: cols }, () => new Adam())
@@ -167,7 +168,7 @@ export class EmbeddingMatrix {
   constructor(vocabSize: number, d_model: number) {
     const limit = Math.sqrt(1 / d_model)
     this.W = Array.from({ length: vocabSize }, () =>
-      Array.from({ length: d_model }, () => (Math.random() * 2 - 1) * limit)
+      Array.from({ length: d_model }, () => (random() * 2 - 1) * limit)
     )
   }
 

@@ -28,6 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { validateArray, validateDataset } from './Validation'
+import { random } from './random'
 
 export interface KMeansOptions {
   maxIter?: number;
@@ -51,7 +52,7 @@ export class KMeans {
     this.centroids = [];
 
     // Simple seeded PRNG (mulberry32) so results are reproducible when a seed
-    // is provided; falls back to Math.random() otherwise.
+    // is provided; falls back to random() (Math.random por defecto) otherwise.
     if (options.seed !== undefined) {
       let s = options.seed >>> 0;
       this._rng = () => {
@@ -61,7 +62,7 @@ export class KMeans {
         return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
       };
     } else {
-      this._rng = () => Math.random();
+      this._rng = () => random();
     }
   }
 

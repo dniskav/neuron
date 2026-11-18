@@ -30,6 +30,7 @@
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 export class Conv2D {
   readonly inputHeight: number;
@@ -99,7 +100,7 @@ export class Conv2D {
     this.kernels = Array.from({ length: filters }, () =>
       Array.from({ length: kH }, () =>
         Array.from({ length: kW }, () =>
-          Array.from({ length: channels }, () => (Math.random() * 2 - 1) * limit)
+          Array.from({ length: channels }, () => (random() * 2 - 1) * limit)
         )
       )
     );

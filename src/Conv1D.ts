@@ -22,6 +22,7 @@
 
 import { OptimizerFactory, Optimizer, SGD } from "./optimizers";
 import { validateArray } from "./Validation";
+import { random } from "./random";
 
 export class Conv1D {
   readonly inputLength: number
@@ -74,7 +75,7 @@ export class Conv1D {
     const limit = Math.sqrt(2 / (kernelSize * inputChannels))
     this.kernels = Array.from({ length: filters }, () =>
       Array.from({ length: kernelSize }, () =>
-        Array.from({ length: inputChannels }, () => (Math.random() * 2 - 1) * limit)
+        Array.from({ length: inputChannels }, () => (random() * 2 - 1) * limit)
       )
     )
     this.biases = new Array(filters).fill(0)
