@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 interface FsLike {
   existsSync(p: URL): boolean;
   readFileSync(p: URL, enc: "utf8"): string;
+  readdirSync(p: URL): string[];
   statSync(p: URL): { size: number };
 }
 // Carga de node:fs con import dinámico (como en coverage.modules.test.ts). Va al nivel superior porque
@@ -24,11 +25,14 @@ interface PackageJson {
   files: string[];
   scripts: Record<string, string>;
   exports: Record<string, { types?: string; import?: string; require?: string }>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 }
 
 interface SourceMap {
   version: number;
   sources: string[];
+  sourcesContent?: (string | null)[];
 }
 
 function leerJson<T>(p: URL): T {
@@ -49,21 +53,32 @@ describe("contenido del paquete (T030)", () => {
     expect(pkg.files).toContain("src");
   });
 
-  it("package.json exporta ./infer/min hacia dist/infer.min.mjs", () => {
+  // ./infer/min es solo ESM (sin entrada require): el bundle minificado no tiene build CJS. Aceptado por el
+  // orquestador; `require('@dniskav/neuron/infer/min')` falla con ERR_PACKAGE_PATH_NOT_EXPORTED.
+  it("package.json exporta ./infer/min (solo ESM) hacia dist/infer.min.mjs", () => {
     const entrada = pkg.exports["./infer/min"];
     expect(entrada, "falta exports['./infer/min']").toBeDefined();
     expect(entrada.import).toBe("./dist/infer.min.mjs");
     expect(entrada.types).toBe("./dist/infer.d.ts");
+    expect(entrada.require, "./infer/min no tiene build CJS").toBeUndefined();
   });
 
-  it("el script build genera los sourcemaps con tsup y encadena el minificado con esbuild", () => {
+  it("esbuild está declarado en devDependencies (versión exacta) y no en dependencies", () => {
+    expect(pkg.devDependencies?.esbuild).toBe("0.27.2");
+    expect(pkg.dependencies ?? {}).not.toHaveProperty("esbuild");
+  });
+
+  it("el script build usa tsup.config.ts (con sourcemap y sin sourcesContent) y esbuild para el minificado", () => {
     const [tsup, esbuild, ...resto] = pkg.scripts.build.split("&&").map((s) => s.trim());
     expect(resto, "el build tiene pasos de más").toEqual([]);
-    expect(tsup).toMatch(/^tsup /);
-    expect(tsup).toContain("--sourcemap");
+    expect(tsup).toBe("tsup");
+    const config = fs.readFileSync(new URL("tsup.config.ts", ROOT), "utf8");
+    expect(config).toContain("sourcemap: true");
+    expect(config).toContain("options.sourcesContent = false");
     expect(esbuild).toMatch(/^esbuild src\/infer\.ts /);
     expect(esbuild).toContain("--minify");
     expect(esbuild).toContain("--sourcemap");
+    expect(esbuild).toContain("--sources-content=false");
     expect(esbuild).toContain("--outfile=dist/infer.min.mjs");
   });
 
@@ -79,15 +94,19 @@ describe("contenido del paquete (T030)", () => {
     expect(codigo).toMatch(/export\{[^}]*\bas loadForInference\b[^}]*\}/);
   });
 
-  it.skipIf(!minEsCompilado)("hay sourcemaps para cada salida y apuntan a ../src/", () => {
+  it.skipIf(!minEsCompilado)("hay sourcemaps para cada salida, sin sourcesContent, y apuntan a ../src/", () => {
     const salidas = ["index.js", "index.mjs", "infer.js", "infer.mjs", "infer.min.mjs"];
+    const mapas = fs.readdirSync(new URL("dist/", ROOT)).filter((f) => f.endsWith(".map"));
     for (const s of salidas) {
-      const mapa = DIST(s + ".map");
-      expect(fs.existsSync(mapa), `falta dist/${s}.map`).toBe(true);
-      const m = leerJson<SourceMap>(mapa);
-      expect(m.sources.length, `${s}.map sin fuentes`).toBeGreaterThan(0);
+      expect(mapas, `falta dist/${s}.map`).toContain(s + ".map");
+    }
+    for (const f of mapas) {
+      const m = leerJson<SourceMap>(DIST(f));
+      expect(m.sources.length, `${f} sin fuentes`).toBeGreaterThan(0);
+      const conContenido = (m.sourcesContent ?? []).filter((c) => typeof c === "string" && c.length > 0);
+      expect(conContenido.length, `${f} lleva sourcesContent (duplica src/)`).toBe(0);
       for (const src of m.sources) {
-        expect(src.startsWith("../src/"), `${s}.map referencia ${src}`).toBe(true);
+        expect(src.startsWith("../src/"), `${f} referencia ${src}`).toBe(true);
       }
     }
   });
