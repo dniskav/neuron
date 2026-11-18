@@ -50,6 +50,8 @@ export interface NetworkTransformerConfig {
   d_ff:      number
   nBlocks:   number
   nClasses:  number
+  // Effective value: a boolean when both tables share it, otherwise { token, position }.
+  freezeEmbeddings: boolean | { token: boolean; position: boolean }
 }
 
 const CONFIG_FIELDS = ['seqLen', 'vocabSize', 'd_model', 'nHeads', 'd_ff', 'nBlocks', 'nClasses'] as const
@@ -288,6 +290,9 @@ export class NetworkTransformer {
       d_ff:      this._d_ff,
       nBlocks:   this._nBlocks,
       nClasses:  this.nClasses,
+      freezeEmbeddings: this._freezeToken === this._freezePos
+        ? this._freezeToken
+        : { token: this._freezeToken, position: this._freezePos },
     }
   }
 
@@ -305,6 +310,15 @@ export class NetworkTransformer {
       }
       out[f] = v
     }
+    // freezeEmbeddings: boolean, or { token, position } with booleans (what toConfig writes)
+    const fz = c.freezeEmbeddings
+    const okBool = (v: unknown) => typeof v === 'boolean'
+    const okFreeze = okBool(fz) ||
+      (typeof fz === 'object' && fz !== null && okBool((fz as Record<string, unknown>).token) &&
+        okBool((fz as Record<string, unknown>).position))
+    if (!okFreeze) {
+      throw new Error(`NetworkTransformer.fromConfig: freezeEmbeddings must be a boolean or { token: boolean, position: boolean }, got ${JSON.stringify(fz) ?? String(fz)}`)
+    }
     return new NetworkTransformer(out.seqLen, {
       vocabSize: out.vocabSize,
       d_model:   out.d_model,
@@ -312,6 +326,7 @@ export class NetworkTransformer {
       d_ff:      out.d_ff,
       nBlocks:   out.nBlocks,
       nClasses:  out.nClasses,
+      freezeEmbeddings: fz as boolean | { token: boolean; position: boolean },
     })
   }
 

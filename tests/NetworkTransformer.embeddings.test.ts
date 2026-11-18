@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { ModelSaver } from '../src/ModelSaver'
 import { NetworkTransformer } from '../src/NetworkTransformer'
+
+beforeAll(() => {
+  ModelSaver.register('NetworkTransformer', NetworkTransformer)
+})
 
 const SEQ = 4
 const OPTS = { vocabSize: 5, d_model: 8, nHeads: 2, d_ff: 16, nBlocks: 2, nClasses: 3 }
@@ -130,5 +135,36 @@ describe('NetworkTransformer.setTokenEmbeddings', () => {
     r[3][2] = Number.NaN
     expect(() => net.setTokenEmbeddings(r)).toThrow('NetworkTransformer.setTokenEmbeddings')
     expectSame(before, net.tokenEmb.getWeights())
+  })
+})
+
+describe('NetworkTransformer freezeEmbeddings in format 2', () => {
+  it('toConfig writes freezeEmbeddings with its effective value', () => {
+    expect(new NetworkTransformer(SEQ, OPTS).toConfig().freezeEmbeddings).toBe(false)
+    expect(new NetworkTransformer(SEQ, { ...OPTS, freezeEmbeddings: true }).toConfig().freezeEmbeddings).toBe(true)
+    expect(new NetworkTransformer(SEQ, { ...OPTS, freezeEmbeddings: { token: true } }).toConfig().freezeEmbeddings)
+      .toEqual({ token: true, position: false })
+  })
+
+  it.each([true, { token: true }] as const)(
+    'round trip with freezeEmbeddings %j: the loaded model keeps the frozen table fixed',
+    (fz) => {
+      const net = new NetworkTransformer(SEQ, { ...OPTS, freezeEmbeddings: fz })
+      const loaded = ModelSaver.load(ModelSaver.save(net)) as NetworkTransformer
+      expect(loaded).toBeInstanceOf(NetworkTransformer)
+      expect(loaded.toConfig().freezeEmbeddings).toEqual(net.toConfig().freezeEmbeddings)
+      const tok0 = loaded.tokenEmb.getWeights()
+      const pos0 = loaded.posEmb.getWeights()
+      trainSteps(loaded, 20)
+      expectSame(tok0, loaded.tokenEmb.getWeights())
+      if (fz === true) expectSame(pos0, loaded.posEmb.getWeights())
+      else expect(changed(pos0, loaded.posEmb.getWeights())).toBe(true)
+    },
+  )
+
+  it('fromConfig rejects an invalid freezeEmbeddings', () => {
+    const good = new NetworkTransformer(SEQ, OPTS).toConfig()
+    expect(() => NetworkTransformer.fromConfig({ ...good, freezeEmbeddings: 'yes' })).toThrow('NetworkTransformer.fromConfig')
+    expect(() => NetworkTransformer.fromConfig({ ...good, freezeEmbeddings: { token: 1 } })).toThrow('NetworkTransformer.fromConfig')
   })
 })
