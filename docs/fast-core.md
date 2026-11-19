@@ -1,4 +1,4 @@
-## Seeds, vectorized optimizers and the numeric core (0.5)
+# Fast core, seeds and extending the library (0.5)
 
 These pieces are new in 0.5. They are exported and tested. `NetworkFast` also trains on batches (see "Batches" below).
 

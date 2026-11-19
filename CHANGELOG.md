@@ -4,6 +4,17 @@ All notable changes to `@dniskav/neuron` are documented here. The format is loos
 
 Most numeric claims in the 0.4.0 section were checked by running the same case against 0.3.2 and the current code.
 
+## 0.5.1 — 2026-11-18
+
+Documentation only. `src/` is the same as in 0.5.0.
+
+- **The npm page now shows the whole README.** npm keeps only the first 64 KB of a package README. The 0.5 README was 99.7 KB, so the npmjs.com page stopped in the middle of "Training and evaluation tools" and showed nothing about 0.5. The README is now about 35 KB: the tables (now with `NetworkFast`, the random and numeric core, the vectorized optimizers and the format 2 types), a quick start, a summary of 0.5 with three runnable examples, the extension contracts, the guides and the closing sections. `tests/docs.readme.size.test.ts` keeps it under 60 KiB.
+- **The long guides moved to `docs/`**: `docs/basics.md`, `docs/models.md`, `docs/sequences.md`, `docs/tools.md` and `docs/fast-core.md`. They contain the same examples as the old README sections, and each one passes the example gate (`specs/007-docs/tools/readme-gate.mjs`). The README links to them with absolute GitHub URLs, because `docs/` is not in the npm package; `tests/docs.readme.links.test.ts` checks the links, the files and the anchors.
+- The README is generated from `specs/007-docs/readme-parts/` by `specs/007-docs/tools/assemble-readme.mjs`, now with six parts.
+- Two table descriptions now match the code: `WeightMatrix` has one Adam optimizer per row and `BiasVector` one over the whole vector (not one per element).
+
+Migration: none. If you followed a link to a README section that is now in `docs/` (for example "Usage" or "Seeds, vectorized optimizers and the numeric core"), use the guide listed in the README "Guides" section.
+
 ## 0.5.0 — 2026-11-18
 
 ### Read this first

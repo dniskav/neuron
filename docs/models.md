@@ -1,3 +1,5 @@
+# Models: autoencoders, generative models and embeddings
+
 ### Autoencoder — learn compressed representations
 
 An `Autoencoder` is trained to reproduce its own input through a narrow bottleneck. `train` takes one gradient step on the mean squared error, so its step is the gradient of the loss it returns. Because the loss is averaged over the `inputSize` outputs, a useful `lr` is larger than in 0.3.2 (this example uses 2). A latent size that is not smaller than the input size is accepted without error or warning (an over-complete autoencoder is valid, for example for denoising).

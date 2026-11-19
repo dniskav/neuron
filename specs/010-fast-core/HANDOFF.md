@@ -1,6 +1,6 @@
 # HANDOFF 010 fast-core
 
-**Estado (2026-11-18):** feature 010 TERMINADA en `feat/0.5-core` (sin push). Todas las tareas integradas y verificadas salvo T024 (aplazada a 011). NFR-1 a NFR-6 pasan (NFR-5 tras T031: 0,59). Suite: 153 archivos, 3269 tests; estable en Node 20.19 y 26. Pendiente SOLO con aprobación del usuario: push, PR a master, subir a 0.5.0 y publicar en npm.
+**Estado (2026-11-18):** feature 010 TERMINADA. **0.5.0 publicada en npm el 2026-11-18 (PR #14, fusionado en master).** Todas las tareas integradas y verificadas salvo T024 (aplazada a 011). NFR-1 a NFR-6 pasan (NFR-5 tras T031: 0,59). Suite: 153 archivos, 3269 tests; estable en Node 20.19 y 26. La 0.5.1 (solo documentación: README corto para la página de npm, guías en `docs/`) está en la rama `docs/readme-npm`, sin publicar.
 
 ## Cómo retomarlo (sesión nueva o tras un reset)
 

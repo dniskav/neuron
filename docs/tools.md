@@ -1,4 +1,4 @@
-## Training and evaluation tools
+# Training and evaluation tools
 
 These helpers sit around the training loop: metrics, early stopping, the `Trainer` loop, model serialization, data loading and preparation, the tokenizer, and diagnostics for weights and loss curves. Each example is self-contained, fixes its randomness when it uses any, and ends with a check that throws if the result is not the expected one.
 
